@@ -434,8 +434,10 @@ export class DatabaseRaidService implements RaidService {
         if (raid.participant_state !== 'invited') throw this.forbiddenCommand()
         const state = action === 'accept' ? 'accepted' : 'declined'
         await client.query(
-          `UPDATE raid_participants SET state = $3,
-             accepted_at = CASE WHEN $3 = 'accepted' THEN now() ELSE accepted_at END,
+          `UPDATE raid_participants SET state = $3::raid_participant_state,
+             accepted_at = CASE
+               WHEN $3::raid_participant_state = 'accepted'::raid_participant_state
+               THEN now() ELSE accepted_at END,
              updated_at = now()
            WHERE raid_id = $1 AND user_id = $2`,
           [raid.id, actorUserId, state],
