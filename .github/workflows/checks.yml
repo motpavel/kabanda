@@ -3,7 +3,7 @@ name: Checks
 on:
   pull_request:
   push:
-    branches: [main, codex/vp-1-pwa-capability]
+    branches: [main, "codex/**"]
 
 permissions:
   contents: read
@@ -24,4 +24,3 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-
