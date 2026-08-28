@@ -24,6 +24,7 @@ export type RaidAllowedAction =
   | 'pause'
   | 'resume'
   | 'cancel'
+  | 'handoff-navigator'
   | 'accept'
   | 'decline'
   | 'ready'
@@ -44,6 +45,22 @@ export interface RaidReadinessSummary {
   raidVersion: number
 }
 
+export type RouteStatusCode = 'awaiting_lease' | 'fresh' | 'stale' | 'paused' | 'stopped'
+
+export interface RouteStatusProjection {
+  status: RouteStatusCode
+  lastSampleAt: string | null
+  lastReceivedAt: string | null
+  acceptedSampleCount: number
+  missingSequenceCount: number
+}
+
+export interface NavigatorLeaseProjection {
+  id: string
+  generation: number
+  issuedAt: string
+}
+
 export interface RaidProjection {
   id: string
   kabandaId: string
@@ -57,8 +74,51 @@ export interface RaidProjection {
   navigatorReady: boolean
   navigatorBlockers: string[]
   navigatorWarnings: string[]
+  routeStatus: RouteStatusProjection
+  navigatorLease: NavigatorLeaseProjection | null
   participants: RaidParticipant[]
   allowedActions: RaidAllowedAction[]
+}
+
+export interface RouteBatchSample {
+  operationId: string
+  sequence: number
+  capturedAt: string
+  latitude: number
+  longitude: number
+  accuracyM: number
+  speedMps?: number
+  headingDeg?: number
+}
+
+export interface RouteBatchInput {
+  schemaVersion: 1
+  leaseId: string
+  clientInstanceId: string
+  samples: RouteBatchSample[]
+}
+
+export interface RouteBatchResponse {
+  batchId: string
+  accepted: Array<{ operationId: string; acceptedAt: string }>
+  duplicates: Array<{ operationId: string }>
+  rejected: Array<{ operationId: string; code: string }>
+  routeStatus: RouteStatusProjection
+  serverAt: string
+}
+
+export interface RouteLeaseResponse {
+  receipt: {
+    operationId: string
+    command: 'acquire-route' | 'recover-route'
+    serverAt: string
+  }
+  raid: RaidProjection
+}
+
+export interface HandoffNavigatorInput {
+  expectedVersion: number
+  navigatorUserId: string
 }
 
 export interface CreateRaidInput {

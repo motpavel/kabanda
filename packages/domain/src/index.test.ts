@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getRaidAllowedActions,
+  getRouteStatusCode,
   isBoundedIzhevskQuery,
   isRaidStateTransitionAllowed,
   normalizeEmail,
@@ -44,6 +45,7 @@ describe('raid lifecycle', () => {
     expect(isRaidStateTransitionAllowed('lobby', 'start')).toBe(true)
     expect(isRaidStateTransitionAllowed('planned', 'open-lobby')).toBe(true)
     expect(isRaidStateTransitionAllowed('active', 'pause')).toBe(true)
+    expect(isRaidStateTransitionAllowed('active', 'handoff-navigator')).toBe(true)
     expect(isRaidStateTransitionAllowed('paused', 'resume')).toBe(true)
     expect(isRaidStateTransitionAllowed('completed', 'cancel')).toBe(false)
     expect(isRaidStateTransitionAllowed('cancelled', 'open-lobby')).toBe(false)
@@ -74,5 +76,32 @@ describe('raid lifecycle', () => {
         navigatorReady: true,
       }),
     ).toContain('start')
+  })
+
+  it('fails route health closed across lease and pause boundaries', () => {
+    expect(
+      getRouteStatusCode({
+        raidState: 'active',
+        leaseClaimed: true,
+        leaseHeartbeatFresh: true,
+        sampleAgeSeconds: 10,
+      }),
+    ).toBe('fresh')
+    expect(
+      getRouteStatusCode({
+        raidState: 'active',
+        leaseClaimed: false,
+        leaseHeartbeatFresh: false,
+        sampleAgeSeconds: null,
+      }),
+    ).toBe('awaiting_lease')
+    expect(
+      getRouteStatusCode({
+        raidState: 'paused',
+        leaseClaimed: true,
+        leaseHeartbeatFresh: true,
+        sampleAgeSeconds: 1,
+      }),
+    ).toBe('paused')
   })
 })

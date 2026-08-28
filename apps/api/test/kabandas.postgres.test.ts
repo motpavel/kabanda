@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import { DatabaseKabandaService, KabandaError, type ManifestPoint } from '../src/kabandas.js'
 import { DatabaseRaidService } from '../src/raids.js'
@@ -96,6 +97,25 @@ async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
     { expectedVersion: ready.raid.version, ...readiness() },
     `readiness-${suffix}`,
   )
+}
+
+async function activeOwnerRaid(ownerId: string, kabandaId: string, suffix: string) {
+  const ready = await readyRaid(ownerId, kabandaId, suffix)
+  const started = await raidService!.command(
+    ownerId,
+    ready.raid.id,
+    'start',
+    { expectedVersion: ready.raid.version },
+    `start-${suffix}`,
+  )
+  const clientInstanceId = randomUUID()
+  const acquired = await raidService!.acquireNavigatorLease(
+    ownerId,
+    started.raid.id,
+    { expectedVersion: started.raid.version, clientInstanceId },
+    `acquire-${suffix}`,
+  )
+  return { acquired, clientInstanceId, leaseId: acquired.raid.navigatorLease!.id }
 }
 
 describePostgres('Kabandas and points PostgreSQL invariants', () => {
@@ -622,6 +642,424 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     await expect(
       raidService!.listActionable(second.ownerId, first.kabanda.id),
     ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+  })
+
+  it('accepts reordered route samples once and replays an immutable batch receipt', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('route-batch')
+    const { acquired, clientInstanceId, leaseId } = await activeOwnerRaid(
+      ownerId,
+      kabanda.id,
+      'route-batch',
+    )
+    const capturedAt = new Date().toISOString()
+    const firstInput = {
+      schemaVersion: 1 as const,
+      leaseId,
+      clientInstanceId,
+      samples: [
+        {
+          operationId: 'route-sample-three',
+          sequence: 3,
+          capturedAt,
+          latitude: 56.85,
+          longitude: 53.2,
+          accuracyM: 8,
+        },
+        {
+          operationId: 'route-sample-one',
+          sequence: 1,
+          capturedAt,
+          latitude: 56.8501,
+          longitude: 53.2001,
+          accuracyM: 8,
+        },
+      ],
+    }
+    const first = await raidService!.submitRouteBatch(
+      ownerId,
+      acquired.raid.id,
+      firstInput,
+      'route-batch-first',
+    )
+    expect(first.batchId).toBe('route-batch-first')
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        acquired.raid.id,
+        firstInput,
+        'route-batch-first',
+      ),
+    ).resolves.toEqual(first)
+    await expect(
+      raidService!.command(
+        ownerId,
+        acquired.raid.id,
+        'pause',
+        { expectedVersion: acquired.raid.version },
+        'route-batch-first',
+      ),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+    await raidService!.acquireNavigatorLease(
+      ownerId,
+      acquired.raid.id,
+      { expectedVersion: acquired.raid.version, clientInstanceId },
+      'route-command-shared-key',
+    )
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        acquired.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId,
+          clientInstanceId,
+          samples: [{
+            operationId: 'route-cross-namespace-sample',
+            sequence: 4,
+            capturedAt: new Date().toISOString(),
+            latitude: 56.85,
+            longitude: 53.2,
+            accuracyM: 8,
+          }],
+        },
+        'route-command-shared-key',
+      ),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+    expect(first.accepted).toHaveLength(2)
+    expect(first.routeStatus).toMatchObject({ status: 'fresh', missingSequenceCount: 1 })
+
+    const filled = await raidService!.submitRouteBatch(
+      ownerId,
+      acquired.raid.id,
+      {
+        schemaVersion: 1,
+        leaseId,
+        clientInstanceId,
+        samples: [
+          {
+            operationId: 'route-sample-two',
+            sequence: 2,
+            capturedAt: new Date().toISOString(),
+            latitude: 56.8502,
+            longitude: 53.2002,
+            accuracyM: 8,
+          },
+        ],
+      },
+      'route-batch-fill-gap',
+    )
+    expect(filled.routeStatus.missingSequenceCount).toBe(0)
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        acquired.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId,
+          clientInstanceId,
+          samples: [
+            {
+              operationId: 'route-sample-two-conflict',
+              sequence: 2,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.86,
+              longitude: 53.21,
+              accuracyM: 9,
+            },
+          ],
+        },
+        'route-batch-conflict',
+      ),
+    ).rejects.toMatchObject({ code: 'ROUTE_SAMPLE_CONFLICT' })
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        acquired.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId,
+          clientInstanceId,
+          samples: [
+            {
+              operationId: 'route-outside-izhevsk',
+              sequence: 4,
+              capturedAt: new Date().toISOString(),
+              latitude: 55.75,
+              longitude: 37.62,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'route-batch-outside',
+      ),
+    ).rejects.toMatchObject({ code: '23514' })
+    expect(
+      Number(
+        (
+          await pool!.query('SELECT count(*) FROM raid_route_samples WHERE raid_id = $1', [
+            acquired.raid.id,
+          ])
+        ).rows[0]?.count,
+      ),
+    ).toBe(3)
+  })
+
+  it('closes route leases across pause, resume and explicit recovery', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('route-cutover')
+    const active = await activeOwnerRaid(ownerId, kabanda.id, 'route-cutover')
+    const paused = await raidService!.command(
+      ownerId,
+      active.acquired.raid.id,
+      'pause',
+      { expectedVersion: active.acquired.raid.version },
+      'route-pause-cutover',
+    )
+    expect(paused.raid.routeStatus.status).toBe('paused')
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        paused.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId: active.leaseId,
+          clientInstanceId: active.clientInstanceId,
+          samples: [
+            {
+              operationId: 'paused-old-sample',
+              sequence: 1,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.85,
+              longitude: 53.2,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'paused-old-batch',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_SUPERSEDED' })
+
+    const resumed = await raidService!.command(
+      ownerId,
+      paused.raid.id,
+      'resume',
+      { expectedVersion: paused.raid.version },
+      'route-resume-generation',
+    )
+    expect(resumed.raid.routeStatus.status).toBe('awaiting_lease')
+    expect(resumed.raid.navigatorLease!.generation).toBe(2)
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        resumed.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId: active.leaseId,
+          clientInstanceId: active.clientInstanceId,
+          samples: [
+            {
+              operationId: 'resumed-old-sample',
+              sequence: 1,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.85,
+              longitude: 53.2,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'resumed-old-batch',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_SUPERSEDED' })
+
+    const nextClient = randomUUID()
+    const acquired = await raidService!.acquireNavigatorLease(
+      ownerId,
+      resumed.raid.id,
+      { expectedVersion: resumed.raid.version, clientInstanceId: nextClient },
+      'route-acquire-after-resume',
+    )
+    await expect(
+      raidService!.recoverNavigatorLease(
+        ownerId,
+        resumed.raid.id,
+        { expectedVersion: resumed.raid.version, clientInstanceId: nextClient },
+        'route-recover-same-client',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_ALREADY_CURRENT' })
+    const unchanged = await raidService!.getRaid(ownerId, resumed.raid.id)
+    expect(unchanged.navigatorLease).toEqual(acquired.raid.navigatorLease)
+    const recoveredClient = randomUUID()
+    const recovered = await raidService!.recoverNavigatorLease(
+      ownerId,
+      resumed.raid.id,
+      { expectedVersion: resumed.raid.version, clientInstanceId: recoveredClient },
+      'route-explicit-recover',
+    )
+    expect(recovered.raid.navigatorLease!.generation).toBe(3)
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        resumed.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId: acquired.raid.navigatorLease!.id,
+          clientInstanceId: nextClient,
+          samples: [
+            {
+              operationId: 'recovered-old-sample',
+              sequence: 1,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.85,
+              longitude: 53.2,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'recovered-old-batch',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_SUPERSEDED' })
+  })
+
+  it('cuts over handoff atomically and privacy-gates a removed navigator receipt', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('route-handoff')
+    const memberId = await user('route-handoff-member@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'handoff-member-join')
+    const created = await raidService!.createDraft(
+      ownerId,
+      kabanda.id,
+      { title: 'Handoff route' },
+      'handoff-route-create',
+    )
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'open-lobby',
+      { expectedVersion: 1 },
+      'handoff-route-lobby',
+    )
+    await raidService!.command(
+      memberId,
+      created.raid.id,
+      'accept',
+      { expectedVersion: 2 },
+      'handoff-route-accept',
+    )
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'assign-navigator',
+      { expectedVersion: 3, navigatorUserId: ownerId },
+      'handoff-route-initial-nav',
+    )
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'ready',
+      { expectedVersion: 4 },
+      'handoff-route-ready',
+    )
+    await raidService!.reportReadiness(
+      ownerId,
+      created.raid.id,
+      { expectedVersion: 5, ...readiness() },
+      'handoff-route-readiness',
+    )
+    const started = await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'start',
+      { expectedVersion: 5 },
+      'handoff-route-start',
+    )
+    const ownerClient = randomUUID()
+    const ownerLease = await raidService!.acquireNavigatorLease(
+      ownerId,
+      created.raid.id,
+      { expectedVersion: 6, clientInstanceId: ownerClient },
+      'handoff-route-owner-acquire',
+    )
+    const handedOff = await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'handoff-navigator',
+      { expectedVersion: 6, navigatorUserId: memberId },
+      'handoff-route-command',
+    )
+    expect(handedOff.raid).toMatchObject({ version: 7, navigatorUserId: memberId })
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        created.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId: ownerLease.raid.navigatorLease!.id,
+          clientInstanceId: ownerClient,
+          samples: [
+            {
+              operationId: 'handoff-old-operation',
+              sequence: 1,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.85,
+              longitude: 53.2,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'handoff-old-batch',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_SUPERSEDED' })
+
+    const memberClients = [randomUUID(), randomUUID()]
+    const claims = await Promise.allSettled(
+      memberClients.map((clientInstanceId, index) =>
+        raidService!.acquireNavigatorLease(
+          memberId,
+          created.raid.id,
+          { expectedVersion: 7, clientInstanceId },
+          `handoff-member-acquire-${index}`,
+        ),
+      ),
+    )
+    expect(claims.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+    expect(claims.filter(({ status }) => status === 'rejected')).toHaveLength(1)
+    const winnerIndex = claims.findIndex(({ status }) => status === 'fulfilled')
+    const memberClient = memberClients[winnerIndex]!
+    const winner = claims[winnerIndex]
+    if (!winner || winner.status !== 'fulfilled') throw new Error('Lease claim had no winner')
+    const memberLease = winner.value
+    const memberInput = {
+      schemaVersion: 1 as const,
+      leaseId: memberLease.raid.navigatorLease!.id,
+      clientInstanceId: memberClient,
+      samples: [
+        {
+          operationId: 'handoff-member-operation',
+          sequence: 1,
+          capturedAt: new Date().toISOString(),
+          latitude: 56.851,
+          longitude: 53.201,
+          accuracyM: 7,
+        },
+      ],
+    }
+    const memberBatch = await raidService!.submitRouteBatch(
+      memberId,
+      created.raid.id,
+      memberInput,
+      'handoff-member-batch',
+    )
+    expect(memberBatch.accepted).toHaveLength(1)
+    await service!.removeMember(ownerId, kabanda.id, memberId)
+    await expect(
+      raidService!.submitRouteBatch(
+        memberId,
+        created.raid.id,
+        memberInput,
+        'handoff-member-batch',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+    expect(started.raid.routeStatus.status).toBe('awaiting_lease')
   })
 
   it('does not replay a private receipt after membership removal', async () => {

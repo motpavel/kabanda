@@ -26,6 +26,9 @@ function isRaidProjection(value: unknown): value is RaidProjection {
     typeof raid.title === 'string' &&
     typeof raid.state === 'string' &&
     typeof raid.version === 'number' &&
+    Boolean(raid.routeStatus) &&
+    typeof raid.routeStatus?.status === 'string' &&
+    (raid.navigatorLease === null || typeof raid.navigatorLease?.id === 'string') &&
     Array.isArray(raid.allowedActions) &&
     Array.isArray(raid.participants)
   )

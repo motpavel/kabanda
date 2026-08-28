@@ -71,6 +71,7 @@ export type RaidAction =
   | 'decline'
   | 'ready'
   | 'assign-navigator'
+  | 'handoff-navigator'
   | 'start'
   | 'pause'
   | 'resume'
@@ -88,6 +89,8 @@ export function isRaidStateTransitionAllowed(state: RaidState, action: RaidActio
       return state === 'lobby'
     case 'pause':
       return state === 'active'
+    case 'handoff-navigator':
+      return state === 'active' || state === 'paused'
     case 'resume':
       return state === 'paused'
     case 'cancel':
@@ -110,6 +113,9 @@ export function getRaidAllowedActions(input: {
     }
     if (input.state === 'active') actions.push('pause')
     if (input.state === 'paused') actions.push('resume')
+    if (input.state === 'active' || input.state === 'paused') {
+      actions.push('handoff-navigator')
+    }
     if (isRaidStateTransitionAllowed(input.state, 'cancel')) actions.push('cancel')
   }
   if (input.state === 'lobby' && input.participantState === 'invited') {
@@ -119,4 +125,19 @@ export function getRaidAllowedActions(input: {
     actions.push('ready')
   }
   return actions
+}
+
+export type RouteStatusCode = 'awaiting_lease' | 'fresh' | 'stale' | 'paused' | 'stopped'
+
+export function getRouteStatusCode(input: {
+  raidState: RaidState
+  leaseClaimed: boolean
+  leaseHeartbeatFresh: boolean
+  sampleAgeSeconds: number | null
+}): RouteStatusCode {
+  if (input.raidState === 'paused') return 'paused'
+  if (input.raidState !== 'active') return 'stopped'
+  if (!input.leaseClaimed) return 'awaiting_lease'
+  if (!input.leaseHeartbeatFresh) return 'stale'
+  return input.sampleAgeSeconds !== null && input.sampleAgeSeconds <= 15 ? 'fresh' : 'stale'
 }

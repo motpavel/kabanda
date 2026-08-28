@@ -4,6 +4,8 @@ import { PrototypePage } from '../features/prototype/PrototypePage'
 import { InvitePage } from '../features/kabandas/InvitePage'
 import { KabandasPage } from '../features/kabandas/KabandasPage'
 import { RaidApp } from '../features/raids/RaidApp'
+import { PwaUpdateGate } from '../features/raids/PwaUpdateGate'
+import { RecordingRuntimeProvider } from '../features/raids/recording/runtime'
 import { parseRaidRoute } from '../features/raids/routing'
 
 export function App() {
@@ -11,6 +13,10 @@ export function App() {
   if (window.location.pathname.endsWith('/prototype')) return <PrototypePage />
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab')) return <CapabilityLabPage />
+  return <RecordingRuntimeProvider><AppRoute /><PwaUpdateGate /></RecordingRuntimeProvider>
+}
+
+function AppRoute() {
   const raidRoute = parseRaidRoute(window.location.search)
   if (raidRoute.kind !== 'home') return <RaidApp route={raidRoute} />
   return <KabandasPage />

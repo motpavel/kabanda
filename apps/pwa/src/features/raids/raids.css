@@ -341,6 +341,90 @@
   background: transparent !important;
 }
 
+.route-recorder {
+  display: grid;
+  gap: 14px;
+}
+
+.route-recorder__signal {
+  border: 1px solid var(--kb-line);
+  border-radius: 999px;
+  color: var(--kb-muted);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .06em;
+  padding: 6px 9px;
+  text-transform: uppercase;
+}
+
+.route-recorder__signal--fresh {
+  background: #e9f5ec;
+  border-color: #b7d8c0;
+  color: #28643d;
+}
+
+.route-recorder__signal--stale,
+.route-recorder__signal--blocked,
+.route-recorder__signal--error {
+  background: #fff0ed;
+  border-color: #efc0b7;
+  color: #9d3f2e;
+}
+
+.route-recorder__metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.route-recorder__metrics div {
+  background: var(--kb-surface-subtle, #f1f2f0);
+  border-radius: 12px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.route-recorder__metrics span {
+  color: var(--kb-muted);
+  font-size: .72rem;
+}
+
+.route-recorder__metrics strong {
+  font-size: .94rem;
+  overflow-wrap: anywhere;
+}
+
+.route-recorder__wake {
+  color: var(--kb-muted);
+  font-size: .82rem;
+  margin: 0;
+}
+
+.route-recorder__wake--held { color: #28643d; }
+
+.pwa-update-gate {
+  align-items: flex-start;
+  background: #232a35;
+  border-radius: 14px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  box-shadow: 0 12px 32px rgb(20 25 33 / 24%);
+  color: #fff;
+  display: grid;
+  gap: 5px;
+  left: 50%;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 13px 15px;
+  position: fixed;
+  transform: translateX(-50%);
+  width: 100%;
+  z-index: 30;
+}
+
+.pwa-update-gate span { color: #d7dbe2; font-size: .82rem; }
+.pwa-update-gate button { justify-self: start; margin-top: 4px; }
+
 .raid-auth,
 .raid-empty {
   width: min(100%, 540px);

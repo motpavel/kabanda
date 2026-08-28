@@ -3,6 +3,9 @@ import type {
   CreateRaidInput,
   RaidAllowedAction,
   RaidProjection,
+  RouteBatchInput,
+  RouteBatchResponse,
+  RouteLeaseResponse,
   ReadinessReportInput,
   ReadinessReportResponse,
 } from './types'
@@ -23,6 +26,38 @@ export async function createRaid(
   return response.raid
 }
 
+export function requestRouteLease(
+  raidId: string,
+  action: 'acquire' | 'recover',
+  expectedVersion: number,
+  clientInstanceId: string,
+  idempotencyKey: string,
+): Promise<RouteLeaseResponse> {
+  return requestJson<RouteLeaseResponse>(
+    `/api/raids/${encodeURIComponent(raidId)}/route/lease/${action}`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ expectedVersion, clientInstanceId }),
+    },
+  )
+}
+
+export function sendRouteBatch(
+  raidId: string,
+  batchId: string,
+  input: RouteBatchInput,
+): Promise<RouteBatchResponse> {
+  return requestJson<RouteBatchResponse>(
+    `/api/raids/${encodeURIComponent(raidId)}/route/batches`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': batchId },
+      body: JSON.stringify(input),
+    },
+  )
+}
+
 export async function listActionableRaids(kabandaId: string): Promise<RaidProjection[]> {
   const response = await requestJson<{ raids: RaidProjection[] }>(
     `/api/kabandas/${encodeURIComponent(kabandaId)}/raids?scope=actionable`,
@@ -39,7 +74,7 @@ export async function getRaid(raidId: string): Promise<RaidProjection> {
 
 export async function sendRaidCommand(
   raidId: string,
-  command: Extract<RaidAllowedAction, 'open-lobby' | 'assign-navigator' | 'start' | 'pause' | 'resume' | 'cancel'>,
+  command: Extract<RaidAllowedAction, 'open-lobby' | 'assign-navigator' | 'start' | 'pause' | 'resume' | 'cancel' | 'handoff-navigator'>,
   expectedVersion: number,
   idempotencyKey: string,
   extra?: { navigatorUserId: string },

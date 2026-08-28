@@ -54,6 +54,7 @@ import type {
   ReadinessReportInput,
   ReadinessStatus,
 } from './types'
+import { ActiveRaidPanel } from './recording/ActiveRaidPanel'
 import './raids.css'
 
 type RaidIdentity = { id: string }
@@ -292,6 +293,7 @@ function RaidDetailPage({
     report: RaidReadinessSummary
   } | null>(null)
   const [navigatorId, setNavigatorId] = useState('')
+  const [handoffNavigatorId, setHandoffNavigatorId] = useState('')
   const operationKeys = useRef(new Map<string, string>())
   const pendingReadiness = useRef<{
     key: string
@@ -431,6 +433,9 @@ function RaidDetailPage({
 
   const readinessRows = localFacts ? buildReadinessRows(localFacts) : []
   const navigatorCandidates = raid.participants.filter(({ state }) => state === 'accepted' || state === 'ready')
+  const handoffCandidates = raid.participants.filter(
+    ({ id, state }) => state === 'active' && id !== raid.navigatorUserId,
+  )
   const readinessStatus: ReadinessStatus = raid.navigatorBlockers.length
     ? 'fail'
     : raid.navigatorReady
@@ -483,10 +488,50 @@ function RaidDetailPage({
       )}
 
       {(raid.state === 'active' || raid.state === 'paused' || raid.state === 'finalizing') && (
-        <section className="kb-card raid-active-summary"><p className="kb-kicker">Рейд подтверждён сервером</p><h2>{raid.state === 'active' ? 'Команда в пути' : raid.state === 'paused' ? 'Запись на паузе' : 'Собираем итог'}</h2><p className="kb-muted">Навигатор: {navigatorParticipant?.displayName ?? 'не назначен'}. Tracking и чекины появятся в следующем срезе — здесь не имитируем их локальным флагом.</p></section>
+        <ActiveRaidPanel
+          identityId={user.id}
+          raid={raid}
+          staleProjection={resource.stale}
+          serverPrimary={primary}
+          operationPending={Boolean(operation)}
+          onServerPrimary={() => void handlePrimary()}
+          onCanonicalRefresh={resource.refresh}
+          onApplyRaid={resource.applyRaid}
+        />
       )}
 
-      {primary && (
+      {allowed.has('handoff-navigator') && !resource.stale && handoffCandidates.length > 0 && (
+        <section className="kb-card raid-handoff">
+          <p className="kb-kicker">Передача навигации</p>
+          <h2>Сменить устройство и навигатора</h2>
+          <p className="kb-muted">
+            После подтверждения старый lease закроется сразу. Его неприсланные точки уже не войдут в канонический маршрут.
+          </p>
+          <div className="raid-assign">
+            <label htmlFor="handoff-navigator">Новый навигатор</label>
+            <select
+              id="handoff-navigator"
+              value={handoffNavigatorId}
+              onChange={(event) => setHandoffNavigatorId(event.target.value)}
+            >
+              <option value="">Выберите активного участника</option>
+              {handoffCandidates.map((participant) => (
+                <option key={participant.id} value={participant.id}>{participant.displayName}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!handoffNavigatorId || operation === 'handoff-navigator'}
+              onClick={() => window.confirm('Передать запись маршрута другому навигатору сейчас?') &&
+                applyCommand('handoff-navigator', { navigatorUserId: handoffNavigatorId })}
+            >
+              {operation === 'handoff-navigator' ? 'Передаём…' : 'Передать маршрут'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {primary && raid.state !== 'active' && raid.state !== 'paused' && raid.state !== 'finalizing' && (
         <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && !navigator.onLine)} onClick={handlePrimary}>{operation ? 'Подтверждаем…' : primary.label}</button>
       )}
       {allowed.has('cancel') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'cancel'} onClick={() => window.confirm('Отменить рейд для всей команды?') && applyCommand('cancel')}>Отменить рейд</button>}
