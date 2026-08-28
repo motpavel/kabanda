@@ -4,6 +4,9 @@ export default defineConfig({
   entry: {
     server: 'src/server.ts',
     migrate: 'src/migrate.ts',
+    'import-alpha': 'src/import-alpha.ts',
+    'alpha-access': 'src/alpha-access-cli.ts',
+    'alpha-rollback': 'src/alpha-rollback-cli.ts',
   },
   format: ['esm'],
   platform: 'node',

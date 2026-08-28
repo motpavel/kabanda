@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetSt
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
-import { getCurrentUser, requestMagicLink } from '../auth/api'
+import { getCurrentUser, loginWithPassword, logout, requestMagicLink } from '../auth/api'
+import { InstallGuidance } from '../install/InstallGuidance'
+import { getIdentityLocalInventory, type IdentityLocalInventory } from '../offline/inventory'
 import {
   createKabanda,
   createInvite,
@@ -16,6 +18,7 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
+import { loadMapLibre } from './maplibre'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
 import { RaidHistory } from '../results/RaidHistory'
 import type {
@@ -49,20 +52,28 @@ export function KabandasPage() {
     return <main className="kb-shell kb-center" aria-busy="true">Загружаем КАБАНДУ…</main>
   }
   if (session.state === 'anonymous') return <SignInPanel />
-  return <AuthenticatedKabandas user={session.user} />
+  return <AuthenticatedKabandas user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
 }
 
 function SignInPanel() {
+  const [mode, setMode] = useState<'password' | 'email'>('password')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [email, setEmail] = useState('')
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!email || state === 'sending') return
+    if (state === 'sending') return
     setState('sending')
     try {
-      await requestMagicLink(email, appPath('app'))
-      setState('sent')
+      if (mode === 'password') {
+        await loginWithPassword(username, password)
+        window.location.reload()
+      } else {
+        await requestMagicLink(email, appPath('app'))
+        setState('sent')
+      }
     } catch {
       setState('error')
     }
@@ -72,32 +83,43 @@ function SignInPanel() {
     <main className="kb-shell kb-center">
       <section className="kb-card kb-auth-card">
         <Brand />
-        <p className="kb-kicker">Вход без пароля</p>
+        <p className="kb-kicker">Вход в Кабанду</p>
         <h1>Ваши места — только вашей команде</h1>
-        <p className="kb-muted">Получите одноразовую ссылку на почту. После входа откроются Кабанды, участники и точки.</p>
+        <p className="kb-muted">Введите логин и пароль, которые придумали при вступлении по приглашению.</p>
         {state === 'sent' ? (
           <p className="kb-notice" role="status">Ссылка отправлена. Откройте письмо на этом устройстве.</p>
         ) : (
           <form onSubmit={submit}>
-            <label htmlFor="kb-email">Электронная почта</label>
-            <input id="kb-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+            {mode === 'password' ? <>
+              <label htmlFor="kb-username">Логин</label>
+              <input id="kb-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} />
+              <label htmlFor="kb-password">Пароль</label>
+              <input id="kb-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} />
+            </> : <>
+              <label htmlFor="kb-email">Электронная почта</label>
+              <input id="kb-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+            </>}
             <button className="kb-primary" type="submit" disabled={state === 'sending'}>
-              {state === 'sending' ? 'Отправляем…' : 'Получить ссылку'}
+              {state === 'sending' ? 'Входим…' : mode === 'password' ? 'Войти' : 'Получить ссылку'}
             </button>
           </form>
         )}
-        {state === 'error' && <p className="kb-error" role="alert">Не удалось отправить ссылку. Проверьте соединение и повторите.</p>}
+        {state === 'error' && <p className="kb-error" role="alert">Не удалось войти. Проверьте данные и повторите.</p>}
+        {state !== 'sent' && <button className="kb-text-action" type="button" onClick={() => { setMode((value) => value === 'password' ? 'email' : 'password'); setState('idle') }}>{mode === 'password' ? 'Войти через почту' : 'Войти по логину и паролю'}</button>}
       </section>
     </main>
   )
 }
 
-function AuthenticatedKabandas({ user }: { user: User }) {
+function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut: () => void }) {
   const [kabandas, setKabandas] = useState<KabandaSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
+  const [inventory, setInventory] = useState<IdentityLocalInventory | null>(null)
+  const [accountState, setAccountState] = useState<'idle' | 'loading' | 'leaving' | 'error'>('idle')
   const requestedKabandaId = new URLSearchParams(window.location.search).get('kabanda')
 
   useEffect(() => {
@@ -128,23 +150,72 @@ function AuthenticatedKabandas({ user }: { user: User }) {
       return next
     })
   }
+  const toggleAccount = () => {
+    const next = !showAccount
+    setShowAccount(next)
+    if (!next) return
+    setAccountState('loading')
+    void getIdentityLocalInventory(user.id)
+      .then((value) => {
+        setInventory(value)
+        setAccountState('idle')
+      })
+      .catch(() => setAccountState('error'))
+  }
+  const leaveAccount = async () => {
+    if (accountState === 'leaving') return
+    setAccountState('leaving')
+    try {
+      const latestInventory = await getIdentityLocalInventory(user.id)
+      if (!latestInventory) throw new Error('Active identity changed before logout')
+      setInventory(latestInventory)
+      if (latestInventory.activeRecordings > 0) {
+        setAccountState('idle')
+        return
+      }
+      await logout()
+      onLoggedOut()
+    } catch {
+      setAccountState('error')
+    }
+  }
 
   return (
     <main className="kb-shell">
       <header className="kb-topbar">
         <Brand />
-        <div className="kb-identity" aria-label={`Выполнен вход: ${user.displayName ?? user.email}`}>
-          <span>{(user.displayName ?? user.email).slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName ?? 'Участник'}</strong><small>{user.email}</small></div>
-        </div>
+        <button className="kb-identity kb-account-trigger" type="button" aria-expanded={showAccount} aria-controls="kb-account-panel" onClick={toggleAccount} aria-label={`Аккаунт: ${user.displayName ?? user.username ?? user.email ?? 'Участник'}`}>
+          <span>{(user.displayName ?? user.username ?? user.email ?? 'У').slice(0, 1).toUpperCase()}</span>
+          <div><strong>{user.displayName ?? user.username ?? 'Участник'}</strong><small>{user.username ? `@${user.username}` : user.email}</small></div>
+        </button>
       </header>
+
+      {showAccount && (
+        <section className="kb-card kb-account-panel" id="kb-account-panel" aria-label="Аккаунт">
+          <div><p className="kb-kicker">Аккаунт</p><h2>{user.displayName ?? user.username ?? 'Участник'}</h2><p className="kb-muted">{user.username ? `@${user.username}` : user.email}</p></div>
+          {accountState === 'loading' ? <p className="kb-muted" aria-busy="true">Проверяем локальные данные…</p> : null}
+          {inventory && inventory.activeRecordings > 0 ? (
+            <p className="kb-error" role="alert">Сейчас записывается маршрут. Вернитесь в рейд и остановите запись перед сменой аккаунта.</p>
+          ) : inventory && inventory.total > 0 ? (
+            <p className="kb-notice" role="status">Локально осталось операций: {inventory.total}. Они сохранятся на устройстве и останутся привязаны только к этому аккаунту.</p>
+          ) : inventory ? (
+            <p className="kb-muted">Локальных операций, ожидающих синхронизацию, нет.</p>
+          ) : null}
+          {accountState === 'error' && <p className="kb-error" role="alert">Не удалось проверить данные или завершить выход. Проверьте соединение и повторите.</p>}
+          <button className="kb-danger-action" type="button" disabled={accountState === 'loading' || accountState === 'leaving' || (inventory?.activeRecordings ?? 0) > 0} onClick={() => void leaveAccount()}>
+            {accountState === 'leaving' ? 'Выходим…' : 'Выйти и сменить аккаунт'}
+          </button>
+        </section>
+      )}
 
       <section className="kb-heading-row">
         <div><p className="kb-kicker">Команды</p><h1>Мои Кабанды</h1></div>
-        <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>
+        {user.identityKind === 'verified' && <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>}
       </section>
 
-      {showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
+      <InstallGuidance />
+
+      {user.identityKind === 'verified' && showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
       {error && <p className="kb-error" role="alert">{error}</p>}
       {loading ? <p className="kb-muted" aria-busy="true">Загружаем команды…</p> : null}
 
@@ -351,7 +422,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     if (!container) return
     let destroyed = false
     let teardown: (() => void) | undefined
-    void import('maplibre-gl').then(({ Map, Marker, NavigationControl }) => {
+    void loadMapLibre().then(({ Map, Marker, NavigationControl }) => {
       if (destroyed) return
       const map = new Map({
         container,

@@ -9,7 +9,7 @@ import {
 import type { GeographicBounds } from '@kabanda/domain'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import type { AuthService } from './auth.js'
+import { createPasswordHash, type AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
 import type { KabandaService } from './kabandas.js'
 
@@ -62,6 +62,11 @@ export async function registerKabandaRoutes(
   app.post('/api/kabandas', async (request, reply) => {
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)
+    if (user.identityKind !== 'verified') {
+      return reply.status(403).send({
+        error: { code: 'VERIFIED_ACCOUNT_REQUIRED', message: 'Создавать команды может только организатор' },
+      })
+    }
     const input = createKabandaSchema.parse(request.body)
     const kabanda = await dependencies.kabandas.createKabanda(
       user.id,
@@ -144,15 +149,42 @@ export async function registerKabandaRoutes(
     return { invite }
   })
 
-  app.post('/api/invites/accept', async (request, reply) => {
+  app.post('/api/invites/accept', { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const user = await currentUser(request, dependencies)
-    if (!user) return authRequired(reply)
     const input = acceptInviteContinuationSchema.parse(request.body)
-    const kabanda = await dependencies.kabandas.acceptInvite(
-      user.id,
-      input.continuation,
-      idempotencyKey(request),
-    )
+    let kabanda
+    if (user) {
+      kabanda = await dependencies.kabandas.acceptInvite(
+        user.id,
+        input.continuation,
+        idempotencyKey(request),
+      )
+    } else {
+      if (!('username' in input)) {
+        return reply.status(400).send({
+          error: { code: 'REGISTRATION_REQUIRED', message: 'Придумайте логин и пароль' },
+        })
+      }
+      const accepted = await dependencies.kabandas.acceptInviteWithCredentials(
+        input.continuation,
+        idempotencyKey(request),
+        { username: input.username, passwordHash: await createPasswordHash(input.password) },
+      )
+      kabanda = accepted.kabanda
+      reply.setCookie(dependencies.config.cookieName, accepted.rawSessionToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: dependencies.config.secureCookies,
+        path: '/',
+        maxAge: dependencies.config.SESSION_TTL_DAYS * 24 * 60 * 60,
+      })
+    }
+    reply.clearCookie(pendingInviteCookieName(dependencies.config), {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: dependencies.config.secureCookies,
+      path: '/',
+    })
     return { kabanda }
   })
 

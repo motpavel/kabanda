@@ -7,7 +7,8 @@
 ```text
 apps/pwa ── same-origin /api ──> apps/api ──> PostgreSQL + PostGIS
     │                                │              └─> private normalized media BYTEA
-    └─ IndexedDB identity ledger     └─> transactional email
+    └─ IndexedDB identity ledger     ├─> invite login/password auth
+                                     └─> legacy transactional email
 
 packages/contracts — проверяемые HTTP DTO
 packages/domain    — чистые правила без React/Fastify/PostgreSQL
@@ -18,7 +19,7 @@ packages/domain    — чистые правила без React/Fastify/PostgreS
 - Один API и одна база проще отлаживать и выкатывать.
 - Сервер владеет авторизацией, жизненным циклом рейда, геопроверкой и итогами.
 - PWA не хранит session token в localStorage/IndexedDB/URL; браузер получает HttpOnly cookie.
-- Одноразовое подтверждение входа приходит во fragment, который не отправляется серверу и сразу удаляется из address bar; GET ничего не потребляет, обмен выполняет явный same-origin POST.
+- Сырой invite приходит во fragment, не отправляется серверу и сразу удаляется из address bar; GET ничего не потребляет. Новый участник явно придумывает логин и пароль, а сервер хранит только versioned salted scrypt hash.
 - IndexedDB хранит только локальные операции, привязанные к identity, и повторяет их идемпотентно.
 - Logout очищает активную локальную identity: операции не replay-ятся без сессии и для другого пользователя, но сохраняются до повторного входа того же пользователя, чтобы не терять полевые данные.
 - PostGIS используется только там, где нужна серверная проверка расстояния.
@@ -34,11 +35,16 @@ packages/domain    — чистые правила без React/Fastify/PostgreS
 - Только роли `owner` и `member`. Передача ownership и универсальный RBAC не входят в alpha.
 - Создание Кабанды и принятие приглашения требуют idempotency key и выполняются транзакционно.
 - Сырой invite приходит во fragment `/invite#invite=…`, немедленно удаляется клиентом и обменивается
-  на короткоживущий opaque continuation в `HttpOnly; SameSite=Lax` cookie. Magic-link возвращает на
-  base-aware `/invite` без bearer-секрета в URL; standalone получает тот же cookie jar.
-- Idempotency key принятия детерминированно выводится из continuation через SHA-256. После потерянного
-  ответа reload восстанавливает pending cookie, а сервер возвращает уже принятое membership только тому
-  же авторизованному пользователю.
+  на короткоживущий opaque continuation в `HttpOnly; SameSite=Lax` cookie. Неавторизованный участник
+  выбирает уникальный login/password; user, alpha seat, membership, погашение invite и сессия создаются
+  одной транзакцией. Existing verified accounts по-прежнему могут использовать magic-link.
+- Invite identity может входить по логину с другого устройства и участвовать в приглашённых Кабандах,
+  но не может создавать собственную Кабанду. Username case-insensitive, password login rate-limited,
+  неизвестный логин и неверный пароль дают одинаковый внешний ответ.
+- Каждый успешно принятый invite занимает alpha seat под общим PostgreSQL quota lock; конкурентные
+  регистрации не могут превысить hard cap 20.
+- Idempotency key принятия детерминированно выводится из continuation через SHA-256. После успешного
+  commit сессия устанавливается HttpOnly cookie; повтор или конкурентный accept не создаёт второго user.
 - `APP_ORIGIN` хранит только origin для CSRF-проверки, а `APP_BASE_PATH` (`/` локально,
   `/kabanda/` для Pages) применяется к verification URL в письме и совпадает с Vite `BASE_URL`.
 - Авторизация приватных данных всегда строится как `session user -> active membership -> Kabanda`;

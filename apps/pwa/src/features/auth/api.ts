@@ -17,6 +17,16 @@ export async function verifyMagicLink(token: string): Promise<string> {
   return response.returnTo
 }
 
+export async function loginWithPassword(username: string, password: string): Promise<User> {
+  const response = await requestJson<{ user: unknown }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+  const user = userSchema.parse(response.user)
+  await activateIdentity(user.id)
+  return user
+}
+
 export async function getCurrentUser(): Promise<User> {
   try {
     const response = await requestJson<{ user: unknown }>('/api/me')
@@ -31,7 +41,7 @@ export async function getCurrentUser(): Promise<User> {
 
 export async function logout(): Promise<void> {
   try {
-    await requestJson<null>('/api/auth/logout', { method: 'POST' })
+    await requestJson<null>('/api/auth/logout', { method: 'POST', body: '{}' })
   } finally {
     await clearActiveIdentity()
   }

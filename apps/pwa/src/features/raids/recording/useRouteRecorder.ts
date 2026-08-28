@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../../lib/http'
+import { ageBucket, emitAlphaDiagnostic } from '../../../lib/diagnostics'
 import { requestRouteLease } from '../api'
 import type { RaidProjection, RouteStatusProjection } from '../types'
 import { replayRouteBatch } from './replay'
@@ -68,6 +69,8 @@ export function useRouteRecorder(input: {
   const leaseRequestInFlight = useRef(false)
   const flushRef = useRef<() => Promise<void>>(async () => undefined)
   const previousContext = useRef<RecorderContext | null>(null)
+  const previousPhase = useRef<RecorderPhase>(phase)
+  const previousRaidState = useRef(raid.state)
   const { setPhase: setRuntimePhase } = useRecordingRuntime()
   const tabId = useRef(getTabId()).current
 
@@ -152,6 +155,26 @@ export function useRouteRecorder(input: {
   useEffect(() => {
     setRuntimePhase(phase)
   }, [phase, setRuntimePhase])
+
+  useEffect(() => {
+    if (phase === 'stale' && previousPhase.current !== 'stale') {
+      void emitAlphaDiagnostic({
+        kind: 'gps_stale',
+        ageBucket: ageBucket(stats.lastPersistedSampleAt),
+      })
+    }
+    previousPhase.current = phase
+  }, [phase, stats.lastPersistedSampleAt])
+
+  useEffect(() => {
+    if (previousRaidState.current === 'active' && raid.state !== 'active') {
+      void emitAlphaDiagnostic({
+        kind: 'gps_stopped',
+        reason: raid.state === 'paused' ? 'raid_paused' : 'raid_closed',
+      })
+    }
+    previousRaidState.current = raid.state
+  }, [raid.state])
 
   useEffect(() => () => setRuntimePhase('ineligible'), [setRuntimePhase])
 
@@ -265,6 +288,7 @@ export function useRouteRecorder(input: {
           }
           if (result.kind === 'terminal') {
             failed = true
+            void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'lease_lost' })
             setMessage(result.authRequired
               ? 'Сессия истекла. Локальные точки сохранены; войдите снова для безопасного replay.'
               : 'Сервер завершил lease навигатора. Запись остановлена, состояние рейда обновляется.')
@@ -277,6 +301,7 @@ export function useRouteRecorder(input: {
             await onCanonicalRefresh()
           } else if (result.kind === 'fence-lost') {
             fence = null
+            void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'lease_lost' })
             await stopPageRecorder(false)
             updateDerivedPhase()
           }
@@ -317,6 +342,7 @@ export function useRouteRecorder(input: {
         await requestWakeLock()
         if (!navigator.geolocation) {
           blocked = true
+          void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'unknown' })
           setMessage('Geolocation API недоступен. Маршрут не записывается.')
           await stopPageRecorder(true)
           updateDerivedPhase()
@@ -342,6 +368,7 @@ export function useRouteRecorder(input: {
               if (cancelled) return
               if (!record) {
                 fence = null
+                void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'lease_lost' })
                 await stopPageRecorder(false)
                 safeSetPhase('standby')
                 return
@@ -362,6 +389,7 @@ export function useRouteRecorder(input: {
               if (cancelled) return
               recovering = false
               failed = true
+              void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'storage_error' })
               setMessage('Не удалось сохранить GPS в памяти устройства. Запись остановлена без потери уже сохранённых точек.')
               void stopPageRecorder(true).then(updateDerivedPhase)
             })
@@ -371,6 +399,14 @@ export function useRouteRecorder(input: {
             recovering = false
             blocked = error.code === error.PERMISSION_DENIED
             failed = !blocked
+            void emitAlphaDiagnostic({
+              kind: 'gps_stopped',
+              reason: error.code === error.PERMISSION_DENIED
+                ? 'permission_denied'
+                : error.code === error.POSITION_UNAVAILABLE
+                  ? 'position_unavailable'
+                  : error.code === error.TIMEOUT ? 'timeout' : 'unknown',
+            })
             setMessage(blocked
               ? 'Доступ к геолокации запрещён. Разрешите его в настройках браузера.'
               : `GPS остановился: ${error.message || 'неизвестная ошибка'}`)
@@ -388,6 +424,7 @@ export function useRouteRecorder(input: {
 
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') {
+        void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'page_hidden' })
         void stopPageRecorder(true).then(updateDerivedPhase)
       } else {
         void startPageRecorder()
@@ -416,6 +453,7 @@ export function useRouteRecorder(input: {
         if (cancelled) return
         if (!renewed) {
           fence = null
+          void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'lease_lost' })
           void stopPageRecorder(false).then(() => safeSetPhase('standby'))
         } else {
           fence = renewed

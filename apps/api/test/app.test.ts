@@ -1,11 +1,14 @@
-import type { User } from '@kabanda/contracts'
+import { alphaDiagnosticSignalSchema, type User } from '@kabanda/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   buildMagicLinkVerificationUrl,
   type AuthService,
   type VerifiedSession,
 } from '../src/auth.js'
-import { buildApp } from '../src/app.js'
+import { buildApp, privacySafeOperationRef } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import type { KabandaService } from '../src/kabandas.js'
 import {
@@ -20,6 +23,8 @@ import {
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
   email: 'pavel@example.com',
+  username: null,
+  identityKind: 'verified',
   displayName: 'Павел',
   avatarUrl: null,
 }
@@ -40,6 +45,7 @@ function createAuth(overrides: Partial<AuthService> = {}): AuthService {
   return {
     requestMagicLink: vi.fn().mockResolvedValue(undefined),
     verifyMagicLink: vi.fn().mockResolvedValue(null),
+    loginWithPassword: vi.fn().mockResolvedValue(null),
     getUser: vi.fn().mockResolvedValue(null),
     updateProfile: vi.fn().mockResolvedValue(null),
     revokeSession: vi.fn().mockResolvedValue(undefined),
@@ -59,6 +65,7 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
     previewInvite: vi.fn(),
     previewContinuation: vi.fn(),
     acceptInvite: vi.fn(),
+    acceptInviteWithCredentials: vi.fn(),
     listPoints: vi.fn().mockResolvedValue({ points: [], nextCursor: null }),
     ...overrides,
   }
@@ -99,28 +106,91 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
 }
 
 const apps: Array<Awaited<ReturnType<typeof buildApp>>> = []
+const temporaryDirectories: string[] = []
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()))
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })))
 })
 
 async function createTestApp(
   auth: AuthService,
   kabandas = createKabandas(),
   raids?: RaidService,
+  options: {
+    environment?: Record<string, string>
+    onDiagnosticSignal?: (signal: Parameters<NonNullable<import('../src/app.js').AppDependencies['onDiagnosticSignal']>>[0]) => void
+  } = {},
 ) {
   const app = await buildApp({
     auth,
     kabandas,
     ...(raids ? { raids } : {}),
-    config: loadConfig({ NODE_ENV: 'test' }),
+    config: loadConfig({ NODE_ENV: 'test', ...options.environment }),
     readiness: vi.fn().mockResolvedValue(undefined),
+    ...(options.onDiagnosticSignal ? { onDiagnosticSignal: options.onDiagnosticSignal } : {}),
   })
   apps.push(app)
   return app
 }
 
 describe('API foundation', () => {
+  it('accepts only the five bounded privacy-safe diagnostic signals', () => {
+    const common = {
+      schemaVersion: 1 as const,
+      signalId: 'f43b057b-4f76-4b85-a898-938e87271b51',
+      diagnosticSessionId: 'c97eff29-882f-4c52-a18f-d27bbbf3b896',
+      occurredAt: '2026-08-28T12:00:00.000Z',
+      clientBuild: 'eee8a18',
+      swBuild: 'eee8a18',
+      displayMode: 'standalone' as const,
+    }
+    expect(alphaDiagnosticSignalSchema.parse({ ...common, kind: 'gps_stale', ageBucket: '15_30s' }).kind).toBe('gps_stale')
+    expect(alphaDiagnosticSignalSchema.parse({ ...common, kind: 'gps_stopped', reason: 'timeout' }).kind).toBe('gps_stopped')
+    expect(alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'queue_stalled',
+      queue: 'route',
+      countBucket: '2_5',
+      oldestAgeBucket: '2_5m',
+      attemptBucket: '3_5',
+      errorClass: 'network',
+    }).kind).toBe('queue_stalled')
+    expect(alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'media_failed',
+      stage: 'upload',
+      terminal: false,
+      attemptBucket: '3_5',
+      errorClass: 'server',
+    }).kind).toBe('media_failed')
+    expect(alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'sw_mismatch',
+      state: 'waiting_deferred',
+      durableWorkBucket: '1_5',
+      recorderActive: true,
+      activeSwBuild: 'old',
+      waitingSwBuild: 'new',
+    }).kind).toBe('sw_mismatch')
+    expect(() => alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'gps_stale',
+      ageBucket: '15_30s',
+      latitude: 56.85,
+      token: 'private',
+      message: 'free text',
+    })).toThrow()
+  })
+
+  it('hashes operation references without exposing the idempotency key', () => {
+    const raw = 'customer-entered-operation-key'
+    const reference = privacySafeOperationRef(raw)
+    expect(reference).toMatch(/^[a-f0-9]{16}$/)
+    expect(reference).not.toContain(raw)
+    expect(privacySafeOperationRef(raw)).toBe(reference)
+  })
+
   it('derives stable upload capabilities from a dedicated secret and intent identity', () => {
     const args = [
       'test-media-capability-secret-at-least-32-bytes',
@@ -151,8 +221,154 @@ describe('API foundation', () => {
       loadConfig({
         NODE_ENV: 'production',
         MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+        ALPHA_ACCESS_MODE: 'enforced',
+        ALPHA_ACCESS_SECRET: 'production-alpha-access-secret-at-least-32-bytes',
       }),
     ).not.toThrow()
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+      }),
+    ).toThrow('ALPHA_ACCESS_MODE must be enforced in production')
+  })
+
+  it('requires HTTPS for a non-loopback production origin and paired SMTP credentials', () => {
+    const productionSecret = 'production-media-capability-secret-at-least-32-bytes'
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        MEDIA_CAPABILITY_SECRET: productionSecret,
+        ALPHA_ACCESS_MODE: 'enforced',
+        ALPHA_ACCESS_SECRET: 'production-alpha-access-secret-at-least-32-bytes',
+        APP_ORIGIN: 'http://preview.example.com',
+      }),
+    ).toThrow('APP_ORIGIN must use HTTPS outside loopback in production')
+    expect(() => loadConfig({ SMTP_USER: 'preview-user' })).toThrow(
+      'SMTP_USER and SMTP_PASSWORD must be configured together',
+    )
+    expect(() =>
+      loadConfig({ SMTP_USER: 'preview-user', SMTP_PASSWORD: 'preview-password' }),
+    ).toThrow('Authenticated SMTP requires implicit TLS or required STARTTLS')
+    expect(
+      loadConfig({
+        SMTP_USER: 'preview-user',
+        SMTP_PASSWORD: 'preview-password',
+        SMTP_REQUIRE_TLS: 'true',
+      }).SMTP_USER,
+    ).toBe('preview-user')
+  })
+
+  it('serves the production PWA with bounded caching and keeps API 404s as JSON', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kabanda-static-'))
+    temporaryDirectories.push(directory)
+    await mkdir(join(directory, 'assets'))
+    await mkdir(join(directory, 'api'))
+    await writeFile(join(directory, 'index.html'), '<!doctype html><title>Kabanda preview</title>')
+    await writeFile(join(directory, 'manifest.webmanifest'), '{"name":"Kabanda"}')
+    await writeFile(join(directory, 'sw.js'), 'self.addEventListener("fetch",()=>{})')
+    await writeFile(join(directory, 'assets', 'app-abc123.js'), 'globalThis.kabanda=true')
+    await writeFile(join(directory, 'api', 'me'), 'must-not-bypass-api-auth')
+
+    const app = await createTestApp(createAuth(), createKabandas(), undefined, {
+      environment: { PWA_DIST_DIR: directory, API_BUILD_ID: 'preview-build' },
+    })
+    const spa = await app.inject({
+      method: 'GET',
+      url: '/app',
+      headers: { accept: 'text/html,application/xhtml+xml' },
+    })
+    expect(spa.statusCode).toBe(200)
+    expect(spa.body).toContain('Kabanda preview')
+    expect(spa.headers['cache-control']).toBe('no-store')
+    expect(spa.headers['permissions-policy']).toContain('geolocation=(self)')
+    expect(spa.headers['x-kabanda-app-build']).toBe('preview-build')
+
+    const asset = await app.inject({ method: 'GET', url: '/assets/app-abc123.js' })
+    expect(asset.statusCode).toBe(200)
+    expect(asset.headers['cache-control']).toBe('public, max-age=31536000, immutable')
+
+    const missingAsset = await app.inject({
+      method: 'GET',
+      url: '/assets/missing.js',
+      headers: { accept: '*/*' },
+    })
+    expect(missingAsset.statusCode).toBe(404)
+    expect(missingAsset.headers['content-type']).toContain('application/json')
+
+    for (const path of ['/assets/../api/me', '/assets/%2E%2E/api/me']) {
+      const traversal = await app.inject({ method: 'GET', url: path, headers: { accept: '*/*' } })
+      expect(traversal.statusCode).toBe(401)
+      expect(traversal.body).not.toContain('must-not-bypass-api-auth')
+    }
+
+    const manifest = await app.inject({ method: 'GET', url: '/manifest.webmanifest' })
+    expect(manifest.headers['cache-control']).toBe('no-store')
+
+    const missingApi = await app.inject({ method: 'GET', url: '/api/not-real' })
+    expect(missingApi.statusCode).toBe(404)
+    expect(missingApi.json()).toEqual({
+      error: expect.objectContaining({ code: 'NOT_FOUND' }),
+    })
+    expect(missingApi.headers['content-type']).toContain('application/json')
+
+    const exactApi = await app.inject({
+      method: 'GET',
+      url: '/api?from=navigation',
+      headers: { accept: 'text/html' },
+    })
+    expect(exactApi.statusCode).toBe(404)
+    expect(exactApi.headers['content-type']).toContain('application/json')
+  })
+
+  it('fails closed on the wrong production host, protocol, or mutation origin', async () => {
+    const origin = 'https://preview.trycloudflare.com'
+    const app = await createTestApp(createAuth(), createKabandas(), undefined, {
+      environment: {
+        NODE_ENV: 'production',
+        APP_ORIGIN: origin,
+        TRUST_PROXY_ADDRESS: '127.0.0.1',
+        MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+        ALPHA_ACCESS_MODE: 'enforced',
+        ALPHA_ACCESS_SECRET: 'production-alpha-access-secret-at-least-32-bytes',
+      },
+    })
+    const canonicalHeaders = {
+      host: 'preview.trycloudflare.com',
+      'x-forwarded-proto': 'https',
+      origin,
+    }
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: canonicalHeaders,
+      remoteAddress: '127.0.0.1',
+    })
+    expect(accepted.statusCode).toBe(204)
+
+    const foreignOrigin = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { ...canonicalHeaders, origin: 'https://foreign.example' },
+      remoteAddress: '127.0.0.1',
+    })
+    expect(foreignOrigin.statusCode).toBe(403)
+
+    const wrongHost = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: '127.0.0.1:3000', 'x-forwarded-proto': 'https' },
+      remoteAddress: '127.0.0.1',
+    })
+    expect(wrongHost.statusCode).toBe(421)
+
+    const insecure = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: 'preview.trycloudflare.com' },
+      remoteAddress: '127.0.0.1',
+    })
+    expect(insecure.statusCode).toBe(400)
   })
 
   it('renders one deterministic metadata-free private PNG result card', async () => {
@@ -200,6 +416,118 @@ describe('API foundation', () => {
     const response = await app.inject({ method: 'GET', url: '/api/health' })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ status: 'ok', service: 'kabanda-api' })
+    expect(response.headers['x-kabanda-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(response.headers['x-kabanda-api-build']).toBe('dev')
+  })
+
+  it('adds error and hashed operation identifiers without echoing the raw key', async () => {
+    const app = await createTestApp(createAuth())
+    const rawKey = 'private-looking-operation-key'
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { origin: 'https://wrong.example', 'idempotency-key': rawKey },
+    })
+    const body = response.json()
+    expect(response.statusCode).toBe(403)
+    expect(body.error.errorId).toBe(response.headers['x-kabanda-request-id'])
+    expect(body.error.operationRef).toBe(privacySafeOperationRef(rawKey))
+    expect(response.headers['x-kabanda-operation-ref']).toBe(privacySafeOperationRef(rawKey))
+    expect(JSON.stringify(body)).not.toContain(rawKey)
+  })
+
+  it('accepts a bounded diagnostic signal only for an authenticated same-origin session', async () => {
+    const onDiagnosticSignal = vi.fn()
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      undefined,
+      { environment: { ALPHA_DIAGNOSTICS_ENABLED: 'true' }, onDiagnosticSignal },
+    )
+    const signal = {
+      schemaVersion: 1,
+      signalId: 'f43b057b-4f76-4b85-a898-938e87271b51',
+      diagnosticSessionId: 'c97eff29-882f-4c52-a18f-d27bbbf3b896',
+      occurredAt: '2026-08-28T12:00:00.000Z',
+      clientBuild: 'eee8a18',
+      swBuild: null,
+      displayMode: 'browser',
+      kind: 'gps_stopped',
+      reason: 'storage_error',
+    }
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: signal,
+    })
+    expect(accepted.statusCode).toBe(202)
+    expect(accepted.json()).toEqual({ accepted: true })
+    expect(onDiagnosticSignal).toHaveBeenCalledTimes(1)
+
+    const anonymous = await createTestApp(
+      createAuth(),
+      createKabandas(),
+      undefined,
+      { environment: { ALPHA_DIAGNOSTICS_ENABLED: 'true' } },
+    )
+    const denied = await anonymous.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: signal,
+    })
+    expect(denied.statusCode).toBe(401)
+
+    const sensitive = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: { ...signal, longitude: 53.2 },
+    })
+    expect(sensitive.statusCode).toBe(400)
+    expect(onDiagnosticSignal).toHaveBeenCalledTimes(1)
+
+    const oversized = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: { ...signal, forbiddenPadding: 'x'.repeat(5_000) },
+    })
+    expect(oversized.statusCode).toBe(413)
+    expect(onDiagnosticSignal).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the diagnostics endpoint disabled by default', async () => {
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }))
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: {},
+    })
+    expect(response.statusCode).toBe(404)
   })
 
   it('accepts a valid magic-link request without exposing a token', async () => {
@@ -249,6 +577,24 @@ describe('API foundation', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['set-cookie']).toContain('HttpOnly')
     expect(response.json()).toEqual({ returnTo: '/home' })
+  })
+
+  it('sets an HttpOnly cookie after a rate-limited password login', async () => {
+    const loginWithPassword = vi.fn().mockResolvedValue({
+      rawToken: 'password-session-token',
+      returnTo: '/',
+      user: { ...user, email: null, username: 'pavel', identityKind: 'invite' },
+    })
+    const app = await createTestApp(createAuth({ loginWithPassword }))
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: testOrigin },
+      payload: { username: 'pavel', password: 'long-password' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['set-cookie']).toContain('HttpOnly')
+    expect(loginWithPassword).toHaveBeenCalledWith('pavel', 'long-password')
   })
 
   it('allows only one winner for two concurrent exchanges', async () => {
@@ -308,6 +654,28 @@ describe('API foundation', () => {
     })
     expect(response.statusCode).toBe(201)
     expect(createKabanda).toHaveBeenCalledWith(user.id, 'Ночные кабаны', '🌙', 'create-1234')
+  })
+
+  it('does not let an invite identity create another Kabanda', async () => {
+    const inviteUser: User = {
+      ...user,
+      email: null,
+      username: 'invite-user',
+      identityKind: 'invite',
+    }
+    const createKabanda = vi.fn()
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(inviteUser) }),
+      createKabandas({ createKabanda }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/kabandas',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session', 'idempotency-key': 'create-1234' },
+      payload: { name: 'Чужая Кабанда', avatar: '🐗' },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(createKabanda).not.toHaveBeenCalled()
   })
 
   it('never places a raw invite token in a redirect', async () => {
@@ -406,6 +774,38 @@ describe('API foundation', () => {
     expect(response.statusCode).toBe(200)
     expect(previewContinuation).toHaveBeenCalledWith(invite.continuation, false, user.id)
     expect(response.json().invite.kabanda.name).toBe('Ночные кабаны')
+  })
+
+  it('registers an anonymous invite member and sets the session cookie atomically', async () => {
+    const acceptInviteWithCredentials = vi.fn().mockResolvedValue({
+      kabanda: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        name: 'Ночные кабаны',
+        avatar: '🌙',
+        role: 'member',
+        memberCount: 2,
+        pointsCollectionId: null,
+      },
+      rawSessionToken: 'invite-session-token',
+    })
+    const app = await createTestApp(
+      createAuth(),
+      createKabandas({ acceptInviteWithCredentials }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/invites/accept',
+      headers: { origin: testOrigin, 'idempotency-key': 'invite-register-1' },
+      payload: { continuation: 'c'.repeat(32), username: 'new-kaban', password: 'long-password' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(String(response.headers['set-cookie'])).toContain('kabanda_session=invite-session-token')
+    expect(String(response.headers['set-cookie'])).toContain('HttpOnly')
+    expect(acceptInviteWithCredentials).toHaveBeenCalledWith(
+      'c'.repeat(32),
+      'invite-register-1',
+      expect.objectContaining({ username: 'new-kaban', passwordHash: expect.stringMatching(/^scrypt\$v1\$/) }),
+    )
   })
 
   it('passes expectedVersion and Idempotency-Key to a named raid command', async () => {

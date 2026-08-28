@@ -65,11 +65,12 @@ export async function createInvite(kabandaId: string): Promise<CreatedInvite> {
 export async function acceptInvite(
   continuation: string,
   idempotencyKey: string,
+  credentials?: { username: string; password: string },
 ): Promise<KabandaSummary> {
   const response = await requestJson<{ kabanda: KabandaSummary }>('/api/invites/accept', {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ continuation }),
+    body: JSON.stringify({ continuation, ...credentials }),
   })
   return response.kabanda
 }

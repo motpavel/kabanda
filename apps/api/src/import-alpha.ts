@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import { loadConfig } from './config.js'
 import { createDatabase } from './database.js'
 import { DatabaseKabandaService, type ManifestPoint } from './kabandas.js'
+import { validateAlphaPointManifestsWithArtifacts } from '../../../scripts/validate-alpha-points.mjs'
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url) })
 
@@ -36,6 +37,15 @@ if (!kabandaId || !ownerEmail) {
 }
 
 const csv = await readFile(new URL('../../../docs/points/alpha-points.csv', import.meta.url), 'utf8')
+const fieldEvidenceCsv = await readFile(
+  new URL('../../../docs/points/alpha-points-field-evidence.v1.csv', import.meta.url),
+  'utf8',
+)
+await validateAlphaPointManifestsWithArtifacts({
+  manifestContent: csv,
+  fieldEvidenceContent: fieldEvidenceCsv,
+  evidenceRoot: process.env.ALPHA_FIELD_EVIDENCE_ROOT,
+})
 const [headerLine, ...lines] = csv.trim().split(/\r?\n/)
 const headers = parseCsvLine(headerLine ?? '')
 const requiredHeaders = [

@@ -1,8 +1,25 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const base = process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
+const e2eMode = process.env.KABANDA_E2E === 'true'
+const base = !e2eMode && process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
+const rawAppVersion = process.env.GITHUB_SHA?.slice(0, 12) ?? process.env.npm_package_version ?? 'dev'
+const appVersion = /^[A-Za-z0-9._-]{1,64}$/.test(rawAppVersion) ? rawAppVersion : 'dev'
+const swBuildAsset = `sw-build-${appVersion}.js`
+
+function serviceWorkerBuildResponder(): Plugin {
+  return {
+    name: 'kabanda-service-worker-build-responder',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: swBuildAsset,
+        source: `self.addEventListener('message',function(event){if(event.data&&event.data.type==='KABANDA_SW_BUILD'&&event.ports&&event.ports[0])event.ports[0].postMessage({build:${JSON.stringify(appVersion)}})})`,
+      })
+    },
+  }
+}
 
 export default defineConfig({
   base,
@@ -14,13 +31,20 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:3000',
     },
   },
+  preview: {
+    proxy: {
+      '/api': 'http://127.0.0.1:3000',
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(
-      process.env.GITHUB_SHA?.slice(0, 7) ?? process.env.npm_package_version ?? 'dev',
+      appVersion,
     ),
+    __ALPHA_DIAGNOSTICS__: JSON.stringify(process.env.VITE_ALPHA_DIAGNOSTICS === 'true'),
   },
   plugins: [
     react(),
+    serviceWorkerBuildResponder(),
     VitePWA({
       registerType: 'prompt',
       injectRegister: null,
@@ -29,6 +53,7 @@ export default defineConfig({
         name: 'КАБАНДА',
         short_name: 'КАБАНДА',
         description: 'Общие городские велорейды, точки и история Кабанды',
+        lang: 'ru',
         theme_color: '#232a35',
         background_color: '#f7f7f5',
         display: 'standalone',
@@ -56,7 +81,8 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/api\//],
+        importScripts: [swBuildAsset],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         runtimeCaching: []
       },
       devOptions: {

@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
-import sharp from 'sharp'
+import sharp, { type Metadata, type Sharp } from 'sharp'
 import {
   getRaidAllowedActions,
   getRouteStatusCode,
@@ -329,9 +329,15 @@ export type MediaProcessor = (
   declaredContentType: MediaIntentInput['contentType'],
 ) => Promise<ProcessedMedia>
 
-const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
-  const image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
-  const metadata = await image.metadata()
+export const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
+  let image: Sharp
+  let metadata: Metadata
+  try {
+    image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
+    metadata = await image.metadata()
+  } catch {
+    throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
+  }
   if (
     !metadata.width ||
     !metadata.height ||
@@ -346,11 +352,17 @@ const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
   ) {
     throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
   }
-  const processed = await image
-    .rotate()
-    .resize({ width: 2_048, height: 2_048, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 82, mozjpeg: true })
-    .toBuffer({ resolveWithObject: true })
+  const processed = await (async () => {
+    try {
+      return await image
+        .rotate()
+        .resize({ width: 2_048, height: 2_048, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 82, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true })
+    } catch {
+      throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
+    }
+  })()
   if (processed.data.length > 3 * 1024 * 1024) {
     throw new RaidError('MEDIA_OUTPUT_TOO_LARGE', 400, 'Фотография слишком большая')
   }
@@ -2706,7 +2718,7 @@ export class DatabaseRaidService implements RaidService {
                AND captured_at <= w.closed_at)
        )
        SELECT p.user_id,
-         coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
+         coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS display_name,
          (SELECT floor(coalesce(sum(greatest(0, extract(epoch FROM (
             least(w.closed_at, coalesce(p.left_at, $2)) -
             greatest(w.opened_at, p.active_from)
@@ -3162,7 +3174,7 @@ export class DatabaseRaidService implements RaidService {
       avatar_url: string | null
       state: RaidParticipantState
     }>(
-      `SELECT u.id, coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
+      `SELECT u.id, coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS display_name,
          u.avatar_url, p.state
        FROM raid_participants p JOIN users u ON u.id = p.user_id
        WHERE p.raid_id = $1 ORDER BY p.invited_at, p.user_id`,

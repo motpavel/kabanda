@@ -1,9 +1,18 @@
 import Dexie from 'dexie'
+import { setAlphaDiagnosticsIdentity } from '../../lib/diagnostics'
 import { offlineDb } from './db'
 import type { OutboxOperation, OutboxOperationKind } from './types'
 
 export function canReplayOperation(operation: OutboxOperation, activeUserId: string): boolean {
   return operation.identityId === activeUserId && operation.status !== 'sending'
+}
+
+export const IDENTITY_CHANGED_EVENT = 'kabanda:identity-changed'
+
+function notifyIdentityChange(userId: string | null): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(IDENTITY_CHANGED_EVENT, { detail: { userId } }))
+  }
 }
 
 export async function activateIdentity(userId: string): Promise<void> {
@@ -12,10 +21,14 @@ export async function activateIdentity(userId: string): Promise<void> {
     await offlineDb.identities.put({ userId, activatedAt: changedAt })
     await offlineDb.identityContext.put({ key: 'active', userId, changedAt })
   })
+  setAlphaDiagnosticsIdentity(userId)
+  notifyIdentityChange(userId)
 }
 
 export async function clearActiveIdentity(): Promise<void> {
+  setAlphaDiagnosticsIdentity(null)
   await offlineDb.identityContext.delete('active')
+  notifyIdentityChange(null)
 }
 
 export async function getActiveIdentityId(): Promise<string | null> {

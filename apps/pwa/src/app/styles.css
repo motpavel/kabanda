@@ -22,6 +22,47 @@ body {
   min-height: 100dvh;
 }
 
+.alpha-diagnostics-consent {
+  position: fixed;
+  z-index: 1000;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  display: grid;
+  width: min(440px, calc(100vw - 2rem));
+  gap: 0.75rem;
+  border: 1px solid #c7cbc7;
+  border-radius: 16px;
+  padding: 1rem;
+  color: #17251d;
+  background: #fffdf7;
+  box-shadow: 0 16px 40px rgb(23 37 29 / 18%);
+}
+
+.alpha-diagnostics-consent div,
+.alpha-diagnostics-consent label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.alpha-diagnostics-consent span {
+  color: #5a635c;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.alpha-diagnostics-consent label {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.alpha-diagnostics-consent input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0.1rem 0 0;
+}
+
 button,
 input,
 textarea {
@@ -380,4 +421,3 @@ footer {
     transition: none !important;
   }
 }
-
