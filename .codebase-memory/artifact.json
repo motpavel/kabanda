@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "4511c710db130e0ac78ac410c11ab60fe92d9ea0",
-    "indexed_at": "2026-08-28T06:16:56Z",
-    "project": "kabanda",
-    "nodes": 284,
-    "edges": 461,
-    "original_size": 2228224,
-    "compressed_size": 241184,
+    "commit": "398db68de2d7637f3bf88e46934434cffdce62fd",
+    "indexed_at": "2026-08-28T07:23:02Z",
+    "project": "Users-pavel-Documents-ChatGPT-Kabanda",
+    "nodes": 474,
+    "edges": 796,
+    "original_size": 2621440,
+    "compressed_size": 335745,
     "compression_level": 3
 }
