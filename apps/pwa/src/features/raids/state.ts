@@ -79,6 +79,10 @@ export function selectCurrentRaid(raids: RaidProjection[]): RaidProjection | nul
   return raids.find(({ state }) => state === 'active' || state === 'paused' || state === 'finalizing') ?? null
 }
 
+export function canShareRaidInvite(state: RaidProjection['state']): boolean {
+  return state === 'lobby'
+}
+
 export function isStaleConflict(status: number, code: string): boolean {
   return (
     status === 409 &&

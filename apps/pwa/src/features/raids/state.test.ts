@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canShareRaidInvite,
   isReadinessReportCurrent,
   isStaleConflict,
   selectCurrentRaid,
@@ -25,6 +26,13 @@ const raid: RaidProjection = {
 }
 
 describe('raid primary CTA', () => {
+  it('shares the locator only after open-lobby creates the participant snapshot', () => {
+    expect(canShareRaidInvite('draft')).toBe(false)
+    expect(canShareRaidInvite('planned')).toBe(false)
+    expect(canShareRaidInvite('lobby')).toBe(true)
+    expect(canShareRaidInvite('active')).toBe(false)
+  })
+
   it('uses one state-specific home action', () => {
     const cases: Array<[RaidProjection['state'], string | null]> = [
       ['draft', 'Продолжить настройку'],

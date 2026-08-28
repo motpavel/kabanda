@@ -40,6 +40,7 @@ import {
 import {
   buildReadinessReport,
   buildReadinessRows,
+  canShareRaidInvite,
   isReadinessReportCurrent,
   isStaleConflict,
   selectPrimaryAction,
@@ -464,7 +465,7 @@ function RaidDetailPage({
 
       {(raid.state === 'draft' || raid.state === 'planned' || raid.state === 'lobby') && (
         <section className="kb-card">
-          <div className="kb-section-head"><div><p className="kb-kicker">Lobby</p><h2>Кто едет</h2></div><button type="button" onClick={share}>Пригласить</button></div>
+          <div className="kb-section-head"><div><p className="kb-kicker">Lobby</p><h2>Кто едет</h2></div>{canShareRaidInvite(raid.state) && <button type="button" onClick={share}>Пригласить</button>}</div>
           <ParticipantList participants={raid.participants} navigatorId={raid.navigatorUserId} />
           {allowed.has('decline') && !resource.stale && <button className="kb-text-action raid-decline" type="button" disabled={operation === 'decline'} onClick={() => applyCommand('decline')}>Не смогу поехать</button>}
         </section>
