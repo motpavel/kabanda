@@ -1,5 +1,6 @@
 import { userSchema, type User } from '@kabanda/contracts'
-import { requestJson } from '../../lib/http'
+import { ApiError, requestJson } from '../../lib/http'
+import { activateIdentity, clearActiveIdentity } from '../offline/ledger'
 
 export async function requestMagicLink(email: string, returnTo = '/'): Promise<void> {
   await requestJson<{ accepted: true }>('/api/auth/request-link', {
@@ -8,11 +9,30 @@ export async function requestMagicLink(email: string, returnTo = '/'): Promise<v
   })
 }
 
+export async function verifyMagicLink(token: string): Promise<string> {
+  const response = await requestJson<{ returnTo: string }>('/api/auth/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+  return response.returnTo
+}
+
 export async function getCurrentUser(): Promise<User> {
-  const response = await requestJson<{ user: unknown }>('/api/me')
-  return userSchema.parse(response.user)
+  try {
+    const response = await requestJson<{ user: unknown }>('/api/me')
+    const user = userSchema.parse(response.user)
+    await activateIdentity(user.id)
+    return user
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) await clearActiveIdentity()
+    throw error
+  }
 }
 
 export async function logout(): Promise<void> {
-  await requestJson<null>('/api/auth/logout', { method: 'POST' })
+  try {
+    await requestJson<null>('/api/auth/logout', { method: 'POST' })
+  } finally {
+    await clearActiveIdentity()
+  }
 }

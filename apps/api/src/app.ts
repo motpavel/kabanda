@@ -4,9 +4,9 @@ import rateLimit from '@fastify/rate-limit'
 import {
   requestMagicLinkSchema,
   updateProfileSchema,
-  verifyMagicLinkQuerySchema,
+  verifyMagicLinkSchema,
 } from '@kabanda/contracts'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { LogController, type FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import type { AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
@@ -21,15 +21,43 @@ function unauthorized() {
   return { error: { code: 'AUTH_REQUIRED', message: 'Нужно войти в КАБАНДУ' } }
 }
 
+const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
+
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
   const app = Fastify({
     logger: dependencies.config.NODE_ENV !== 'test',
+    logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: 128 * 1024,
     requestTimeout: 10_000,
   })
   await app.register(cookie)
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(rateLimit, { global: false })
+
+  app.addHook('onRequest', async (request, reply) => {
+    if (
+      request.url.startsWith('/api/') &&
+      !safeMethods.has(request.method) &&
+      request.headers.origin !== dependencies.config.APP_ORIGIN
+    ) {
+      return reply.status(403).send({
+        error: { code: 'ORIGIN_NOT_ALLOWED', message: 'Источник запроса не разрешён' },
+      })
+    }
+  })
+
+  app.addHook('onResponse', async (request, reply) => {
+    if (dependencies.config.NODE_ENV === 'test') return
+    request.log.info(
+      {
+        method: request.method,
+        route: request.routeOptions.url ?? 'unmatched',
+        statusCode: reply.statusCode,
+        responseTimeMs: Math.round(reply.elapsedTime),
+      },
+      'request completed',
+    )
+  })
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
@@ -60,9 +88,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     },
   )
 
-  app.get('/api/auth/verify', async (request, reply) => {
-    const query = verifyMagicLinkQuerySchema.parse(request.query)
-    const session = await dependencies.auth.verifyMagicLink(query.token)
+  app.post('/api/auth/verify', async (request, reply) => {
+    const input = verifyMagicLinkSchema.parse(request.body)
+    const session = await dependencies.auth.verifyMagicLink(input.token)
     if (!session) {
       return reply.status(400).send({
         error: { code: 'MAGIC_LINK_INVALID', message: 'Ссылка недействительна или уже использована' },
@@ -76,7 +104,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       path: '/',
       maxAge: dependencies.config.SESSION_TTL_DAYS * 24 * 60 * 60,
     })
-    return reply.redirect(`${dependencies.config.APP_ORIGIN}${session.returnTo}`, 303)
+    return { returnTo: session.returnTo }
   })
 
   app.get('/api/me', async (request, reply) => {

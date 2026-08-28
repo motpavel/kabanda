@@ -6,6 +6,12 @@ export interface LocalIdentity {
   activatedAt: string
 }
 
+export interface IdentityContext {
+  key: 'active'
+  userId: string
+  changedAt: string
+}
+
 export interface OutboxOperation {
   id: string
   identityId: string

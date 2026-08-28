@@ -42,6 +42,12 @@ function toUser(row: UserRow): User {
   }
 }
 
+export function buildMagicLinkVerificationUrl(appOrigin: string, rawToken: string): string {
+  const verifyUrl = new URL('/auth/verify', appOrigin)
+  verifyUrl.hash = new URLSearchParams({ token: rawToken }).toString()
+  return verifyUrl.toString()
+}
+
 export class DatabaseAuthService implements AuthService {
   constructor(
     private readonly pool: Pool,
@@ -61,9 +67,10 @@ export class DatabaseAuthService implements AuthService {
       [tokenHash, email, returnTo, this.config.MAGIC_LINK_TTL_MINUTES],
     )
 
-    const verifyUrl = new URL('/api/auth/verify', this.config.APP_ORIGIN)
-    verifyUrl.searchParams.set('token', rawToken)
-    await this.mailer.sendMagicLink(email, verifyUrl.toString())
+    await this.mailer.sendMagicLink(
+      email,
+      buildMagicLinkVerificationUrl(this.config.APP_ORIGIN, rawToken),
+    )
   }
 
   async verifyMagicLink(rawToken: string): Promise<VerifiedSession | null> {

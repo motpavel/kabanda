@@ -7,15 +7,28 @@ export function canReplayOperation(operation: OutboxOperation, activeUserId: str
 }
 
 export async function activateIdentity(userId: string): Promise<void> {
-  await offlineDb.identities.put({ userId, activatedAt: new Date().toISOString() })
+  const changedAt = new Date().toISOString()
+  await offlineDb.transaction('rw', offlineDb.identities, offlineDb.identityContext, async () => {
+    await offlineDb.identities.put({ userId, activatedAt: changedAt })
+    await offlineDb.identityContext.put({ key: 'active', userId, changedAt })
+  })
+}
+
+export async function clearActiveIdentity(): Promise<void> {
+  await offlineDb.identityContext.delete('active')
+}
+
+export async function getActiveIdentityId(): Promise<string | null> {
+  return (await offlineDb.identityContext.get('active'))?.userId ?? null
 }
 
 export async function enqueueOperation(
-  identityId: string,
   kind: OutboxOperationKind,
   aggregateId: string,
   payload: unknown,
 ): Promise<OutboxOperation> {
+  const identityId = await getActiveIdentityId()
+  if (!identityId) throw new Error('Active identity is required before enqueue')
   const identity = await offlineDb.identities.get(identityId)
   if (!identity) throw new Error('Active identity is required before enqueue')
 
@@ -34,15 +47,23 @@ export async function enqueueOperation(
 }
 
 export async function getReplayBatch(activeUserId: string, limit = 50): Promise<OutboxOperation[]> {
-  const operations = await offlineDb.outbox
-    .where('[identityId+status+createdAt]')
-    .between(
-      [activeUserId, 'failed', Dexie.minKey],
-      [activeUserId, 'pending', Dexie.maxKey],
-      true,
-      true,
-    )
-    .limit(limit)
-    .toArray()
-  return operations.filter((operation) => canReplayOperation(operation, activeUserId))
+  if (limit <= 0 || (await getActiveIdentityId()) !== activeUserId) return []
+
+  const readStatus = (status: 'pending' | 'failed', statusLimit: number) =>
+    offlineDb.outbox
+      .where('[identityId+status+createdAt]')
+      .between(
+        [activeUserId, status, Dexie.minKey],
+        [activeUserId, status, Dexie.maxKey],
+        true,
+        true,
+      )
+      .limit(statusLimit)
+      .toArray()
+
+  const pending = await readStatus('pending', limit)
+  const failed = await readStatus('failed', limit - pending.length)
+  return [...pending, ...failed].filter((operation) =>
+    canReplayOperation(operation, activeUserId),
+  )
 }

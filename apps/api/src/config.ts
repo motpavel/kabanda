@@ -31,6 +31,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
   const secureCookies = parsed.NODE_ENV === 'production'
   return {
     ...parsed,
+    APP_ORIGIN: new URL(parsed.APP_ORIGIN).origin,
     secureCookies,
     cookieName: secureCookies ? '__Host-kabanda_session' : 'kabanda_session',
   }

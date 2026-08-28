@@ -12,7 +12,7 @@ export const requestMagicLinkSchema = z.object({
   returnTo: z.string().max(500).default('/'),
 })
 
-export const verifyMagicLinkQuerySchema = z.object({
+export const verifyMagicLinkSchema = z.object({
   token: z.string().min(32).max(256),
 })
 
