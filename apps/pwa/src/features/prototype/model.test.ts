@@ -46,6 +46,13 @@ describe('VP UX prototype graph', () => {
     }
   })
 
+  it('never starts a raid-scoped check-in from the global map', () => {
+    for (const role of Object.keys(flows) as Array<keyof typeof flows>) {
+      expect(getPrimaryTarget(role, 'map')).toBe('point-detail')
+      expect(getPrimaryTarget(role, 'point-detail')).toBe('map')
+    }
+  })
+
   it('uses four distinct canonical delivery labels', () => {
     expect(new Set(Object.values(deliveryStateCopy))).toEqual(
       new Set(['Сохранено на телефоне', 'Отправляем', 'Принято Кабандой', 'Нужно действие']),

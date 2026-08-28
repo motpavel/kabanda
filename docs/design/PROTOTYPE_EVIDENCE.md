@@ -15,18 +15,19 @@ replaying the entire flow and is not part of production navigation.
 ## Local automated evidence
 
 - `pnpm check`: pass.
-- PWA suite: 16 tests pass, including five prototype graph/state tests.
+- PWA suite: 17 tests pass, including six prototype graph/state tests.
 - Production PWA build: pass; Geist Cyrillic is self-hosted and precached.
-- Real-browser structural pass at 320 x 720 across 17 organizer and 16 participant states (33 total):
+- Real-browser structural pass at 320 x 720 across 18 organizer and 17 participant states (35 total):
   - exactly one `.vp-primary-action` on every state;
   - no horizontal document overflow;
   - no primary-action overlap with another visible button, input or select.
-- The same 33-state sweep at 844 x 390 with reduced motion has no horizontal overflow, disabled
+- The same 35-state sweep at 844 x 390 with reduced motion has no horizontal overflow, disabled
   navigation targets or console errors; keyboard focus is visibly outlined.
 - Semantic Playwright snapshots expose headings, labeled controls, status regions, alerts and both role paths.
 - Bottom navigation routes to working home, history, map, Kabanda and profile states; it is not decorative.
 - Role-boundary checks prove that only the organizer flow contains `finish`, while both roles pass through
   authentication.
+- Global map targets a read-only point detail for both roles and never jumps into a raid-scoped check-in.
 - Console contains no application errors during the complete state sweep.
 - White on action coral `#C93E32`: contrast ratio 4.98:1.
 - Graphite `#232A35` on white: contrast ratio 14.44:1.

@@ -85,7 +85,8 @@ can contribute check-ins and photos and inspect the canonical result.
 | Finish review | Are pending operations visible before cutoff? | Finish ride |
 | Result | What canonical value did the group create? | Plan next ride |
 | History | Can the result be found again without confusing stale cache? | Open ride |
-| Map | Can a point still be understood without a live map provider? | Open nearest point |
+| Map | Can a point still be understood without a live map provider? | Open point card |
+| Point detail | Is this a catalogue view or an active-ride check-in? | Return to map |
 | Profile | Which device settings and local data belong to this account? | Return home |
 
 ## State rules
@@ -96,6 +97,7 @@ can contribute check-ins and photos and inspect the canonical result.
 - An update available during an active ride is deferred and never forces reload.
 - Finishing with pending operations first opens a review state; it does not silently discard or double count.
 - Only the organizer flow contains the finish action.
+- A point opened from the global map is read-only catalogue context; it cannot start a raid-scoped check-in.
 - Logout clears the active local identity and blocks replay. Pending operations are available only after the
   same user signs in again.
 

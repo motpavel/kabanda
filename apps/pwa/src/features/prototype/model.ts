@@ -20,6 +20,7 @@ export type PrototypeScreenId =
   | 'result'
   | 'history'
   | 'map'
+  | 'point-detail'
   | 'profile'
 
 export type DeliveryState = 'local' | 'sending' | 'accepted' | 'needs_action'
@@ -90,7 +91,12 @@ export const screens: Record<PrototypeScreenId, PrototypeScreen> = {
     participantPrimaryLabel: 'Открыть историю',
   },
   history: { id: 'history', title: 'История рейдов', primaryLabel: 'Открыть последний рейд' },
-  map: { id: 'map', title: 'Карта точек', primaryLabel: 'Открыть ближайшую точку' },
+  map: { id: 'map', title: 'Карта точек', primaryLabel: 'Открыть карточку точки' },
+  'point-detail': {
+    id: 'point-detail',
+    title: 'Сквер у цирка',
+    primaryLabel: 'Вернуться к карте',
+  },
   profile: { id: 'profile', title: 'Профиль', primaryLabel: 'На главную' },
 }
 
@@ -112,6 +118,7 @@ export const flows: Record<PrototypeRole, PrototypeScreenId[]> = {
     'result',
     'history',
     'map',
+    'point-detail',
     'profile',
   ],
   participant: [
@@ -130,6 +137,7 @@ export const flows: Record<PrototypeRole, PrototypeScreenId[]> = {
     'home',
     'kabanda',
     'map',
+    'point-detail',
     'profile',
   ],
 }
@@ -151,7 +159,8 @@ const primaryTargets: Record<PrototypeRole, Partial<Record<PrototypeScreenId, Pr
     finish: 'result',
     result: 'history',
     history: 'result',
-    map: 'checkin',
+    map: 'point-detail',
+    'point-detail': 'map',
     profile: 'home',
   },
   participant: {
@@ -169,7 +178,8 @@ const primaryTargets: Record<PrototypeRole, Partial<Record<PrototypeScreenId, Pr
     history: 'result',
     home: 'lobby',
     kabanda: 'lobby',
-    map: 'checkin',
+    map: 'point-detail',
+    'point-detail': 'map',
     profile: 'home',
   },
 }

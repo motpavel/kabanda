@@ -423,6 +423,31 @@ function ScreenBody({ role, screen }: { role: PrototypeRole; screen: PrototypeSc
           <p className="vp-note">Если WebGL или provider недоступен, точки и расстояния остаются доступны списком.</p>
         </>
       )
+    case 'point-detail':
+      return (
+        <>
+          <div className="vp-point-card">
+            <span className="vp-round-icon"><Icon name="location" /></span>
+            <div>
+              <p className="vp-kicker">34 м · точка каталога</p>
+              <h2>Сквер у цирка</h2>
+              <p>Вход со стороны реки · доступно круглосуточно</p>
+            </div>
+          </div>
+          <div className="vp-card">
+            <p className="vp-kicker">О точке</p>
+            <h2>Площадка у набережной</h2>
+            <p>Подходит для короткой остановки. Последний командный визит — 24 августа.</p>
+          </div>
+          <div className="vp-card vp-card--quiet">
+            <div className="vp-inline">
+              <Icon name="bicycle" />
+              <div><strong>Сейчас вне рейда</strong><p>Чекин появится только после открытия активного рейда</p></div>
+            </div>
+          </div>
+          <p className="vp-note">Глобальная карта показывает информацию о точке, но не создаёт raid-scoped действия.</p>
+        </>
+      )
     case 'profile':
       return (
         <>
