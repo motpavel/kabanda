@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:postgres": "vitest run test/auth.postgres.test.ts",
+    "test:postgres": "vitest run test/auth.postgres.test.ts test/kabandas.postgres.test.ts --no-file-parallelism",
+    "points:import": "tsx src/import-alpha.ts",
     "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {

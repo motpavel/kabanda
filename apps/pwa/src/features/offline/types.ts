@@ -23,3 +23,12 @@ export interface OutboxOperation {
   attempts: number
   lastError?: string
 }
+
+export interface PointCollectionProjection {
+  key: string
+  identityId: string
+  kabandaId: string
+  collectionId: string
+  savedAt: string
+  points: unknown[]
+}

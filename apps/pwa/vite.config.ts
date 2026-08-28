@@ -6,6 +6,9 @@ const base = process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
 
 export default defineConfig({
   base,
+  optimizeDeps: {
+    exclude: ['maplibre-gl'],
+  },
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:3000',
@@ -23,14 +26,14 @@ export default defineConfig({
       injectRegister: null,
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'КАБАНДА — PWA Capability Lab',
-        short_name: 'КАБАНДА Lab',
-        description: 'Полевой стенд GPS, offline, lifecycle, camera и sharing для КАБАНДА',
-        theme_color: '#17251d',
-        background_color: '#f3f0e8',
+        name: 'КАБАНДА',
+        short_name: 'КАБАНДА',
+        description: 'Общие городские велорейды, точки и история Кабанды',
+        theme_color: '#232a35',
+        background_color: '#f7f7f5',
         display: 'standalone',
         orientation: 'any',
-        start_url: base,
+        start_url: `${base}app`,
         scope: base,
         icons: [
           {

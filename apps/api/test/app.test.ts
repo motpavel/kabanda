@@ -7,6 +7,7 @@ import {
 } from '../src/auth.js'
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
+import type { KabandaService } from '../src/kabandas.js'
 
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
@@ -28,15 +29,33 @@ function createAuth(overrides: Partial<AuthService> = {}): AuthService {
   }
 }
 
+function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService {
+  return {
+    listKabandas: vi.fn().mockResolvedValue([]),
+    createKabanda: vi.fn(),
+    listMembers: vi.fn().mockResolvedValue([]),
+    leaveKabanda: vi.fn(),
+    removeMember: vi.fn(),
+    createInvite: vi.fn(),
+    revokeInvite: vi.fn(),
+    previewInvite: vi.fn(),
+    previewContinuation: vi.fn(),
+    acceptInvite: vi.fn(),
+    listPoints: vi.fn().mockResolvedValue({ points: [], nextCursor: null }),
+    ...overrides,
+  }
+}
+
 const apps: Array<Awaited<ReturnType<typeof buildApp>>> = []
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()))
 })
 
-async function createTestApp(auth: AuthService) {
+async function createTestApp(auth: AuthService, kabandas = createKabandas()) {
   const app = await buildApp({
     auth,
+    kabandas,
     config: loadConfig({ NODE_ENV: 'test' }),
     readiness: vi.fn().mockResolvedValue(undefined),
   })
@@ -68,8 +87,8 @@ describe('API foundation', () => {
 
   it('keeps the raw magic token in a fragment that is not sent to the server', () => {
     const rawToken = 'x'.repeat(32)
-    const url = new URL(buildMagicLinkVerificationUrl(testOrigin, rawToken))
-    expect(url.pathname).toBe('/auth/verify')
+    const url = new URL(buildMagicLinkVerificationUrl(testOrigin, rawToken, '/kabanda/'))
+    expect(url.pathname).toBe('/kabanda/auth/verify')
     expect(url.search).toBe('')
     expect(new URLSearchParams(url.hash.slice(1)).get('token')).toBe(rawToken)
   })
@@ -135,5 +154,126 @@ describe('API foundation', () => {
     const response = await app.inject({ method: 'GET', url: '/api/me' })
     expect(response.statusCode).toBe(401)
     expect(response.json().error.code).toBe('AUTH_REQUIRED')
+  })
+
+  it('creates a Kabanda with a client idempotency key', async () => {
+    const createKabanda = vi.fn().mockResolvedValue({
+      id: '81297402-898c-48d6-bc78-c74b6b38205c',
+      name: 'Ночные кабаны',
+      avatar: '🌙',
+      role: 'owner',
+      memberCount: 1,
+      pointsCollectionId: null,
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ createKabanda }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/kabandas',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session', 'idempotency-key': 'create-1234' },
+      payload: { name: 'Ночные кабаны', avatar: '🌙' },
+    })
+    expect(response.statusCode).toBe(201)
+    expect(createKabanda).toHaveBeenCalledWith(user.id, 'Ночные кабаны', '🌙', 'create-1234')
+  })
+
+  it('never places a raw invite token in a redirect', async () => {
+    const previewInvite = vi.fn().mockResolvedValue({
+      continuation: 'continuation-secret',
+      kabanda: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        name: 'Ночные кабаны',
+        avatar: '🌙',
+        role: 'member',
+        memberCount: 1,
+        pointsCollectionId: null,
+      },
+      inviterName: 'Павел',
+      expiresAt: new Date().toISOString(),
+      requiresAuth: true,
+      accepted: false,
+    })
+    const app = await createTestApp(createAuth(), createKabandas({ previewInvite }))
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/invites/preview',
+      headers: { origin: testOrigin },
+      payload: { token: 'x'.repeat(32) },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers.location).toBeUndefined()
+    expect(response.json().invite.continuation).toBe('continuation-secret')
+    expect(response.headers['set-cookie']).toContain('kabanda_pending_invite=continuation-secret')
+    expect(response.headers['set-cookie']).toContain('HttpOnly')
+    expect(response.headers['set-cookie']).toContain('SameSite=Lax')
+  })
+
+  it('previews the same continuation after auth without issuing another one', async () => {
+    const invite = {
+      continuation: 'c'.repeat(32),
+      kabanda: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        name: 'Ночные кабаны',
+        avatar: '🌙',
+        role: 'member' as const,
+        memberCount: 1,
+        pointsCollectionId: null,
+      },
+      inviterName: 'Павел',
+      expiresAt: new Date().toISOString(),
+      requiresAuth: false,
+      accepted: false,
+    }
+    const previewContinuation = vi.fn().mockResolvedValue(invite)
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ previewContinuation }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/invites/preview',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: { continuation: invite.continuation },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(previewContinuation).toHaveBeenCalledWith(invite.continuation, false, user.id)
+    expect(response.json().invite.continuation).toBe(invite.continuation)
+  })
+
+  it('recovers a pending invite from an HttpOnly cookie without a URL credential', async () => {
+    const invite = {
+      continuation: 'c'.repeat(32),
+      kabanda: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        name: 'Ночные кабаны',
+        avatar: '🌙',
+        role: 'member' as const,
+        memberCount: 1,
+        pointsCollectionId: null,
+      },
+      inviterName: 'Павел',
+      expiresAt: new Date().toISOString(),
+      requiresAuth: false,
+      accepted: false,
+    }
+    const previewContinuation = vi.fn().mockResolvedValue(invite)
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ previewContinuation }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/invites/preview',
+      headers: {
+        origin: testOrigin,
+        cookie: `kabanda_session=session; kabanda_pending_invite=${invite.continuation}`,
+      },
+      payload: { pending: true },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(previewContinuation).toHaveBeenCalledWith(invite.continuation, false, user.id)
+    expect(response.json().invite.kabanda.name).toBe('Ночные кабаны')
   })
 })
