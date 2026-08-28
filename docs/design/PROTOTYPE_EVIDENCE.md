@@ -15,7 +15,7 @@ replaying the entire flow and is not part of production navigation.
 ## Local automated evidence
 
 - `pnpm check`: pass.
-- PWA suite: 17 tests pass, including six prototype graph/state tests.
+- PWA suite: 18 tests pass, including seven prototype graph/state tests.
 - Production PWA build: pass; Geist Cyrillic is self-hosted and precached.
 - Real-browser structural pass at 320 x 720 across 18 organizer and 17 participant states (35 total):
   - exactly one `.vp-primary-action` on every state;
@@ -28,6 +28,7 @@ replaying the entire flow and is not part of production navigation.
 - Role-boundary checks prove that only the organizer flow contains `finish`, while both roles pass through
   authentication.
 - Global map targets a read-only point detail for both roles and never jumps into a raid-scoped check-in.
+- Normal active-ride CTA opens check-in; the isolated GPS recovery CTA returns to the active ride.
 - Console contains no application errors during the complete state sweep.
 - White on action coral `#C93E32`: contrast ratio 4.98:1.
 - Graphite `#232A35` on white: contrast ratio 14.44:1.

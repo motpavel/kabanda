@@ -93,6 +93,8 @@ can contribute check-ins and photos and inspect the canonical result.
 
 - `Маршрут записывается` is rendered only for a fresh accepted location sample.
 - Stale GPS always includes last freshness, an icon and a recovery action.
+- A fresh active ride opens check-in directly; GPS recovery is a separate degraded-state path and resumes
+  the active ride rather than impersonating a normal check-in.
 - Offline does not block safe local capture; it never masquerades as server acceptance.
 - An update available during an active ride is deferred and never forces reload.
 - Finishing with pending operations first opens a review state; it does not silently discard or double count.

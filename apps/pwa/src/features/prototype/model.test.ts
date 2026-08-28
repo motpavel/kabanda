@@ -53,6 +53,12 @@ describe('VP UX prototype graph', () => {
     }
   })
 
+  it('keeps the normal ride path separate from GPS recovery', () => {
+    expect(getPrimaryTarget('organizer', 'active')).toBe('checkin')
+    expect(getPrimaryTarget('organizer', 'gps-recovery')).toBe('active')
+    expect(getPrimaryTarget('participant', 'active')).toBe('checkin')
+  })
+
   it('uses four distinct canonical delivery labels', () => {
     expect(new Set(Object.values(deliveryStateCopy))).toEqual(
       new Set(['Сохранено на телефоне', 'Отправляем', 'Принято Кабандой', 'Нужно действие']),
