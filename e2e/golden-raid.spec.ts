@@ -54,7 +54,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByText('Синтетическая точка E2E')).toBeVisible()
   await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
-  await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
 
   await expect.poll(async () => {
     const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(
@@ -64,6 +64,9 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     )
     return nearby.points[0]?.creditedByTeam ?? false
   }, { timeout: 30_000 }).toBe(true)
+  await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
+
   await expect.poll(async () => {
     const gallery = await api<{ media: unknown[] }>(page, 'GET', `/api/raids/${raid.id}/media`)
     return gallery.media.length

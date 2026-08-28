@@ -174,6 +174,8 @@ test('offline route, check-in and photo survive reload and replay once', async (
     return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
   await context.setOffline(false)
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
 
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)
