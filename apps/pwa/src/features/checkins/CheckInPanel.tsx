@@ -1,0 +1,390 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ApiError } from '../../lib/http'
+import type { RaidParticipant, RaidProjection } from '../raids/types'
+import { useRecordingRuntime } from '../raids/recording/runtime'
+import {
+  actOnClaim,
+  actOnFallback,
+  createFallback,
+  getNearbyPoints,
+  listPendingClaims,
+  listPendingFallbacks,
+  listRaidMedia,
+  mediaContentUrl,
+} from './api'
+import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, validateMediaFile } from './platform'
+import { replayOneCheckInOrMedia } from './replay'
+import { loadCheckInExtras } from './refresh'
+import { selectCheckInPrimary } from './state'
+import {
+  enqueueCheckIn,
+  getCheckInLocalState,
+  persistMediaDraft,
+  reserveFallbackSubmission,
+  settleFallbackSubmission,
+} from './store'
+import type {
+  CheckInClaim,
+  CheckInFallback,
+  CheckInResponse,
+  NearbyPoint,
+  RaidMedia,
+} from './types'
+
+function tabId(): string {
+  const key = 'kabanda:checkin-sender-tab:v1'
+  try {
+    const existing = sessionStorage.getItem(key)
+    if (existing) return existing
+    const created = crypto.randomUUID()
+    sessionStorage.setItem(key, created)
+    return created
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
+function activeParticipants(raid: RaidProjection): RaidParticipant[] {
+  return raid.participants.filter(({ state }) => state === 'active')
+}
+
+export function CheckInPanel({
+  identityId,
+  raid,
+  staleProjection,
+  onCanonicalRefresh,
+}: {
+  identityId: string
+  raid: RaidProjection
+  staleProjection: boolean
+  onCanonicalRefresh: () => Promise<unknown>
+}) {
+  const [nearby, setNearby] = useState<NearbyPoint[]>([])
+  const [selectedPointId, setSelectedPointId] = useState('')
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([identityId])
+  const [organizerAttestation, setOrganizerAttestation] = useState(false)
+  const [claims, setClaims] = useState<CheckInClaim[]>([])
+  const [fallbacks, setFallbacks] = useState<CheckInFallback[]>([])
+  const [media, setMedia] = useState<RaidMedia[]>([])
+  const [local, setLocal] = useState<Awaited<ReturnType<typeof getCheckInLocalState>> | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [caption, setCaption] = useState('')
+  const [fallbackReason, setFallbackReason] = useState('Координату не удалось подтвердить на месте.')
+  const [verifierId, setVerifierId] = useState('')
+  const senderTabId = useRef(tabId()).current
+  const actionKeys = useRef(new Map<string, string>())
+  const replaying = useRef(false)
+  const { setUnsyncedCheckInWork } = useRecordingRuntime()
+  const viewerIsNavigator = raid.navigatorUserId === identityId
+  const viewerIsOwner = raid.organizerUserId === identityId
+  const participants = useMemo(() => activeParticipants(raid), [raid])
+  const pendingClaim = claims[0] ?? null
+  const pendingFallback = fallbacks[0] ?? null
+  const manualAttempt = local?.needsAction.find(
+    ({ fallbackSubmission }) => fallbackSubmission?.status !== 'submitted',
+  ) ?? null
+  const manualResponse = manualAttempt?.response as CheckInResponse | null
+  const reservedFallback = manualAttempt?.fallbackSubmission ?? null
+  const fallbackMedia = local?.media.find((draft) =>
+    draft.status === 'accepted' && draft.purpose === 'fallback' &&
+    draft.attemptId === manualResponse?.attemptId && draft.mediaId,
+  ) ?? null
+  const canMutate = raid.state === 'active' && !staleProjection
+
+  const refreshLocal = useCallback(async () => {
+    const next = await getCheckInLocalState(identityId, raid.id)
+    setLocal(next)
+    setUnsyncedCheckInWork(next.unsynced)
+    return next
+  }, [identityId, raid.id, setUnsyncedCheckInWork])
+
+  const refreshCanonicalExtras = useCallback(async () => {
+    if (!navigator.onLine || document.visibilityState !== 'visible') return
+    const result = await loadCheckInExtras({
+      claims: () => listPendingClaims(raid.id),
+      fallbacks: () => listPendingFallbacks(raid.id),
+      gallery: () => listRaidMedia(raid.id),
+    })
+    if (result.claims) setClaims(result.claims)
+    if (result.fallbacks) setFallbacks(result.fallbacks)
+    if (result.gallery) setMedia(result.gallery.media)
+  }, [raid.id])
+
+  const flush = useCallback(async () => {
+    if (replaying.current || !canMutate || !navigator.onLine) return
+    replaying.current = true
+    try {
+      for (let index = 0; index < 4; index += 1) {
+        const result = await replayOneCheckInOrMedia({
+          identityId,
+          raidId: raid.id,
+          holderTabId: senderTabId,
+          online: navigator.onLine,
+        })
+        if (result.kind === 'idle' || result.kind === 'retryable' || result.kind === 'fence_lost') break
+        if (result.kind === 'terminal') {
+          setMessage(`Сервер отклонил локальную операцию: ${result.code}.`)
+          break
+        }
+      }
+      await refreshLocal()
+      await refreshCanonicalExtras().catch(() => undefined)
+      await onCanonicalRefresh()
+    } finally {
+      replaying.current = false
+    }
+  }, [canMutate, identityId, onCanonicalRefresh, raid.id, refreshCanonicalExtras, refreshLocal, senderTabId])
+
+  useEffect(() => {
+    void refreshLocal().then(() => void flush())
+    void refreshCanonicalExtras().catch(() => undefined)
+    const resume = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshLocal().then(() => void flush())
+        void refreshCanonicalExtras().catch(() => undefined)
+      }
+    }
+    window.addEventListener('online', resume)
+    window.addEventListener('focus', resume)
+    window.addEventListener('pageshow', resume)
+    document.addEventListener('visibilitychange', resume)
+    return () => {
+      setUnsyncedCheckInWork(0)
+      window.removeEventListener('online', resume)
+      window.removeEventListener('focus', resume)
+      window.removeEventListener('pageshow', resume)
+      document.removeEventListener('visibilitychange', resume)
+    }
+  }, [flush, refreshCanonicalExtras, refreshLocal, setUnsyncedCheckInWork])
+
+  const locate = async () => {
+    if (busy || !navigator.onLine) return
+    setBusy('locate')
+    setMessage(null)
+    try {
+      const coordinate = await getOneShotCoordinate()
+      const response = await getNearbyPoints(raid.id, coordinate.latitude, coordinate.longitude)
+      setNearby(response.points)
+      setSelectedPointId(response.points[0]?.pointSnapshotId ?? '')
+      setMessage(response.points.length ? 'Сервер рассчитал ближайшие eligible точки.' : 'В пределах политики подходящих точек нет.')
+    } catch {
+      setMessage('Не удалось получить новую координату и список точек. Recorder cache не использовался.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const submit = async () => {
+    if (!selectedPointId || busy || !canMutate) return
+    setBusy('checkin')
+    setMessage(null)
+    try {
+      const evidence = await getOneShotCoordinate()
+      const record = await enqueueCheckIn(identityId, raid.kabandaId, raid.id, {
+        pointSnapshotId: selectedPointId,
+        evidence,
+        presentParticipantIds: Array.from(new Set([identityId, ...selectedParticipants])),
+        organizerAttestation: viewerIsOwner && organizerAttestation,
+      })
+      if (!record) throw new Error('IDENTITY_CHANGED')
+      await refreshLocal()
+      setMessage('Попытка сохранена на телефоне. Канонический результат появится после server receipt.')
+      void flush()
+    } catch {
+      setMessage('Попытку не удалось надёжно сохранить. Никакого pending check-in не показываем.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const claimAction = async (claim: CheckInClaim, action: 'confirm' | 'decline') => {
+    if (busy || !navigator.onLine) return
+    const logical = `${claim.id}:${action}`
+    const key = actionKeys.current.get(logical) ?? crypto.randomUUID()
+    actionKeys.current.set(logical, key)
+    setBusy(logical)
+    try {
+      await actOnClaim(raid.id, claim.id, action, key)
+      actionKeys.current.delete(logical)
+      await refreshCanonicalExtras()
+      await onCanonicalRefresh()
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : 'Ответ не подтверждён. Повтор использует тот же ключ.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const fallbackAction = async (fallback: CheckInFallback, action: 'confirm' | 'decline') => {
+    if (busy || !navigator.onLine) return
+    const logical = `${fallback.id}:${action}`
+    const key = actionKeys.current.get(logical) ?? crypto.randomUUID()
+    actionKeys.current.set(logical, key)
+    setBusy(logical)
+    try {
+      await actOnFallback(raid.id, fallback.id, action, key)
+      actionKeys.current.delete(logical)
+      await refreshCanonicalExtras()
+      await onCanonicalRefresh()
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : 'Ответ verifier не подтверждён.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const addMedia = async (file: File | null) => {
+    if (!file || busy || !canMutate) return
+    const invalid = validateMediaFile(file)
+    if (invalid) return setMessage(invalid)
+    setBusy('media')
+    try {
+      const quota = await hasQuotaForMedia(file.size)
+      if (quota === false) throw new Error('QUOTA')
+      const sourceSha256 = await sha256Hex(file)
+      const purpose = manualResponse ? 'fallback' as const : 'gallery' as const
+      const draft = await persistMediaDraft({
+        identityId,
+        kabandaId: raid.kabandaId,
+        raidId: raid.id,
+        blob: file,
+        sourceSha256,
+        sizeBytes: file.size,
+        contentType: file.type as 'image/jpeg' | 'image/png' | 'image/webp',
+        caption: caption.trim().slice(0, 160) || null,
+        purpose,
+        attemptId: manualResponse?.attemptId ?? null,
+      })
+      if (!draft) throw new Error('IDENTITY_CHANGED')
+      await refreshLocal()
+      setMessage('Фото сохранено локально вместе с SHA-256. Upload capability в хранилище не попадёт.')
+      void flush()
+    } catch {
+      setMessage('Фото не сохранено: проверьте место в хранилище, формат и активный аккаунт.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const submitFallback = async () => {
+    const selectedVerifierId = reservedFallback?.input.verifierUserId ?? verifierId
+    if (!manualResponse || !fallbackMedia?.mediaId || !selectedVerifierId || selectedVerifierId === identityId || busy || !navigator.onLine) return
+    const logical = `fallback:${manualResponse.attemptId}`
+    setBusy(logical)
+    try {
+      const submission = await reserveFallbackSubmission(identityId, raid.id, manualResponse.attemptId, {
+        attemptId: manualResponse.attemptId,
+        mediaId: fallbackMedia.mediaId,
+        verifierUserId: selectedVerifierId,
+        presentParticipantIds: Array.from(new Set([identityId, ...selectedParticipants])),
+        reason: fallbackReason.trim().slice(0, 240),
+      })
+      if (!submission) throw new Error('FALLBACK_ATTEMPT_MISSING')
+      const response = await createFallback(raid.id, submission.operationId, submission.input)
+      if (!(await settleFallbackSubmission(
+        identityId,
+        raid.id,
+        manualResponse.attemptId,
+        submission.operationId,
+        response,
+      ))) throw new Error('IDENTITY_CHANGED')
+      await refreshLocal()
+      setMessage('Fallback отправлен другому участнику. Credit появится только после его подтверждения.')
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : 'Fallback не подтверждён сервером.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const toggleParticipant = (participantId: string) => {
+    setSelectedParticipants((current) => current.includes(participantId)
+      ? current.filter((id) => id !== participantId)
+      : [...current, participantId])
+  }
+
+  const primaryKind = selectCheckInPrimary({
+    hasPendingClaim: Boolean(pendingClaim),
+    hasPendingFallback: Boolean(pendingFallback),
+    hasManualAttempt: Boolean(manualResponse),
+    hasAcceptedFallbackMedia: Boolean(fallbackMedia?.mediaId),
+    hasOtherVerifier: Boolean(
+      (reservedFallback?.input.verifierUserId ?? verifierId) &&
+      (reservedFallback?.input.verifierUserId ?? verifierId) !== identityId,
+    ),
+    viewerIsNavigator,
+    hasSelectedPoint: Boolean(selectedPointId),
+  })
+  const primary = primaryKind === 'claim' && pendingClaim
+    ? { label: 'Подтвердить, что я был здесь', action: () => claimAction(pendingClaim, 'confirm') }
+    : primaryKind === 'verify_fallback' && pendingFallback
+      ? { label: 'Подтвердить ручную проверку', action: () => fallbackAction(pendingFallback, 'confirm') }
+      : primaryKind === 'submit_fallback'
+        ? { label: 'Отправить на ручную проверку', action: submitFallback }
+        : primaryKind === 'check_in'
+          ? { label: 'Отметиться у точки', action: submit }
+          : primaryKind === 'locate'
+            ? { label: 'Найти точку рядом', action: locate }
+            : null
+  const primaryRequiresOnline = Boolean(pendingClaim || pendingFallback || manualResponse || (viewerIsNavigator && !selectedPointId))
+
+  return (
+    <section className="kb-card checkin-panel">
+      <div className="kb-section-head">
+        <div><p className="kb-kicker">Точка рейда</p><h2>{manualResponse ? 'Нужна ручная проверка' : 'Кто сейчас здесь?'}</h2></div>
+        {local?.unsynced ? <span className="checkin-pending">Локально: {local.unsynced}</span> : null}
+      </div>
+      <p className="kb-muted">Для каждой попытки берём отдельную координату. Маршрут навигатора не используется как evidence.</p>
+
+      {pendingClaim && <div className="kb-notice"><strong>Вас отметил участник рейда.</strong><p>Подтвердите только своё присутствие или отклоните claim.</p></div>}
+      {pendingFallback && <div className="kb-notice"><strong>Вас выбрали verifier.</strong><p>Подтверждение будет отдельным от автора попытки.</p></div>}
+
+      {!manualResponse && nearby.length > 0 && (
+        <fieldset className="checkin-points"><legend>Eligible точки рядом</legend>{nearby.map((point) => (
+          <label key={point.pointSnapshotId}><input type="radio" name="nearby-point" checked={selectedPointId === point.pointSnapshotId} onChange={() => setSelectedPointId(point.pointSnapshotId)} /><span><strong>{point.name}</strong><small>{Math.round(point.distanceMeters)} м · {point.creditedByTeam ? 'команда уже была' : 'новая для команды'}</small></span></label>
+        ))}</fieldset>
+      )}
+
+      {(selectedPointId || manualResponse) && viewerIsNavigator && (
+        <fieldset className="checkin-participants"><legend>Кто остановился у точки</legend>{participants.map((participant) => (
+          <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || selectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : ''}</span></label>
+        ))}</fieldset>
+      )}
+
+      {!viewerIsOwner && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+        <p className="kb-muted">Выбранные участники получат личный claim. Credit появится только после их подтверждения.</p>
+      )}
+
+      {viewerIsOwner && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setOrganizerAttestation(event.target.checked)} /><span><strong>Подтверждаю как организатор</strong><small>Без этого выбранные участники получат personal claim, но не credit.</small></span></label>
+      )}
+
+      {manualResponse && (
+        <div className="checkin-manual">
+          <p className="kb-error">Причина сервера: {manualResponse.reason}. Географический check-in не принят.</p>
+          <label>Причина ручной проверки<textarea disabled={Boolean(reservedFallback)} maxLength={240} rows={2} value={reservedFallback?.input.reason ?? fallbackReason} onChange={(event) => setFallbackReason(event.target.value)} /></label>
+          <label>Другой verifier<select disabled={Boolean(reservedFallback)} value={reservedFallback?.input.verifierUserId ?? verifierId} onChange={(event) => setVerifierId(event.target.value)}><option value="">Выберите участника</option>{participants.filter(({ id }) => id !== identityId).map((participant) => <option key={participant.id} value={participant.id}>{participant.displayName}</option>)}</select></label>
+          {reservedFallback && <p className="kb-muted">Повтор отправит сохранённый fallback с тем же idempotency key.</p>}
+          {!fallbackMedia?.mediaId && <p className="kb-muted">Сначала добавьте и дождитесь принятия fallback-фото.</p>}
+        </div>
+      )}
+
+      {message && <p className="kb-notice" role="status">{message}</p>}
+
+      {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || staleProjection || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
+      {pendingClaim && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => claimAction(pendingClaim, 'decline')}>Это ошибка — отклонить</button>}
+      {pendingFallback && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => fallbackAction(pendingFallback, 'decline')}>Не могу подтвердить</button>}
+      {Boolean(local?.unsynced) && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => void flush()}>Синхронизировать сохранённое</button>}
+
+      {canMutate && (
+        <div className="checkin-media-compose">
+          <label>Подпись к фото <input maxLength={160} value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
+          <label className="kb-link-button checkin-photo">{manualResponse ? 'Добавить fallback-фото' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy)} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
+        </div>
+      )}
+
+      {media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><img src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>}
+    </section>
+  )
+}

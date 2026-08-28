@@ -6,9 +6,8 @@
 
 ```text
 apps/pwa ── same-origin /api ──> apps/api ──> PostgreSQL + PostGIS
-    │                                │
-    └─ IndexedDB identity ledger     ├─> private S3-compatible storage
-                                     └─> transactional email
+    │                                │              └─> private normalized media BYTEA
+    └─ IndexedDB identity ledger     └─> transactional email
 
 packages/contracts — проверяемые HTTP DTO
 packages/domain    — чистые правила без React/Fastify/PostgreSQL
@@ -23,7 +22,8 @@ packages/domain    — чистые правила без React/Fastify/PostgreS
 - IndexedDB хранит только локальные операции, привязанные к identity, и повторяет их идемпотентно.
 - Logout очищает активную локальную identity: операции не replay-ятся без сессии и для другого пользователя, но сохраняются до повторного входа того же пользователя, чтобы не терять полевые данные.
 - PostGIS используется только там, где нужна серверная проверка расстояния.
-- Медиа приватны; клиент получает только короткоживущие bounded upload/download URL.
+- Медиа приватны. В закрытой альфе нормализованные изображения хранятся bounded `BYTEA` в PostgreSQL
+  за repository boundary и выдаются только через same-origin membership-gated API.
 
 ## Не строим в VP
 
@@ -150,6 +150,33 @@ Code acceptance #35 покрывает mocked geolocation/lifecycle, PostgreSQL 
 reload/replay, account isolation, service-worker update gate и mobile shell. Product/field acceptance остаётся
 открытым до отдельного 60–90-минутного physical smoke на реальных iPhone и Android по матрице #30.
 
+## Граница #36: быстрый чекин и приватные фотографии
+
+- При старте рейда сервер атомарно замораживает только `field_verified` точки активной коллекции. Snapshot
+  имени и координат неизменяем; последующие правки каталога не меняют уже начатый рейд.
+- Nearby возвращает не более пяти snapshot-точек. Обычный чекин принимает независимый one-shot GPS sample
+  не старше 60 секунд, с accuracy не хуже 50 м, и сервер сам проверяет радиус 75 м через PostGIS.
+- Один actor-wide operation ID с тем же fingerprint всегда возвращает прежний receipt; изменённый payload
+  получает conflict. Credit защищён уникальностью `(raid, point snapshot, user)`, evidence append-only.
+- Первый offline replay с уже просроченной геолокацией сохраняется как immutable
+  `needs_manual_verification/location_expired` и никогда автоматически не начисляет credit.
+- Выбор присутствующих создаёт self-claims. Только явная owner organizer attestation может начислить credit
+  выбранным участникам без их подтверждения; обычный пользователь подтверждает или отклоняет только себя.
+- Manual fallback требует прежний rejected/needs-review attempt, accepted media того же рейда и другого
+  активного verifier. До его подтверждения credit не создаётся.
+- Media intent живёт 15 минут и проходит сериализованный `pending -> processing -> accepted|failed|expired`.
+  Capability хранится только в хешированном виде на сервере и только в памяти клиента; потерянный accepted
+  response повторяется идемпотентно.
+- Вход ограничен 8 МиБ JPEG/PNG/WebP и 12 MP/8000 px. Sharp декодирует фактические bytes, auto-orient,
+  уменьшает до 2048 px и перекодирует JPEG не более 3 МиБ без EXIF; исходник не хранится.
+- Галерея ограничена 100 фото на рейд, ответы имеют `private, no-store`, удаление оставляет tombstone.
+- Dexie хранит stable `clientDraftId`/SHA и Blob, а sender использует lease/fence/`claimUntil`. Просроченный
+  `sending` восстанавливается после crash; capability никогда не попадает в durable storage.
+- Просроченный media intent заменяется новым operation ID при том же stable draft/SHA. WebSocket, Redis,
+  S3 и native background upload для alpha не требуются.
+
 ## Локальная среда
 
-`infra/compose.yaml` поднимает PostGIS, S3-compatible MinIO и Mailpit. Приложения запускаются обычным pnpm workspace. Managed-провайдеры выбираются перед staging без изменения доменных контрактов.
+`infra/compose.yaml` поднимает только PostGIS и Mailpit. Для alpha медиа остаются в PostgreSQL, поэтому
+отдельное object storage не запускается. Приложения работают как обычный pnpm workspace; managed-провайдеры
+выбираются перед staging без изменения доменных контрактов.

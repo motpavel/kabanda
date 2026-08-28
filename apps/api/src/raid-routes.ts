@@ -52,6 +52,44 @@ const routeBatchSchema = z.object({
     .min(1)
     .max(50),
 })
+const nearbySchema = z.object({
+  latitude: z.coerce.number().min(56.7).max(57),
+  longitude: z.coerce.number().min(53).max(53.4),
+  limit: z.coerce.number().int().min(1).max(5).default(5),
+})
+const presentParticipantIdsSchema = z.array(z.uuid()).max(20).default([])
+const checkinSchema = z.object({
+  pointSnapshotId: z.uuid(),
+  evidence: z.object({
+    latitude: z.coerce.number().min(56.7).max(57),
+    longitude: z.coerce.number().min(53).max(53.4),
+    capturedAt: z.iso.datetime({ offset: true }),
+    accuracyMeters: z.coerce.number().min(0).max(10_000),
+  }),
+  presentParticipantIds: presentParticipantIdsSchema,
+  organizerAttestation: z.boolean(),
+})
+const pendingQuerySchema = z.object({ status: z.literal('pending') })
+const fallbackSchema = z.object({
+  attemptId: z.uuid(),
+  mediaId: z.uuid(),
+  verifierUserId: z.uuid(),
+  presentParticipantIds: presentParticipantIdsSchema,
+  reason: z.string().trim().min(1).max(240),
+})
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/)
+const mediaIntentSchema = z.object({
+  sourceSha256: sha256Schema,
+  sizeBytes: z.coerce.number().int().min(1).max(8 * 1024 * 1024),
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+  caption: z.string().trim().max(160).nullable().optional(),
+  purpose: z.enum(['gallery', 'fallback']),
+  attemptId: z.uuid().optional(),
+})
+const mediaListSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(24),
+  cursor: z.string().trim().max(200).optional(),
+})
 
 function authRequired(reply: FastifyReply) {
   return reply.status(401).send({
@@ -122,6 +160,158 @@ export async function registerRaidRoutes(
     if (!user) return authRequired(reply)
     const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
     return { raid: await dependencies.raids.getRaid(user.id, raidId) }
+  })
+
+  app.get('/api/raids/:raidId/check-ins/nearby', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.nearbyCheckins(user.id, raidId, nearbySchema.parse(request.query))
+  })
+
+  app.post('/api/raids/:raidId/check-ins', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.createCheckin(
+      user.id,
+      raidId,
+      checkinSchema.parse(request.body),
+      operationId(request),
+    )
+  })
+
+  app.get('/api/raids/:raidId/check-in-claims', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    pendingQuerySchema.parse(request.query)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.listPendingClaims(user.id, raidId)
+  })
+
+  for (const decision of ['confirm', 'decline'] as const) {
+    app.post(`/api/raids/:raidId/check-in-claims/:claimId/${decision}`, async (request, reply) => {
+      const user = await currentUser(request, dependencies)
+      if (!user) return authRequired(reply)
+      const params = request.params as { raidId: string; claimId: string }
+      return dependencies.raids.respondClaim(
+        user.id,
+        resourceIdSchema.parse(params.raidId),
+        resourceIdSchema.parse(params.claimId),
+        decision,
+        operationId(request),
+      )
+    })
+  }
+
+  app.post('/api/raids/:raidId/check-in-fallbacks', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.createFallback(
+      user.id,
+      raidId,
+      fallbackSchema.parse(request.body),
+      operationId(request),
+    )
+  })
+
+  app.get('/api/raids/:raidId/check-in-fallbacks', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    pendingQuerySchema.parse(request.query)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.listPendingFallbacks(user.id, raidId)
+  })
+
+  for (const decision of ['confirm', 'decline'] as const) {
+    app.post(`/api/raids/:raidId/check-in-fallbacks/:fallbackId/${decision}`, async (request, reply) => {
+      const user = await currentUser(request, dependencies)
+      if (!user) return authRequired(reply)
+      const params = request.params as { raidId: string; fallbackId: string }
+      return dependencies.raids.respondFallback(
+        user.id,
+        resourceIdSchema.parse(params.raidId),
+        resourceIdSchema.parse(params.fallbackId),
+        decision,
+        operationId(request),
+      )
+    })
+  }
+
+  app.post('/api/raids/:raidId/media/intents', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const response = await dependencies.raids.createMediaIntent(
+      user.id,
+      raidId,
+      mediaIntentSchema.parse(request.body),
+      operationId(request),
+    )
+    return reply.status(201).send(response)
+  })
+
+  app.put(
+    '/api/raids/:raidId/media/intents/:intentId/content',
+    { bodyLimit: 8 * 1024 * 1024 },
+    async (request, reply) => {
+      const user = await currentUser(request, dependencies)
+      if (!user) return authRequired(reply)
+      const params = request.params as { raidId: string; intentId: string }
+      const capability = z.string().min(32).max(160).parse(request.headers['x-upload-capability'])
+      const contentSha256 = sha256Schema.parse(request.headers['x-content-sha256'])
+      if (!Buffer.isBuffer(request.body)) {
+        return reply.status(400).send({
+          error: { code: 'MEDIA_BODY_REQUIRED', message: 'Нужен файл изображения' },
+        })
+      }
+      return dependencies.raids.uploadMedia(
+        user.id,
+        resourceIdSchema.parse(params.raidId),
+        resourceIdSchema.parse(params.intentId),
+        capability,
+        contentSha256,
+        request.body,
+      )
+    },
+  )
+
+  app.get('/api/raids/:raidId/media', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const query = mediaListSchema.parse(request.query)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.listMedia(user.id, raidId, query.limit, query.cursor))
+  })
+
+  app.get('/api/raids/:raidId/media/:mediaId/content', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const params = request.params as { raidId: string; mediaId: string }
+    const media = await dependencies.raids.readMedia(
+      user.id,
+      resourceIdSchema.parse(params.raidId),
+      resourceIdSchema.parse(params.mediaId),
+    )
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .type(media.contentType)
+      .send(media.bytes)
+  })
+
+  app.delete('/api/raids/:raidId/media/:mediaId', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const params = request.params as { raidId: string; mediaId: string }
+    return dependencies.raids.tombstoneMedia(
+      user.id,
+      resourceIdSchema.parse(params.raidId),
+      resourceIdSchema.parse(params.mediaId),
+      operationId(request),
+    )
   })
 
   app.post('/api/raids/:raidId/commands/open-lobby', async (request, reply) =>

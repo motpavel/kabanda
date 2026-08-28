@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
+import sharp from 'sharp'
 import { DatabaseKabandaService, KabandaError, type ManifestPoint } from '../src/kabandas.js'
 import { DatabaseRaidService } from '../src/raids.js'
 
@@ -8,7 +9,9 @@ const databaseUrl = process.env.DATABASE_URL
 const describePostgres = databaseUrl ? describe : describe.skip
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null
 const service = pool ? new DatabaseKabandaService(pool) : null
-const raidService = pool ? new DatabaseRaidService(pool) : null
+const raidService = pool
+  ? new DatabaseRaidService(pool, 'test-media-capability-secret-at-least-32-bytes')
+  : null
 
 const bounds = { minLat: 56.8, minLon: 53.1, maxLat: 56.9, maxLon: 53.3 }
 const manifest: ManifestPoint[] = [
@@ -69,6 +72,14 @@ function readiness(online = true) {
 }
 
 async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
+  await service!.importManifest(
+    ownerId,
+    kabandaId,
+    `raid-points-${suffix}`,
+    createHash('sha256').update(`raid-points-${suffix}`).digest('hex'),
+    `Рейдовые точки ${suffix}`,
+    manifest,
+  )
   const created = await raidService!.createDraft(
     ownerId,
     kabandaId,
@@ -921,6 +932,14 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
 
   it('cuts over handoff atomically and privacy-gates a removed navigator receipt', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('route-handoff')
+    await service!.importManifest(
+      ownerId,
+      kabanda.id,
+      'raid-points-route-handoff',
+      createHash('sha256').update('raid-points-route-handoff').digest('hex'),
+      'Рейдовые точки handoff',
+      manifest,
+    )
     const memberId = await user('route-handoff-member@example.com')
     const invite = await service!.createInvite(ownerId, kabanda.id, 1)
     const preview = await service!.previewInvite(invite.token, true)
@@ -1101,5 +1120,363 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
         'private-member-accept',
       ),
     ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+  })
+
+  it('freezes field-verified points and issues one idempotent GPS credit', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('checkin-snapshot')
+    const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'checkin-snapshot')
+    const snapshots = await pool!.query<{
+      id: string
+      source_point_id: string
+      name: string
+    }>('SELECT id, source_point_id, name FROM raid_point_snapshots WHERE raid_id = $1', [
+      acquired.raid.id,
+    ])
+    expect(snapshots.rows).toHaveLength(1)
+    expect(snapshots.rows[0]!.name).toBe('Точка два')
+
+    await pool!.query(
+      `UPDATE points SET name = 'Переименованная точка', archived_at = now()
+       WHERE id = $1`,
+      [snapshots.rows[0]!.source_point_id],
+    )
+    const nearby = await raidService!.nearbyCheckins(ownerId, acquired.raid.id, {
+      latitude: 56.86,
+      longitude: 53.21,
+      limit: 5,
+    })
+    expect(nearby.points).toEqual([
+      expect.objectContaining({ name: 'Точка два', creditedByMe: false }),
+    ])
+
+    const input = {
+      pointSnapshotId: snapshots.rows[0]!.id,
+      evidence: {
+        latitude: 56.86,
+        longitude: 53.21,
+        capturedAt: new Date().toISOString(),
+        accuracyMeters: 12,
+      },
+      presentParticipantIds: [],
+      organizerAttestation: false,
+    }
+    const accepted = await raidService!.createCheckin(
+      ownerId,
+      acquired.raid.id,
+      input,
+      'checkin-snapshot-once',
+    )
+    await expect(
+      raidService!.createCheckin(ownerId, acquired.raid.id, input, 'checkin-snapshot-once'),
+    ).resolves.toEqual(accepted)
+    expect(accepted).toMatchObject({ outcome: 'accepted', reason: null })
+    expect(accepted.credits).toHaveLength(1)
+    await expect(
+      raidService!.createCheckin(
+        ownerId,
+        acquired.raid.id,
+        { ...input, evidence: { ...input.evidence, accuracyMeters: 99 } },
+        'checkin-snapshot-once',
+      ),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+    expect(
+      Number(
+        (
+          await pool!.query(
+            'SELECT count(*) FROM raid_point_credits WHERE raid_id = $1',
+            [acquired.raid.id],
+          )
+        ).rows[0]!.count,
+      ),
+    ).toBe(1)
+
+    const late = await raidService!.createCheckin(
+      ownerId,
+      acquired.raid.id,
+      {
+        ...input,
+        evidence: {
+          ...input.evidence,
+          capturedAt: new Date(Date.now() - 61_000).toISOString(),
+        },
+      },
+      'checkin-snapshot-late',
+    )
+    expect(late).toMatchObject({
+      outcome: 'needs_manual_verification',
+      reason: 'location_expired',
+      credits: [],
+    })
+  })
+
+  it('confirms private claims and a same-raid sanitized media fallback', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('checkin-media')
+    const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'checkin-media')
+    const memberId = await user('checkin-media-member@example.com')
+    await pool!.query(
+      `INSERT INTO kabanda_memberships (kabanda_id, user_id, role)
+       VALUES ($1, $2, 'member')`,
+      [kabanda.id, memberId],
+    )
+    await pool!.query(
+      `INSERT INTO raid_participants (raid_id, user_id, state, accepted_at, active_from)
+       VALUES ($1, $2, 'active', now(), now())`,
+      [acquired.raid.id, memberId],
+    )
+    const snapshot = (
+      await pool!.query<{ id: string }>(
+        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        [acquired.raid.id],
+      )
+    ).rows[0]!
+    const manual = await raidService!.createCheckin(
+      ownerId,
+      acquired.raid.id,
+      {
+        pointSnapshotId: snapshot.id,
+        evidence: {
+          latitude: 56.86,
+          longitude: 53.21,
+          capturedAt: new Date(Date.now() - 120_000).toISOString(),
+          accuracyMeters: 8,
+        },
+        presentParticipantIds: [],
+        organizerAttestation: false,
+      },
+      'checkin-media-manual',
+    )
+    const source = await sharp({
+      create: { width: 32, height: 24, channels: 3, background: '#7a3e18' },
+    })
+      .png()
+      .toBuffer()
+    const sourceSha256 = createHash('sha256').update(source).digest('hex')
+    await pool!.query(
+      `INSERT INTO raid_media
+        (raid_id, uploader_user_id, purpose, source_sha256, declared_size_bytes,
+         declared_content_type, upload_capability_hash, upload_expires_at)
+       SELECT $1, $2, 'gallery', lpad(series::text, 64, '0'), 1, 'image/jpeg',
+         lpad((series + 1000)::text, 64, '0'), now() - interval '1 minute'
+       FROM generate_series(1, 100) AS series`,
+      [acquired.raid.id, ownerId],
+    )
+    const intent = await raidService!.createMediaIntent(
+      ownerId,
+      acquired.raid.id,
+      {
+        sourceSha256,
+        sizeBytes: source.length,
+        contentType: 'image/png',
+        caption: 'След кабана',
+        purpose: 'fallback',
+        attemptId: manual.attemptId,
+      },
+      'checkin-media-intent',
+    )
+    await expect(
+      raidService!.createMediaIntent(
+        ownerId,
+        acquired.raid.id,
+        {
+          sourceSha256,
+          sizeBytes: source.length,
+          contentType: 'image/png',
+          caption: 'След кабана',
+          purpose: 'fallback',
+          attemptId: manual.attemptId,
+        },
+        'checkin-media-intent',
+      ),
+    ).resolves.toEqual(intent)
+    const intentReceipt = await pool!.query<{ response_json: Record<string, unknown> }>(
+      `SELECT response_json FROM raid_feature_receipts
+       WHERE actor_user_id = $1 AND operation_id = 'checkin-media-intent'`,
+      [ownerId],
+    )
+    expect(intentReceipt.rows[0]!.response_json).not.toHaveProperty('uploadCapability')
+    const uploaded = await raidService!.uploadMedia(
+      ownerId,
+      acquired.raid.id,
+      intent.intentId,
+      intent.uploadCapability,
+      sourceSha256,
+      source,
+    )
+    expect(uploaded.media).toMatchObject({ contentType: 'image/jpeg', state: 'ready' })
+    const stored = await raidService!.readMedia(ownerId, acquired.raid.id, uploaded.media.id)
+    expect((await sharp(stored.bytes).metadata()).exif).toBeUndefined()
+
+    const fallbackInput = {
+      attemptId: manual.attemptId,
+      mediaId: uploaded.media.id,
+      verifierUserId: memberId,
+      presentParticipantIds: [],
+      reason: 'Проверено на месте',
+    }
+    const competingFallbacks = await Promise.allSettled([
+      raidService!.createFallback(
+        ownerId,
+        acquired.raid.id,
+        fallbackInput,
+        'checkin-media-fallback-a',
+      ),
+      raidService!.createFallback(
+        ownerId,
+        acquired.raid.id,
+        fallbackInput,
+        'checkin-media-fallback-b',
+      ),
+    ])
+    const firstFallback = competingFallbacks.find((result) => result.status === 'fulfilled')
+    const duplicateFallback = competingFallbacks.find((result) => result.status === 'rejected')
+    if (firstFallback?.status !== 'fulfilled' || duplicateFallback?.status !== 'rejected') {
+      throw new Error('Expected exactly one open fallback request')
+    }
+    expect(duplicateFallback.reason).toMatchObject({
+      code: 'FALLBACK_ALREADY_REQUESTED',
+      statusCode: 409,
+    })
+    await raidService!.respondFallback(
+      memberId,
+      acquired.raid.id,
+      firstFallback.value.fallback.id,
+      'decline',
+      'checkin-media-fallback-decline',
+    )
+    const fallback = await raidService!.createFallback(
+      ownerId,
+      acquired.raid.id,
+      fallbackInput,
+      'checkin-media-fallback-after-decline',
+    )
+    await expect(
+      raidService!.tombstoneMedia(
+        ownerId,
+        acquired.raid.id,
+        uploaded.media.id,
+        'checkin-media-delete-evidence',
+      ),
+    ).rejects.toMatchObject({ code: 'MEDIA_IS_FALLBACK_EVIDENCE' })
+    await pool!.query(
+      `UPDATE raid_media SET state = 'processing', processing_started_at = now()
+       WHERE id = $1`,
+      [uploaded.media.id],
+    )
+    await expect(
+      raidService!.respondFallback(
+        memberId,
+        acquired.raid.id,
+        fallback.fallback.id,
+        'confirm',
+        'checkin-media-fallback-confirm',
+      ),
+    ).rejects.toMatchObject({ code: 'FALLBACK_MEDIA_UNAVAILABLE' })
+    await pool!.query(
+      `UPDATE raid_media SET state = 'ready', processing_started_at = NULL WHERE id = $1`,
+      [uploaded.media.id],
+    )
+    await pool!.query("UPDATE raid_media SET purpose = 'gallery' WHERE id = $1", [
+      uploaded.media.id,
+    ])
+    await expect(
+      raidService!.respondFallback(
+        memberId,
+        acquired.raid.id,
+        fallback.fallback.id,
+        'confirm',
+        'checkin-media-fallback-confirm',
+      ),
+    ).rejects.toMatchObject({ code: 'FALLBACK_MEDIA_UNAVAILABLE' })
+    await pool!.query("UPDATE raid_media SET purpose = 'fallback' WHERE id = $1", [
+      uploaded.media.id,
+    ])
+    const verifierInbox = await raidService!.listPendingFallbacks(memberId, acquired.raid.id)
+    expect(verifierInbox.fallbacks[0]!.id).toBe(fallback.fallback.id)
+    const verified = await raidService!.respondFallback(
+      memberId,
+      acquired.raid.id,
+      fallback.fallback.id,
+      'confirm',
+      'checkin-media-fallback-confirm',
+    )
+    expect(verified.credits).toEqual([
+      expect.objectContaining({ userId: ownerId, source: 'media_fallback' }),
+    ])
+    await expect(
+      raidService!.tombstoneMedia(
+        ownerId,
+        acquired.raid.id,
+        uploaded.media.id,
+        'checkin-media-delete-confirmed-evidence',
+      ),
+    ).rejects.toMatchObject({ code: 'MEDIA_IS_FALLBACK_EVIDENCE' })
+
+    const accepted = await raidService!.createCheckin(
+      ownerId,
+      acquired.raid.id,
+      {
+        pointSnapshotId: snapshot.id,
+        evidence: {
+          latitude: 56.86,
+          longitude: 53.21,
+          capturedAt: new Date().toISOString(),
+          accuracyMeters: 8,
+        },
+        presentParticipantIds: [memberId],
+        organizerAttestation: false,
+      },
+      'checkin-media-claim',
+    )
+    expect(accepted.claims).toHaveLength(1)
+
+    const acceptedSource = await sharp({
+      create: { width: 24, height: 24, channels: 3, background: '#2b5d38' },
+    })
+      .png()
+      .toBuffer()
+    const acceptedSourceSha256 = createHash('sha256').update(acceptedSource).digest('hex')
+    const acceptedIntent = await raidService!.createMediaIntent(
+      ownerId,
+      acquired.raid.id,
+      {
+        sourceSha256: acceptedSourceSha256,
+        sizeBytes: acceptedSource.length,
+        contentType: 'image/png',
+        purpose: 'fallback',
+        attemptId: accepted.attemptId,
+      },
+      'checkin-media-accepted-intent',
+    )
+    const acceptedMedia = await raidService!.uploadMedia(
+      ownerId,
+      acquired.raid.id,
+      acceptedIntent.intentId,
+      acceptedIntent.uploadCapability,
+      acceptedSourceSha256,
+      acceptedSource,
+    )
+    await expect(
+      raidService!.createFallback(
+        ownerId,
+        acquired.raid.id,
+        {
+          attemptId: accepted.attemptId,
+          mediaId: acceptedMedia.media.id,
+          verifierUserId: memberId,
+          presentParticipantIds: [],
+          reason: 'Не должно пройти для обычной отметки',
+        },
+        'checkin-media-accepted-fallback',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+    const inbox = await raidService!.listPendingClaims(memberId, acquired.raid.id)
+    const confirmed = await raidService!.respondClaim(
+      memberId,
+      acquired.raid.id,
+      inbox.claims[0]!.id,
+      'confirm',
+      'checkin-media-confirm-claim',
+    )
+    expect(confirmed.credit).toMatchObject({ userId: memberId, source: 'claim' })
   })
 })

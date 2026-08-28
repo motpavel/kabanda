@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+const localMediaCapabilitySecret = 'kabanda-media-capability-local-only-change-me'
+
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_HOST: z.string().default('127.0.0.1'),
@@ -15,11 +17,7 @@ const environmentSchema = z.object({
   SMTP_FROM: z.email().default('kabanda@example.test'),
   MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
-  S3_ENDPOINT: z.url().default('http://127.0.0.1:9000'),
-  S3_REGION: z.string().default('us-east-1'),
-  S3_BUCKET: z.string().min(3).default('kabanda-private'),
-  S3_ACCESS_KEY: z.string().min(1).default('kabanda'),
-  S3_SECRET_KEY: z.string().min(8).default('kabanda-local-only'),
+  MEDIA_CAPABILITY_SECRET: z.string().min(32).default(localMediaCapabilitySecret),
 })
 
 export type ApiConfig = z.infer<typeof environmentSchema> & {
@@ -29,6 +27,12 @@ export type ApiConfig = z.infer<typeof environmentSchema> & {
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiConfig {
   const parsed = environmentSchema.parse(environment)
+  if (
+    parsed.NODE_ENV === 'production' &&
+    parsed.MEDIA_CAPABILITY_SECRET === localMediaCapabilitySecret
+  ) {
+    throw new Error('MEDIA_CAPABILITY_SECRET must be configured in production')
+  }
   const secureCookies = parsed.NODE_ENV === 'production'
   return {
     ...parsed,

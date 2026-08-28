@@ -425,6 +425,24 @@
 .pwa-update-gate span { color: #d7dbe2; font-size: .82rem; }
 .pwa-update-gate button { justify-self: start; margin-top: 4px; }
 
+.checkin-panel { display: grid; gap: 1rem; border-color: color-mix(in srgb, var(--kb-brand) 34%, var(--kb-line)); }
+.checkin-pending { border-radius: 999px; background: #fff0eb; color: #8e3927; padding: .35rem .65rem; font-size: .75rem; font-weight: 700; }
+.checkin-points, .checkin-participants { display: grid; gap: .55rem; margin: 0; padding: 0; border: 0; }
+.checkin-points legend, .checkin-participants legend { margin-bottom: .5rem; font-size: .78rem; font-weight: 700; color: var(--kb-muted); }
+.checkin-points label, .checkin-participants label, .checkin-attestation { display: flex; align-items: flex-start; gap: .7rem; min-height: 2.75rem; padding: .72rem; border: 1px solid var(--kb-line); border-radius: .85rem; background: #fff; }
+.checkin-points input, .checkin-participants input, .checkin-attestation input { width: 1.15rem; height: 1.15rem; margin-top: .12rem; }
+.checkin-points span, .checkin-attestation span { display: grid; gap: .2rem; }
+.checkin-points small, .checkin-attestation small { color: var(--kb-muted); }
+.checkin-manual, .checkin-media-compose { display: grid; gap: .75rem; }
+.checkin-manual label, .checkin-media-compose label:not(.checkin-photo) { display: grid; gap: .35rem; font-weight: 650; }
+.checkin-photo { display: inline-flex; justify-content: center; cursor: pointer; }
+.checkin-photo input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.checkin-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.checkin-gallery figure { margin: 0; overflow: hidden; border-radius: .85rem; background: var(--kb-surface-subtle, #f1f2f0); }
+.checkin-gallery img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.checkin-gallery figcaption { padding: .5rem; font-size: .75rem; color: var(--kb-muted); }
+.route-recorder__secondary { width: 100%; text-align: center; }
+
 .raid-auth,
 .raid-empty {
   width: min(100%, 540px);
@@ -479,6 +497,10 @@
   .raid-version .kb-kicker { grid-column: 1 / -1; }
   .raid-version span { align-self: end; padding-bottom: 7px; }
   .participant-state { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (min-width: 600px) {
+  .checkin-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 390px) {

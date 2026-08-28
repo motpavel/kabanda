@@ -14,7 +14,7 @@ const database = createDatabase(config.DATABASE_URL)
 const mailer = new SmtpMagicLinkMailer(config.SMTP_HOST, config.SMTP_PORT, config.SMTP_FROM)
 const auth = new DatabaseAuthService(database, mailer, config)
 const kabandas = new DatabaseKabandaService(database)
-const raids = new DatabaseRaidService(database)
+const raids = new DatabaseRaidService(database, config.MEDIA_CAPABILITY_SECRET)
 const app = await buildApp({
   auth,
   kabandas,

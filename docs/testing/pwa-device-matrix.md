@@ -47,6 +47,9 @@
 | Permission revoke/restore | 5 мин | ошибка видна, recovery понятен | Pending | Pending |
 | Service-worker update | 10 мин | нет принудительного reload во время GPS | Pending | Pending |
 | Camera/file capture | 5 мин | photo input работает или имеет понятный fallback | Pending | Pending |
+| Offline check-in replay | 10 мин | свежий replay принимается, просроченный честно требует ручной проверки | Pending | Pending |
+| Offline photo upload | 10 мин | draft переживает reload, после online появляется один accepted media | Pending | Pending |
+| Five-person check-in | 10 мин | claims видят только выбранные участники, credit не дублируется | Pending | Pending |
 | Web Share/download | 5 мин | evidence передаётся или скачивается | Pending | Pending |
 | Storage pressure/clear site data | 10 мин | потеря/восстановление описаны без ложных обещаний | Pending | Pending |
 
@@ -61,6 +64,9 @@
 - storage usage before/after;
 - reload/relaunch recovery;
 - camera/share result;
+- время от primary action до durable local receipt;
+- время offline photo от reconnect до accepted gallery item;
+- количество duplicate credits/media после reload и повторного нажатия;
 - app-caused confusion и developer help requests.
 
 ## Решение

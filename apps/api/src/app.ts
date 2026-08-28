@@ -39,6 +39,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   await app.register(cookie)
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(rateLimit, { global: false })
+  app.addContentTypeParser(
+    ['application/octet-stream', 'image/jpeg', 'image/png', 'image/webp'],
+    { parseAs: 'buffer', bodyLimit: 8 * 1024 * 1024 },
+    (_request, body, done) => done(null, body),
+  )
 
   app.addHook('onRequest', async (request, reply) => {
     if (
@@ -81,7 +86,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         error: { code: error.code, message: error.message, details: error.details },
       })
     }
-    if (request.routeOptions.url === '/api/raids/:raidId/route/batches') {
+    if (
+      request.routeOptions.url === '/api/raids/:raidId/route/batches' ||
+      request.routeOptions.url?.includes('/check-in') ||
+      request.routeOptions.url?.includes('/media')
+    ) {
       const databaseError = error as { code?: string; constraint?: string }
       app.log.error(
         {
@@ -89,7 +98,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
           code: databaseError.code,
           constraint: databaseError.constraint,
         },
-        'route batch failed',
+        'private raid operation failed',
       )
     } else {
       app.log.error(error)

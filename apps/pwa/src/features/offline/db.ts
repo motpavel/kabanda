@@ -9,6 +9,9 @@ import type {
   RecorderWriterLeaseRecord,
   RaidProjectionRecord,
   RouteOutboxRecord,
+  CheckInOutboxRecord,
+  MediaDraftRecord,
+  CheckInSenderLeaseRecord,
 } from './types'
 
 class KabandaOfflineDatabase extends Dexie {
@@ -21,6 +24,9 @@ class KabandaOfflineDatabase extends Dexie {
   recorderSessions!: EntityTable<RecorderSessionRecord, 'key'>
   recorderClients!: EntityTable<RecorderClientRecord, 'key'>
   recorderWriterLeases!: EntityTable<RecorderWriterLeaseRecord, 'key'>
+  checkInOutbox!: EntityTable<CheckInOutboxRecord, 'operationId'>
+  mediaDrafts!: EntityTable<MediaDraftRecord, 'operationId'>
+  checkInSenderLeases!: EntityTable<CheckInSenderLeaseRecord, 'key'>
 
   constructor() {
     super('kabanda-offline')
@@ -70,6 +76,30 @@ class KabandaOfflineDatabase extends Dexie {
         'key, identityId, raidId, updatedAt, [identityId+raidId]',
       recorderWriterLeases:
         'key, identityId, raidId, navigatorLeaseId, holderTabId, expiresAt',
+    })
+    this.version(6).stores({
+      identities: 'userId, activatedAt',
+      identityContext: 'key, userId, changedAt',
+      outbox:
+        'id, identityId, kind, aggregateId, status, createdAt, [identityId+status+createdAt]',
+      pointCollections:
+        'key, identityId, kabandaId, collectionId, savedAt, [identityId+kabandaId+collectionId]',
+      raidProjections:
+        'key, identityId, raidId, kabandaId, state, savedAt, [identityId+raidId], [identityId+kabandaId+savedAt], [identityId+savedAt]',
+      routeOutbox:
+        'id, identityId, raidId, navigatorLeaseId, status, batchId, sequence, [identityId+raidId+navigatorLeaseId+status+sequence]',
+      recorderSessions:
+        'key, identityId, raidId, navigatorLeaseId, updatedAt, [identityId+raidId+updatedAt]',
+      recorderClients:
+        'key, identityId, raidId, updatedAt, [identityId+raidId]',
+      recorderWriterLeases:
+        'key, identityId, raidId, navigatorLeaseId, holderTabId, expiresAt',
+      checkInOutbox:
+        'operationId, identityId, raidId, status, createdAt, claimUntil, [identityId+raidId+status+createdAt]',
+      mediaDrafts:
+        'operationId, clientDraftId, identityId, raidId, purpose, attemptId, status, createdAt, claimUntil, [identityId+raidId+status+createdAt]',
+      checkInSenderLeases:
+        'key, identityId, raidId, holderTabId, expiresAt',
     })
   }
 }

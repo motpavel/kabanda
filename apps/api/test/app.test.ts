@@ -8,7 +8,7 @@ import {
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import type { KabandaService } from '../src/kabandas.js'
-import type { RaidService } from '../src/raids.js'
+import { deriveMediaUploadCapability, type RaidService } from '../src/raids.js'
 
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
@@ -58,6 +58,18 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
     getRaid: vi.fn(),
     getCurrent: vi.fn().mockResolvedValue(null),
     listActionable: vi.fn().mockResolvedValue([]),
+    nearbyCheckins: vi.fn().mockResolvedValue({ policy: {}, points: [] }),
+    createCheckin: vi.fn(),
+    listPendingClaims: vi.fn().mockResolvedValue({ claims: [] }),
+    respondClaim: vi.fn(),
+    createFallback: vi.fn(),
+    listPendingFallbacks: vi.fn().mockResolvedValue({ fallbacks: [] }),
+    respondFallback: vi.fn(),
+    createMediaIntent: vi.fn(),
+    uploadMedia: vi.fn(),
+    listMedia: vi.fn().mockResolvedValue({ media: [], nextCursor: null }),
+    readMedia: vi.fn(),
+    tombstoneMedia: vi.fn(),
     ...overrides,
   }
 }
@@ -85,6 +97,40 @@ async function createTestApp(
 }
 
 describe('API foundation', () => {
+  it('derives stable upload capabilities from a dedicated secret and intent identity', () => {
+    const args = [
+      'test-media-capability-secret-at-least-32-bytes',
+      'b890c06f-4d24-43a4-8ae3-ebf7258bf803',
+      '939d919d-6c8a-47f1-9a1d-feef78f8df46',
+      user.id,
+    ] as const
+    const capability = deriveMediaUploadCapability(...args)
+
+    expect(deriveMediaUploadCapability(...args)).toBe(capability)
+    expect(
+      deriveMediaUploadCapability(
+        args[0],
+        args[1],
+        '9c1d603f-c79d-46f4-806c-f57f040e2d91',
+        args[3],
+      ),
+    ).not.toBe(capability)
+    expect(capability).toHaveLength(43)
+    expect(capability).not.toContain(args[0])
+  })
+
+  it('requires a dedicated media capability secret in production', () => {
+    expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(
+      'MEDIA_CAPABILITY_SECRET must be configured in production',
+    )
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+      }),
+    ).not.toThrow()
+  })
+
   it('reports liveness', async () => {
     const app = await createTestApp(createAuth())
     const response = await app.inject({ method: 'GET', url: '/api/health' })
@@ -499,6 +545,80 @@ describe('API foundation', () => {
         clientInstanceId: '7bc3d6a1-181e-4d14-a62e-16324b6a9a4f',
       },
       'route-acquire-operation',
+    )
+  })
+
+  it('registers bounded nearby and actor-owned pending inbox routes', async () => {
+    const nearbyCheckins = vi.fn().mockResolvedValue({
+      policy: { version: 'v1', radiusMeters: 75, maxAgeSeconds: 60, maxAccuracyMeters: 50 },
+      points: [],
+    })
+    const listPendingClaims = vi.fn().mockResolvedValue({ claims: [] })
+    const listPendingFallbacks = vi.fn().mockResolvedValue({ fallbacks: [] })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ nearbyCheckins, listPendingClaims, listPendingFallbacks }),
+    )
+    const raidId = '81297402-898c-48d6-bc78-c74b6b38205c'
+    const nearby = await app.inject({
+      method: 'GET',
+      url: `/api/raids/${raidId}/check-ins/nearby?latitude=56.85&longitude=53.2&limit=5`,
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(nearby.statusCode).toBe(200)
+    expect(nearbyCheckins).toHaveBeenCalledWith(user.id, raidId, {
+      latitude: 56.85,
+      longitude: 53.2,
+      limit: 5,
+    })
+    for (const path of ['check-in-claims', 'check-in-fallbacks']) {
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/api/raids/${raidId}/${path}?status=pending`,
+            headers: { cookie: 'kabanda_session=session' },
+          })
+        ).statusCode,
+      ).toBe(200)
+    }
+  })
+
+  it('passes raw media bytes only through a capability-scoped upload route', async () => {
+    const uploadMedia = vi.fn().mockResolvedValue({
+      media: {
+        id: '8bb14649-50b1-46f0-a137-ff8fd6cd82fc',
+        state: 'ready',
+        contentType: 'image/jpeg',
+      },
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ uploadMedia }),
+    )
+    const bytes = Buffer.from('actual-image-bytes')
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/media/intents/8bb14649-50b1-46f0-a137-ff8fd6cd82fc/content',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'content-type': 'image/jpeg',
+        'x-upload-capability': 'capability-that-is-long-enough-for-upload',
+        'x-content-sha256': 'a'.repeat(64),
+      },
+      payload: bytes,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(uploadMedia).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      '8bb14649-50b1-46f0-a137-ff8fd6cd82fc',
+      'capability-that-is-long-enough-for-upload',
+      'a'.repeat(64),
+      bytes,
     )
   })
 })
