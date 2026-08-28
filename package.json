@@ -15,7 +15,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm test:points && pnpm test:stand && pnpm -r --if-present test",
     "test:e2e": "pnpm --filter @kabanda/api e2e:run",
-    "test:points": "node scripts/validate-alpha-points.mjs",
+    "test:points": "node --test scripts/validate-alpha-points.test.mjs && node scripts/validate-alpha-points.mjs",
     "test:stand": "node --test infra/stand/*.test.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "infra:up": "docker compose -f infra/compose.yaml up -d --wait",

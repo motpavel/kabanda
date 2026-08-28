@@ -80,21 +80,21 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     await app.register(fastifyStatic, {
       root: dependencies.config.PWA_DIST_DIR,
       cacheControl: false,
-      setHeaders(response, pathName) {
+      setHeaders(reply, pathName) {
         const fileName = basename(pathName)
         if (
           pathName.includes('/assets/') ||
           /^(?:workbox|sw-build)-[A-Za-z0-9._-]+\.js$/.test(fileName)
         ) {
-          response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+          reply.header('Cache-Control', 'public, max-age=31536000, immutable')
         } else if (
           fileName === 'index.html' ||
           fileName === 'sw.js' ||
           fileName.endsWith('.webmanifest')
         ) {
-          response.setHeader('Cache-Control', 'no-store')
+          reply.header('Cache-Control', 'no-store')
         } else {
-          response.setHeader('Cache-Control', 'no-cache')
+          reply.header('Cache-Control', 'no-cache')
         }
       },
     })

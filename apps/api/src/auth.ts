@@ -4,6 +4,11 @@ import { normalizeEmail, sanitizeReturnTo } from '@kabanda/domain'
 import type { Pool } from 'pg'
 import type { ApiConfig } from './config.js'
 import type { MagicLinkMailer } from './mailer.js'
+import {
+  acquireAlphaIdentityLock,
+  alphaEmailFingerprint,
+  isAlphaAccessGranted,
+} from './alpha-access.js'
 
 export interface VerifiedSession {
   rawToken: string
@@ -65,11 +70,32 @@ export class DatabaseAuthService implements AuthService {
     const rawToken = randomBytes(32).toString('base64url')
     const tokenHash = hashToken(rawToken)
 
-    await this.pool.query(
-      `INSERT INTO auth_magic_links (token_hash, email, return_to, expires_at)
-       VALUES ($1, $2, $3, now() + ($4 * interval '1 minute'))`,
-      [tokenHash, email, returnTo, this.config.MAGIC_LINK_TTL_MINUTES],
-    )
+    const client = await this.pool.connect()
+    let allowed = true
+    try {
+      await client.query('BEGIN')
+      if (this.config.ALPHA_ACCESS_MODE === 'enforced') {
+        const secret = this.config.ALPHA_ACCESS_SECRET!
+        const fingerprint = alphaEmailFingerprint(email, secret)
+        await acquireAlphaIdentityLock(client, fingerprint)
+        allowed = await isAlphaAccessGranted(client, email, secret)
+      }
+      if (allowed) {
+        await client.query(
+          `INSERT INTO auth_magic_links (token_hash, email, return_to, expires_at)
+           VALUES ($1, $2, $3, now() + ($4 * interval '1 minute'))`,
+          [tokenHash, email, returnTo, this.config.MAGIC_LINK_TTL_MINUTES],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+
+    if (!allowed) return
 
     await this.mailer.sendMagicLink(
       email,
@@ -81,6 +107,30 @@ export class DatabaseAuthService implements AuthService {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      const candidateResult = await client.query<{ email: string; return_to: string }>(
+        `SELECT email, return_to FROM auth_magic_links
+         WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now()`,
+        [hashToken(rawToken)],
+      )
+      const candidate = candidateResult.rows[0]
+      if (!candidate) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      if (this.config.ALPHA_ACCESS_MODE === 'enforced') {
+        const secret = this.config.ALPHA_ACCESS_SECRET!
+        const fingerprint = alphaEmailFingerprint(candidate.email, secret)
+        await acquireAlphaIdentityLock(client, fingerprint)
+        if (!(await isAlphaAccessGranted(client, candidate.email, secret))) {
+          await client.query(
+            `UPDATE auth_magic_links SET consumed_at = now()
+             WHERE token_hash = $1 AND consumed_at IS NULL`,
+            [hashToken(rawToken)],
+          )
+          await client.query('COMMIT')
+          return null
+        }
+      }
       const linkResult = await client.query<{ email: string; return_to: string }>(
         `UPDATE auth_magic_links
          SET consumed_at = now()
@@ -102,6 +152,17 @@ export class DatabaseAuthService implements AuthService {
       )
       const userRow = userResult.rows[0]
       if (!userRow) throw new Error('User was not returned after upsert')
+
+      if (this.config.ALPHA_ACCESS_MODE === 'enforced') {
+        const linkedGrant = await client.query(
+          `UPDATE alpha_access_grants
+           SET user_id = $1, updated_at = now()
+           WHERE email_fingerprint = $2 AND status = 'active'
+             AND (user_id IS NULL OR user_id = $1)`,
+          [userRow.id, alphaEmailFingerprint(userRow.email, this.config.ALPHA_ACCESS_SECRET!)],
+        )
+        if (linkedGrant.rowCount !== 1) throw new Error('Closed-alpha grant identity mismatch')
+      }
 
       const rawSessionToken = randomBytes(32).toString('base64url')
       await client.query(
@@ -127,13 +188,20 @@ export class DatabaseAuthService implements AuthService {
        WHERE auth_sessions.token_hash = $1 AND auth_sessions.expires_at > now()`,
       [hashToken(rawSessionToken)],
     )
-    return result.rows[0] ? toUser(result.rows[0]) : null
+    const row = result.rows[0]
+    if (!row) return null
+    if (
+      this.config.ALPHA_ACCESS_MODE === 'enforced' &&
+      !(await isAlphaAccessGranted(this.pool, row.email, this.config.ALPHA_ACCESS_SECRET!))
+    ) return null
+    return toUser(row)
   }
 
   async updateProfile(
     rawSessionToken: string,
     profile: { displayName: string; avatarUrl?: string | null | undefined },
   ): Promise<User | null> {
+    if (!(await this.getUser(rawSessionToken))) return null
     const result = await this.pool.query<UserRow>(
       `UPDATE users
        SET display_name = $2, avatar_url = $3, updated_at = now()

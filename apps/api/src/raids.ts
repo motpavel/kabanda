@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
-import sharp from 'sharp'
+import sharp, { type Metadata, type Sharp } from 'sharp'
 import {
   getRaidAllowedActions,
   getRouteStatusCode,
@@ -329,9 +329,15 @@ export type MediaProcessor = (
   declaredContentType: MediaIntentInput['contentType'],
 ) => Promise<ProcessedMedia>
 
-const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
-  const image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
-  const metadata = await image.metadata()
+export const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
+  let image: Sharp
+  let metadata: Metadata
+  try {
+    image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
+    metadata = await image.metadata()
+  } catch {
+    throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
+  }
   if (
     !metadata.width ||
     !metadata.height ||
@@ -346,11 +352,17 @@ const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
   ) {
     throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
   }
-  const processed = await image
-    .rotate()
-    .resize({ width: 2_048, height: 2_048, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 82, mozjpeg: true })
-    .toBuffer({ resolveWithObject: true })
+  const processed = await (async () => {
+    try {
+      return await image
+        .rotate()
+        .resize({ width: 2_048, height: 2_048, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 82, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true })
+    } catch {
+      throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
+    }
+  })()
   if (processed.data.length > 3 * 1024 * 1024) {
     throw new RaidError('MEDIA_OUTPUT_TOO_LARGE', 400, 'Фотография слишком большая')
   }

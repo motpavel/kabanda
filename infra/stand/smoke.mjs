@@ -42,6 +42,8 @@ expectStatus(appleTouchIcon, 200, 'apple touch icon')
 const manifest = await request('/manifest.webmanifest')
 expectStatus(manifest, 200, 'manifest')
 if (manifest.headers.get('cache-control') !== 'no-store') throw new Error('manifest must not be cached')
+const manifestBody = await manifest.json()
+if (manifestBody.lang !== 'ru') throw new Error(`manifest language must be ru, received ${manifestBody.lang ?? 'none'}`)
 
 const serviceWorker = await request('/sw.js')
 expectStatus(serviceWorker, 200, 'service worker')
@@ -53,6 +55,15 @@ const clientBuild = expectedBuild.slice(0, 12)
 const pwaBuildMarker = `sw-build-${clientBuild}.js`
 if (!serviceWorkerBody.includes(pwaBuildMarker)) {
   throw new Error(`service worker does not reference exact PWA build marker ${pwaBuildMarker}`)
+}
+const mapLibreWorkerPaths = [...new Set(
+  [...serviceWorkerBody.matchAll(/["']((?:\/)?assets\/maplibre-gl-worker-[A-Za-z0-9_-]+\.(?:js|mjs))["']/g)]
+    .map((match) => match[1]),
+)]
+if (!mapLibreWorkerPaths.length) throw new Error('service worker does not precache a bundled MapLibre worker')
+for (const workerPath of mapLibreWorkerPaths) {
+  const mapLibreWorker = await request(`/${workerPath.replace(/^\//, '')}`)
+  expectStatus(mapLibreWorker, 200, `MapLibre worker ${workerPath}`)
 }
 const buildMarker = await request(`/${pwaBuildMarker}`)
 expectStatus(buildMarker, 200, 'PWA build marker')

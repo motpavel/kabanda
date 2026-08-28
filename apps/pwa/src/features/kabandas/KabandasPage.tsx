@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetSt
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
-import { getCurrentUser, requestMagicLink } from '../auth/api'
+import { getCurrentUser, logout, requestMagicLink } from '../auth/api'
+import { InstallGuidance } from '../install/InstallGuidance'
+import { getIdentityLocalInventory, type IdentityLocalInventory } from '../offline/inventory'
 import {
   createKabanda,
   createInvite,
@@ -16,6 +18,7 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
+import { loadMapLibre } from './maplibre'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
 import { RaidHistory } from '../results/RaidHistory'
 import type {
@@ -49,7 +52,7 @@ export function KabandasPage() {
     return <main className="kb-shell kb-center" aria-busy="true">Загружаем КАБАНДУ…</main>
   }
   if (session.state === 'anonymous') return <SignInPanel />
-  return <AuthenticatedKabandas user={session.user} />
+  return <AuthenticatedKabandas user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
 }
 
 function SignInPanel() {
@@ -92,12 +95,15 @@ function SignInPanel() {
   )
 }
 
-function AuthenticatedKabandas({ user }: { user: User }) {
+function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut: () => void }) {
   const [kabandas, setKabandas] = useState<KabandaSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
+  const [inventory, setInventory] = useState<IdentityLocalInventory | null>(null)
+  const [accountState, setAccountState] = useState<'idle' | 'loading' | 'leaving' | 'error'>('idle')
   const requestedKabandaId = new URLSearchParams(window.location.search).get('kabanda')
 
   useEffect(() => {
@@ -128,21 +134,70 @@ function AuthenticatedKabandas({ user }: { user: User }) {
       return next
     })
   }
+  const toggleAccount = () => {
+    const next = !showAccount
+    setShowAccount(next)
+    if (!next) return
+    setAccountState('loading')
+    void getIdentityLocalInventory(user.id)
+      .then((value) => {
+        setInventory(value)
+        setAccountState('idle')
+      })
+      .catch(() => setAccountState('error'))
+  }
+  const leaveAccount = async () => {
+    if (accountState === 'leaving') return
+    setAccountState('leaving')
+    try {
+      const latestInventory = await getIdentityLocalInventory(user.id)
+      if (!latestInventory) throw new Error('Active identity changed before logout')
+      setInventory(latestInventory)
+      if (latestInventory.activeRecordings > 0) {
+        setAccountState('idle')
+        return
+      }
+      await logout()
+      onLoggedOut()
+    } catch {
+      setAccountState('error')
+    }
+  }
 
   return (
     <main className="kb-shell">
       <header className="kb-topbar">
         <Brand />
-        <div className="kb-identity" aria-label={`Выполнен вход: ${user.displayName ?? user.email}`}>
+        <button className="kb-identity kb-account-trigger" type="button" aria-expanded={showAccount} aria-controls="kb-account-panel" onClick={toggleAccount} aria-label={`Аккаунт: ${user.displayName ?? user.email}`}>
           <span>{(user.displayName ?? user.email).slice(0, 1).toUpperCase()}</span>
           <div><strong>{user.displayName ?? 'Участник'}</strong><small>{user.email}</small></div>
-        </div>
+        </button>
       </header>
+
+      {showAccount && (
+        <section className="kb-card kb-account-panel" id="kb-account-panel" aria-label="Аккаунт">
+          <div><p className="kb-kicker">Аккаунт</p><h2>{user.displayName ?? 'Участник'}</h2><p className="kb-muted">{user.email}</p></div>
+          {accountState === 'loading' ? <p className="kb-muted" aria-busy="true">Проверяем локальные данные…</p> : null}
+          {inventory && inventory.activeRecordings > 0 ? (
+            <p className="kb-error" role="alert">Сейчас записывается маршрут. Вернитесь в рейд и остановите запись перед сменой аккаунта.</p>
+          ) : inventory && inventory.total > 0 ? (
+            <p className="kb-notice" role="status">Локально осталось операций: {inventory.total}. Они сохранятся на устройстве, останутся привязаны только к {user.email}, а после возврата их можно будет синхронизировать или исправить.</p>
+          ) : inventory ? (
+            <p className="kb-muted">Локальных операций, ожидающих синхронизацию, нет.</p>
+          ) : null}
+          {accountState === 'error' && <p className="kb-error" role="alert">Не удалось проверить данные или завершить выход. Проверьте соединение и повторите.</p>}
+          <button className="kb-danger-action" type="button" disabled={accountState === 'loading' || accountState === 'leaving' || (inventory?.activeRecordings ?? 0) > 0} onClick={() => void leaveAccount()}>
+            {accountState === 'leaving' ? 'Выходим…' : 'Выйти и сменить аккаунт'}
+          </button>
+        </section>
+      )}
 
       <section className="kb-heading-row">
         <div><p className="kb-kicker">Команды</p><h1>Мои Кабанды</h1></div>
         <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>
       </section>
+
+      <InstallGuidance />
 
       {showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
       {error && <p className="kb-error" role="alert">{error}</p>}
@@ -351,7 +406,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     if (!container) return
     let destroyed = false
     let teardown: (() => void) | undefined
-    void import('maplibre-gl').then(({ Map, Marker, NavigationControl }) => {
+    void loadMapLibre().then(({ Map, Marker, NavigationControl }) => {
       if (destroyed) return
       const map = new Map({
         container,

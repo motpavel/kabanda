@@ -145,12 +145,17 @@ navigator mode либо невозможность завершить core flow 
 
 ## Scoped rollback и cleanup
 
-1. Остановить onboarding и отозвать только alpha invites/sessions записанного alpha scope.
+1. Остановить onboarding и выполнить exact-built `alpha-access.js revoke` для отдельного участника либо
+   `alpha-rollback.js` для одной dedicated alpha Кабанды. Обе команды сначала запускаются в dry-run и
+   проверяют exact database/build/migration context.
 2. Отключить exact alpha artifact или вернуть записанный совместимый immutable artifact.
-3. Удалить только поддерживаемые mutable DB rows, storage и browser resources с exact ownership из отчёта.
+3. Kabanda rollback разрешён только при отсутствии активных memberships участников вне exact target. Он
+   сериализован, отзывает grants/invites/links/sessions и архивирует Кабанду; archived scope закрыт для всех
+   прямых API reads/writes. Conflict означает повторную проверку, а не слепой повтор apply.
+4. Удалить только поддерживаемые mutable DB rows, storage и browser resources с exact ownership из отчёта.
    Completed immutable result rows не обходить: для E2E уничтожить внешний disposable DB service только
-   после буквальной проверки имени `kabanda_e2e` и COMMENT `kabanda-e2e-disposable-v1`. Для alpha cleanup
-   использовать отдельный согласованный scoped-механизм; пока его нет, решение не может быть `GO`.
-4. Сохранить permitted append-only incident evidence и hashes; raw restricted evidence удалить по
+   после буквальной проверки имени `kabanda_e2e` и COMMENT `kabanda-e2e-disposable-v1`. Alpha rollback
+   сохраняет completed `raid_results` и immutable bounded report без email, токенов и координат.
+5. Сохранить permitted append-only incident evidence и hashes; raw restricted evidence удалить по
    согласованному retention window.
-5. Проверить, что production/unrelated data не затронуты, и записать cleanup result в тот же отчёт.
+6. Проверить, что production/unrelated data не затронуты, и записать cleanup result в тот же отчёт.

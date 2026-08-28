@@ -115,6 +115,9 @@ test "$(git -C "${release}" rev-parse HEAD)" = "${sha}"
 Файл создаётся с `umask 077` и остаётся `root:root 0600`; secrets не печатаются в journal/terminal.
 Для внешнего SMTP используется ровно один режим: `SMTP_SECURE=true` для implicit TLS либо
 `SMTP_REQUIRE_TLS=true` для обязательного STARTTLS, вместе с парой `SMTP_USER`/`SMTP_PASSWORD`.
+Production API запускается только с `ALPHA_ACCESS_MODE=enforced` и отдельным root-owned
+`ALPHA_ACCESS_SECRET` длиной не менее 32 символов. Значение секрета не меняют между enroll, login и
+rollback: оно является ключом HMAC, а не обычной rotate-on-restart настройкой.
 
 ## Обязательный порядок обновления
 
@@ -126,12 +129,15 @@ test "$(git -C "${release}" rev-parse HEAD)" = "${sha}"
 4. Из нового immutable release, ещё до переключения symlink, выполнить
    `node /opt/kabanda/releases/<sha>/apps/api/dist/migrate.js`. Он завершится ошибкой, если migration set не
    заканчивается exact `EXPECTED_MIGRATION`.
-5. Только после успешной миграции атомарно переключить `current`, установить units из этого release,
+5. До запуска нового API записать grant для каждого согласованного alpha email через exact-built
+   `alpha-access.js`. Сначала выполнить dry-run, затем apply с буквальным подтверждением. Общий active cap
+   сериализован в PostgreSQL и равен 20; обход таблицы или ручной `INSERT` запрещён.
+6. Только после успешной миграции и enroll атомарно переключить `current`, установить units из этого release,
    запустить `kabanda-api.service` и выполнить публичный
    `node infra/stand/smoke.mjs <origin> <sha>`.
-6. Отдельно проверить login: запросить ссылку тестовому email, забрать одноразовый URL из loopback Mailpit,
+7. Отдельно проверить login: запросить ссылку enrolled тестовому email, забрать одноразовый URL из loopback Mailpit,
    войти, создать Кабанду и открыть основной `/app` flow.
-7. После создания конкретной alpha Кабанды выполнить идемпотентный import manifest exact release. Без этого
+8. После создания конкретной alpha Кабанды выполнить идемпотентный import manifest exact release. Без этого
    карта новой database пуста. `source_checked` точки разрешают проверить карту и pre-start UX, но не
    разрешают canonical start. Статус `field_verified` выставляется только после реальной проверки точки и
    обновления evidence manifest; ручное изменение DB ради старта запрещено.
@@ -146,6 +152,20 @@ release="/opt/kabanda/releases/${API_BUILD_ID}"
 "${release}/infra/stand/backup-before-migrate.sh"
 node "${release}/apps/api/dist/migrate.js"
 
+ALPHA_ACCESS_COMMAND=enroll \
+ALPHA_ACCESS_EMAIL='<approved-alpha-email>' \
+ALPHA_EXPECTED_DATABASE='kabanda_preview' \
+ALPHA_EXPECTED_API_BUILD="${API_BUILD_ID}" \
+node "${release}/apps/api/dist/alpha-access.js"
+
+ALPHA_ACCESS_COMMAND=enroll \
+ALPHA_ACCESS_EMAIL='<approved-alpha-email>' \
+ALPHA_EXPECTED_DATABASE='kabanda_preview' \
+ALPHA_EXPECTED_API_BUILD="${API_BUILD_ID}" \
+ALPHA_ACCESS_APPLY=true \
+ALPHA_ACCESS_CONFIRMATION='ENROLL:<approved-alpha-email>' \
+node "${release}/apps/api/dist/alpha-access.js"
+
 ALPHA_KABANDA_ID='<exact-kabanda-uuid>' \
 ALPHA_OWNER_EMAIL='<exact-owner-email>' \
 node "${release}/apps/api/dist/import-alpha.js"
@@ -158,10 +178,41 @@ Import возвращает `reportId`, `collectionId`, `rowCount` и `replayed`
 restricted operator evidence без email, invite/session tokens и координат. Повторный запуск exact manifest
 должен вернуть replay/idempotent result, а не создать второй collection.
 
+`alpha-access.js` также поддерживает `status` и `revoke`. `revoke` инвалидирует неиспользованные magic-link
+и все серверные sessions только этой identity; dry-run остаётся режимом по умолчанию, apply требует
+`ALPHA_ACCESS_CONFIRMATION='REVOKE:<exact-email>'`. Публичное evidence хранит только bounded counts и grant
+UUID, без email и токенов.
+
 Readiness проверяет PostgreSQL, PostGIS и exact последнюю миграцию. Production запросы с чужим host,
 не-HTTPS proxy context или чужим `Origin` отклоняются fail-closed.
 
 ## Rollback
+
+Для остановки одной dedicated alpha Кабанды сначала выполнить fail-closed dry-run exact-built команды.
+Она принимает только exact Kabanda UUID, owner email, database, build и migration context. Apply разрешён,
+только если все активные участники принадлежат этой Кабанде, у каждого есть active grant и ни у кого нет
+активного membership в другой неархивированной Кабанде. Транзакция `SERIALIZABLE` блокирует grants,
+повторно проверяет scope, отзывает grants/invites/links/sessions, архивирует Кабанду и сохраняет immutable
+bounded report; завершённые `raid_results` не удаляются.
+
+```bash
+ALPHA_KABANDA_ID='<exact-kabanda-uuid>' \
+ALPHA_OWNER_EMAIL='<exact-owner-email>' \
+ALPHA_EXPECTED_DATABASE='kabanda_preview' \
+ALPHA_EXPECTED_API_BUILD="${API_BUILD_ID}" \
+node "${release}/apps/api/dist/alpha-rollback.js"
+
+ALPHA_KABANDA_ID='<exact-kabanda-uuid>' \
+ALPHA_OWNER_EMAIL='<exact-owner-email>' \
+ALPHA_EXPECTED_DATABASE='kabanda_preview' \
+ALPHA_EXPECTED_API_BUILD="${API_BUILD_ID}" \
+ALPHA_ROLLBACK_APPLY=true \
+ALPHA_ROLLBACK_CONFIRMATION='ROLLBACK:<exact-kabanda-uuid>' \
+node "${release}/apps/api/dist/alpha-rollback.js"
+```
+
+Conflict/serialization failure означает `NO CHANGE`: оператор заново выполняет dry-run, а не повторяет
+apply вслепую. Archived Kabanda является canonical access boundary для прямых API reads/writes.
 
 Старый binary нельзя запускать поверх несовместимо изменённой схемы. Предпочтителен совместимый forward fix.
 Если нужен restore, API сначала останавливается, backup сверяется по `.sha256` и читается через

@@ -217,8 +217,16 @@ describe('API foundation', () => {
       loadConfig({
         NODE_ENV: 'production',
         MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+        ALPHA_ACCESS_MODE: 'enforced',
+        ALPHA_ACCESS_SECRET: 'production-alpha-access-secret-at-least-32-bytes',
       }),
     ).not.toThrow()
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+      }),
+    ).toThrow('ALPHA_ACCESS_MODE must be enforced in production')
   })
 
   it('requires HTTPS for a non-loopback production origin and paired SMTP credentials', () => {
@@ -227,6 +235,8 @@ describe('API foundation', () => {
       loadConfig({
         NODE_ENV: 'production',
         MEDIA_CAPABILITY_SECRET: productionSecret,
+        ALPHA_ACCESS_MODE: 'enforced',
+        ALPHA_ACCESS_SECRET: 'production-alpha-access-secret-at-least-32-bytes',
         APP_ORIGIN: 'http://preview.example.com',
       }),
     ).toThrow('APP_ORIGIN must use HTTPS outside loopback in production')
@@ -249,10 +259,12 @@ describe('API foundation', () => {
     const directory = await mkdtemp(join(tmpdir(), 'kabanda-static-'))
     temporaryDirectories.push(directory)
     await mkdir(join(directory, 'assets'))
+    await mkdir(join(directory, 'api'))
     await writeFile(join(directory, 'index.html'), '<!doctype html><title>Kabanda preview</title>')
     await writeFile(join(directory, 'manifest.webmanifest'), '{"name":"Kabanda"}')
     await writeFile(join(directory, 'sw.js'), 'self.addEventListener("fetch",()=>{})')
     await writeFile(join(directory, 'assets', 'app-abc123.js'), 'globalThis.kabanda=true')
+    await writeFile(join(directory, 'api', 'me'), 'must-not-bypass-api-auth')
 
     const app = await createTestApp(createAuth(), createKabandas(), undefined, {
       environment: { PWA_DIST_DIR: directory, API_BUILD_ID: 'preview-build' },
@@ -279,6 +291,12 @@ describe('API foundation', () => {
     })
     expect(missingAsset.statusCode).toBe(404)
     expect(missingAsset.headers['content-type']).toContain('application/json')
+
+    for (const path of ['/assets/../api/me', '/assets/%2E%2E/api/me']) {
+      const traversal = await app.inject({ method: 'GET', url: path, headers: { accept: '*/*' } })
+      expect(traversal.statusCode).toBe(401)
+      expect(traversal.body).not.toContain('must-not-bypass-api-auth')
+    }
 
     const manifest = await app.inject({ method: 'GET', url: '/manifest.webmanifest' })
     expect(manifest.headers['cache-control']).toBe('no-store')
@@ -307,6 +325,8 @@ describe('API foundation', () => {
         APP_ORIGIN: origin,
         TRUST_PROXY_ADDRESS: '127.0.0.1',
         MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+        ALPHA_ACCESS_MODE: 'enforced',
+        ALPHA_ACCESS_SECRET: 'production-alpha-access-secret-at-least-32-bytes',
       },
     })
     const canonicalHeaders = {

@@ -8,13 +8,15 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_BUILD_ID: buildIdentifierSchema.default('dev'),
   ALPHA_DIAGNOSTICS_ENABLED: booleanFlagSchema,
+  ALPHA_ACCESS_MODE: z.enum(['disabled', 'enforced']).default('disabled'),
+  ALPHA_ACCESS_SECRET: z.string().min(32).optional(),
   API_HOST: z.string().default('127.0.0.1'),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   APP_ORIGIN: z.url().default('http://localhost:5173'),
   APP_BASE_PATH: z.string().regex(/^\/([^?#]*\/)?$/).default('/'),
   PWA_DIST_DIR: z.string().min(1).optional(),
   TRUST_PROXY_ADDRESS: z.string().min(1).optional(),
-  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0007_results_history.sql'),
+  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0008_closed_alpha_access.sql'),
   DATABASE_URL: z
     .string()
     .min(1)
@@ -51,6 +53,13 @@ const environmentSchema = z.object({
       message: 'Authenticated SMTP requires implicit TLS or required STARTTLS',
     })
   }
+  if (value.ALPHA_ACCESS_MODE === 'enforced' && !value.ALPHA_ACCESS_SECRET) {
+    context.addIssue({
+      code: 'custom',
+      path: ['ALPHA_ACCESS_SECRET'],
+      message: 'ALPHA_ACCESS_SECRET is required when closed-alpha access is enforced',
+    })
+  }
 })
 
 export type ApiConfig = z.infer<typeof environmentSchema> & {
@@ -66,6 +75,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     parsed.MEDIA_CAPABILITY_SECRET === localMediaCapabilitySecret
   ) {
     throw new Error('MEDIA_CAPABILITY_SECRET must be configured in production')
+  }
+  if (parsed.NODE_ENV === 'production' && parsed.ALPHA_ACCESS_MODE !== 'enforced') {
+    throw new Error('ALPHA_ACCESS_MODE must be enforced in production')
   }
   const loopbackOrigin = ['localhost', '127.0.0.1', '::1'].includes(appOrigin.hostname)
   if (parsed.NODE_ENV === 'production' && appOrigin.protocol !== 'https:' && !loopbackOrigin) {

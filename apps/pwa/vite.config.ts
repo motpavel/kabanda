@@ -53,6 +53,7 @@ export default defineConfig({
         name: 'КАБАНДА',
         short_name: 'КАБАНДА',
         description: 'Общие городские велорейды, точки и история Кабанды',
+        lang: 'ru',
         theme_color: '#232a35',
         background_color: '#f7f7f5',
         display: 'standalone',
