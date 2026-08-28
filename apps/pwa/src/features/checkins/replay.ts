@@ -98,3 +98,48 @@ export async function replayOneCheckInOrMedia(input: {
       : { kind: 'retryable' }
   }
 }
+
+export async function replayOneIssuedMedia(input: {
+  identityId: string
+  raidId: string
+  holderTabId: string
+  online: boolean
+}): Promise<CheckInReplayResult> {
+  if (!input.online) return { kind: 'idle' }
+  const fence = await acquireCheckInSenderLease(input.identityId, input.raidId, input.holderTabId)
+  if (!fence) return { kind: 'idle' }
+  const media = await claimNextMediaDraft(fence, Date.now(), true)
+  if (!media) return { kind: 'idle' }
+  try {
+    const intent = await createMediaIntent(media.raidId, media.operationId, {
+      sourceSha256: media.sourceSha256,
+      sizeBytes: media.sizeBytes,
+      contentType: media.contentType,
+      caption: media.caption,
+      purpose: media.purpose,
+      ...(media.attemptId ? { attemptId: media.attemptId } : {}),
+    })
+    if (!(await rememberMediaIntent(fence, media.operationId, intent.intentId))) return { kind: 'fence_lost' }
+    const response = await uploadMediaContent(
+      media.raidId,
+      intent.intentId,
+      intent.uploadCapability,
+      media.sourceSha256,
+      media.blob,
+    )
+    const settled = await settleMediaDraft(fence, media.operationId, response)
+    return settled
+      ? { kind: 'media', operationId: media.operationId, mediaId: response.media.id }
+      : { kind: 'fence_lost' }
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'MEDIA_INTENT_EXPIRED') {
+      const marked = await retryMediaDraft(fence, media.operationId, error.code, true)
+      return marked ? { kind: 'terminal', code: error.code } : { kind: 'fence_lost' }
+    }
+    const terminal = isTerminal(error)
+    const marked = await retryMediaDraft(fence, media.operationId, errorCode(error), terminal)
+    return !marked ? { kind: 'fence_lost' } : terminal
+      ? { kind: 'terminal', code: errorCode(error) }
+      : { kind: 'retryable' }
+  }
+}

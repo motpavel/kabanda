@@ -3,6 +3,7 @@ import type { RaidProjection } from '../types'
 import { routeStatusLabel, selectActivePrimaryAction, wakeLockLabel } from './state'
 import { useRouteRecorder } from './useRouteRecorder'
 import { CheckInPanel } from '../../checkins/CheckInPanel'
+import { FinishRaidPanel } from '../../results/FinishRaidPanel'
 
 export function ActiveRaidPanel({
   identityId,
@@ -67,6 +68,15 @@ export function ActiveRaidPanel({
         </button>
       )}
     </section>
+    {(raid.state === 'active' || raid.state === 'paused') && (
+      <FinishRaidPanel
+        identityId={identityId}
+        raid={raid}
+        flushRoute={recorder.flush}
+        onApplyRaid={onApplyRaid}
+        onCanonicalRefresh={onCanonicalRefresh}
+      />
+    )}
     </>
   )
 }

@@ -43,6 +43,31 @@ export interface RaidProjectionRecord {
   projection: unknown
 }
 
+export interface RaidResultRecord {
+  key: string
+  identityId: string
+  raidId: string
+  kabandaId: string
+  savedAt: string
+  result: unknown
+}
+
+export interface RaidHistoryRecord {
+  key: string
+  identityId: string
+  kabandaId: string
+  savedAt: string
+  history: unknown
+}
+
+export interface KabandaProgressRecord {
+  key: string
+  identityId: string
+  kabandaId: string
+  savedAt: string
+  progress: unknown
+}
+
 export type RouteOutboxStatus =
   | 'pending'
   | 'sending'

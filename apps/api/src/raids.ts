@@ -33,6 +33,40 @@ export function deriveMediaUploadCapability(
     .digest('base64url')
 }
 
+export function escapeShareCardXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+export async function renderRaidShareCard(result: RaidResult): Promise<Buffer> {
+  const title = escapeShareCardXml(result.raid.title.slice(0, 120))
+  const date = escapeShareCardXml(result.raid.completedAt.slice(0, 10))
+  const distanceKm = (result.team.distanceMeters / 1000).toFixed(1)
+  const durationMinutes = Math.round(result.team.durationSeconds / 60)
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
+    <rect width="1200" height="630" fill="#1a1410"/>
+    <rect x="42" y="42" width="1116" height="546" rx="34" fill="#f4e9d4"/>
+    <text x="92" y="126" font-family="DejaVu Sans, sans-serif" font-size="46" font-weight="700" fill="#3b2c22">KABANDA</text>
+    <text x="92" y="202" font-family="DejaVu Sans, sans-serif" font-size="42" font-weight="700" fill="#245d3b">${title}</text>
+    <text x="92" y="254" font-family="DejaVu Sans, sans-serif" font-size="25" fill="#795c3f">${date}</text>
+    <text x="92" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">DISTANCE</text>
+    <text x="92" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${distanceKm} km</text>
+    <text x="390" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">TIME</text>
+    <text x="390" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${durationMinutes} min</text>
+    <text x="680" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">POINTS</text>
+    <text x="680" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${result.team.uniquePoints}</text>
+    <text x="940" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">TEAM</text>
+    <text x="940" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${result.participants.length}</text>
+  </svg>`)
+  return sharp(svg, { density: 144 })
+    .png({ compressionLevel: 9, adaptiveFiltering: false })
+    .toBuffer()
+}
+
 export type CreateRaidInput = {
   title: string
   description?: string | null | undefined
@@ -55,6 +89,11 @@ export type RaidCommandInput = {
   expectedVersion: number
   navigatorUserId?: string
 }
+
+export type RaidCommandAction = Exclude<
+  RaidAction,
+  'finish' | 'leave' | 'settle-finalization'
+>
 
 export type NavigatorLeaseInput = {
   expectedVersion: number
@@ -102,6 +141,55 @@ export type RaidParticipantProjection = {
   state: RaidParticipantState
 }
 
+export type RaidPendingCounts = { claims: number; fallbacks: number; media: number }
+export type RaidFinalizationProjection = {
+  status: 'collecting'
+  partial: boolean
+  pendingCounts: RaidPendingCounts
+  deadlineAt: string
+  canSettle: boolean
+}
+
+export type RaidMetrics = {
+  durationSeconds: number
+  distanceMeters: number
+  uniquePoints: number
+  photos: number
+}
+
+export type RaidResult = {
+  schemaVersion: 1
+  raid: {
+    id: string
+    kabandaId: string
+    title: string
+    startedAt: string
+    completedAt: string
+    partial: boolean
+  }
+  team: RaidMetrics
+  personal: RaidMetrics
+  participants: Array<{ userId: string; displayName: string; metrics: RaidMetrics }>
+}
+
+export type FinishRaidInput = {
+  expectedVersion: number
+  inventory: {
+    routePending: number
+    checkInsPending: number
+    mediaPending: number
+    needsAction: number
+  }
+  confirmPartial: boolean
+}
+
+export type FinishRaidResponse = {
+  raid: RaidProjection
+  finalization: RaidFinalizationProjection
+}
+
+export type SettleRaidResponse = { raid: RaidProjection; result: RaidResult }
+
 export type RaidProjection = {
   id: string
   kabandaId: string
@@ -115,6 +203,7 @@ export type RaidProjection = {
   navigatorReady: boolean
   navigatorBlockers: string[]
   navigatorWarnings: string[]
+  finalization: RaidFinalizationProjection | null
   routeStatus: RouteStatusProjection
   navigatorLease: NavigatorLeaseProjection | null
   participants: RaidParticipantProjection[]
@@ -199,6 +288,16 @@ export type FallbackProjection = {
   reason: string
   expiresAt: string
 }
+
+export function resolveExpiringStatus(
+  status: string,
+  pendingStatus: 'pending' | 'pending_verifier',
+  expired: boolean,
+): string {
+  return status === 'expired_finalization' || (status === pendingStatus && expired)
+    ? 'expired'
+    : status
+}
 export type MediaProjection = {
   id: string
   uploaderUserId: string
@@ -220,6 +319,44 @@ export type MediaIntentInput = {
   attemptId?: string | undefined
 }
 
+export type ProcessedMedia = {
+  data: Buffer
+  info: { width: number; height: number; size: number }
+}
+
+export type MediaProcessor = (
+  bytes: Buffer,
+  declaredContentType: MediaIntentInput['contentType'],
+) => Promise<ProcessedMedia>
+
+const processMedia: MediaProcessor = async (bytes, declaredContentType) => {
+  const image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
+  const metadata = await image.metadata()
+  if (
+    !metadata.width ||
+    !metadata.height ||
+    metadata.width > 8_000 ||
+    metadata.height > 8_000 ||
+    metadata.width * metadata.height > 12_000_000 ||
+    !['jpeg', 'png', 'webp'].includes(metadata.format ?? '') ||
+    (({ jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' } as Record<
+      string,
+      string
+    >)[metadata.format ?? ''] !== declaredContentType)
+  ) {
+    throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
+  }
+  const processed = await image
+    .rotate()
+    .resize({ width: 2_048, height: 2_048, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82, mozjpeg: true })
+    .toBuffer({ resolveWithObject: true })
+  if (processed.data.length > 3 * 1024 * 1024) {
+    throw new RaidError('MEDIA_OUTPUT_TOO_LARGE', 400, 'Фотография слишком большая')
+  }
+  return processed
+}
+
 type RaidRow = {
   id: string
   kabanda_id: string
@@ -228,6 +365,11 @@ type RaidRow = {
   title: string
   description: string | null
   scheduled_at: Date | null
+  started_at: Date | null
+  finalizing_at: Date | null
+  finalization_deadline_at: Date | null
+  finalization_partial: boolean
+  server_now: Date
   state: RaidState
   version: number
   membership_role: 'owner' | 'member'
@@ -292,7 +434,7 @@ export interface RaidService {
   command(
     actorUserId: string,
     raidId: string,
-    action: RaidAction,
+    action: RaidCommandAction,
     input: RaidCommandInput,
     operationId: string,
   ): Promise<RaidCommandResponse>
@@ -335,12 +477,20 @@ export interface RaidService {
   listMedia(actorUserId: string, raidId: string, limit: number, cursor?: string): Promise<{ media: MediaProjection[]; nextCursor: string | null }>
   readMedia(actorUserId: string, raidId: string, mediaId: string): Promise<{ bytes: Buffer; contentType: 'image/jpeg' }>
   tombstoneMedia(actorUserId: string, raidId: string, mediaId: string, operationId: string): Promise<{ deleted: true }>
+  finishRaid(actorUserId: string, raidId: string, input: FinishRaidInput, operationId: string): Promise<{ raid: RaidProjection; finalization: RaidFinalizationProjection }>
+  settleFinalization(actorUserId: string, raidId: string, expectedVersion: number, operationId: string): Promise<{ raid: RaidProjection; result: RaidResult }>
+  leaveRaid(actorUserId: string, raidId: string, expectedVersion: number, operationId: string): Promise<{ raid: RaidProjection }>
+  getResult(actorUserId: string, raidId: string): Promise<RaidResult>
+  listHistory(actorUserId: string, kabandaId: string, limit: number, cursor?: string): Promise<{ raids: Array<{ raidId: string; title: string; completedAt: string; partial: boolean; team: RaidMetrics; personal: RaidMetrics }>; nextCursor: string | null }>
+  getProgress(actorUserId: string, kabandaId: string): Promise<{ progress: { team: RaidMetrics & { completedRaids: number }; personal: RaidMetrics & { completedRaids: number } } }>
+  getShareCard(actorUserId: string, raidId: string): Promise<Buffer>
 }
 
 export class DatabaseRaidService implements RaidService {
   constructor(
     private readonly pool: Pool,
     private readonly mediaCapabilitySecret: string,
+    private readonly mediaProcessor: MediaProcessor = processMedia,
   ) {}
 
   async createDraft(
@@ -412,7 +562,7 @@ export class DatabaseRaidService implements RaidService {
   async command(
     actorUserId: string,
     raidId: string,
-    action: RaidAction,
+    action: RaidCommandAction,
     input: RaidCommandInput,
     operationId: string,
   ): Promise<RaidCommandResponse> {
@@ -952,12 +1102,12 @@ export class DatabaseRaidService implements RaidService {
     const client = await this.pool.connect()
     try {
       const raid = await this.lockRaid(client, actorUserId, raidId)
-      this.requireActiveParticipant(raid)
+      this.requireFinalizationCommitParticipant(raid)
       const rows = await client.query(
-        `SELECT id, attempt_id, user_id, status, expires_at
+        `SELECT id, attempt_id, user_id, status, expires_at, false AS expired
          FROM raid_checkin_claims
          WHERE raid_id = $1 AND user_id = $2 AND status = 'pending'
-           AND expires_at > now()
+           AND expires_at > clock_timestamp()
          ORDER BY created_at, id LIMIT 20`,
         [raid.id, actorUserId],
       )
@@ -980,31 +1130,36 @@ export class DatabaseRaidService implements RaidService {
       const replay = await this.replayFeature<{ claim: ClaimProjection; credit?: CreditProjection }>(client, actorUserId, operationId, requestFingerprint)
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
-      this.requireActiveParticipant(raid)
+      this.requireFinalizationCommitParticipant(raid)
       const result = await client.query<{
         id: string
         attempt_id: string
         user_id: string
         status: string
         expires_at: Date
+        available: boolean
         point_snapshot_id: string
       }>(
         `SELECT c.id, c.attempt_id, c.user_id, c.status, c.expires_at,
-           a.point_snapshot_id
+           c.expires_at > clock_timestamp() AS available, a.point_snapshot_id
          FROM raid_checkin_claims c JOIN raid_checkin_attempts a ON a.id = c.attempt_id
          WHERE c.id = $1 AND c.raid_id = $2 FOR UPDATE OF c`,
         [claimId, raid.id],
       )
       const row = result.rows[0]
       if (!row || row.user_id !== actorUserId) throw this.notFound()
-      if (row.status !== 'pending' || row.expires_at.getTime() <= Date.now()) {
+      if (row.status !== 'pending' || !row.available) {
         throw new RaidError('CLAIM_UNAVAILABLE', 409, 'Подтверждение уже недоступно')
       }
       await client.query(
         `UPDATE raid_checkin_claims SET status = $2, responded_at = now() WHERE id = $1`,
         [row.id, decision === 'confirm' ? 'confirmed' : 'declined'],
       )
-      const claim = this.claimProjection({ ...row, status: decision === 'confirm' ? 'confirmed' : 'declined' })
+      const claim = this.claimProjection({
+        ...row,
+        expired: !row.available,
+        status: decision === 'confirm' ? 'confirmed' : 'declined',
+      })
       const response: { claim: ClaimProjection; credit?: CreditProjection } = { claim }
       if (decision === 'confirm') {
         const credit = (await this.insertCredits(client, raid.id, row.point_snapshot_id, row.attempt_id, [actorUserId], 'claim'))[0]
@@ -1060,6 +1215,7 @@ export class DatabaseRaidService implements RaidService {
         status: string
         reason: string
         expires_at: Date
+        expired: boolean
       }>
       try {
         inserted = await client.query(
@@ -1067,7 +1223,8 @@ export class DatabaseRaidService implements RaidService {
             (raid_id, attempt_id, media_id, requester_user_id, verifier_user_id,
              present_participant_ids, reason)
            VALUES ($1, $2, $3, $4, $5, $6::uuid[], $7)
-           RETURNING id, attempt_id, media_id, verifier_user_id, status, reason, expires_at`,
+           RETURNING id, attempt_id, media_id, verifier_user_id, status, reason, expires_at,
+             expires_at <= clock_timestamp() AS expired`,
           [
             raid.id,
             input.attemptId,
@@ -1104,12 +1261,13 @@ export class DatabaseRaidService implements RaidService {
     const client = await this.pool.connect()
     try {
       const raid = await this.lockRaid(client, actorUserId, raidId)
-      this.requireActiveParticipant(raid)
+      this.requireFinalizationCommitParticipant(raid)
       const rows = await client.query(
-        `SELECT id, attempt_id, media_id, verifier_user_id, status, reason, expires_at
+        `SELECT id, attempt_id, media_id, verifier_user_id, status, reason, expires_at,
+           false AS expired
          FROM raid_checkin_fallbacks
          WHERE raid_id = $1 AND verifier_user_id = $2 AND status = 'pending_verifier'
-           AND expires_at > now()
+           AND expires_at > clock_timestamp()
          ORDER BY created_at, id LIMIT 20`,
         [raid.id, actorUserId],
       )
@@ -1132,7 +1290,7 @@ export class DatabaseRaidService implements RaidService {
       const replay = await this.replayFeature<{ fallback: FallbackProjection; credits?: CreditProjection[] }>(client, actorUserId, operationId, requestFingerprint)
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
-      this.requireActiveParticipant(raid)
+      this.requireFinalizationCommitParticipant(raid)
       const result = await client.query<{
         id: string
         attempt_id: string
@@ -1143,18 +1301,20 @@ export class DatabaseRaidService implements RaidService {
         status: string
         reason: string
         expires_at: Date
+        available: boolean
         point_snapshot_id: string
       }>(
         `SELECT f.id, f.attempt_id, f.media_id, f.requester_user_id,
            f.verifier_user_id, f.present_participant_ids, f.status, f.reason,
-           f.expires_at, a.point_snapshot_id
+           f.expires_at, f.expires_at > clock_timestamp() AS available,
+           a.point_snapshot_id
          FROM raid_checkin_fallbacks f JOIN raid_checkin_attempts a ON a.id = f.attempt_id
          WHERE f.id = $1 AND f.raid_id = $2 FOR UPDATE OF f`,
         [fallbackId, raid.id],
       )
       const row = result.rows[0]
       if (!row || row.verifier_user_id !== actorUserId) throw this.notFound()
-      if (row.status !== 'pending_verifier' || row.expires_at.getTime() <= Date.now()) {
+      if (row.status !== 'pending_verifier' || !row.available) {
         throw new RaidError('FALLBACK_UNAVAILABLE', 409, 'Проверка уже недоступна')
       }
       if (decision === 'confirm') {
@@ -1178,7 +1338,11 @@ export class DatabaseRaidService implements RaidService {
         [row.id, decision === 'confirm' ? 'confirmed' : 'declined'],
       )
       const response: { fallback: FallbackProjection; credits?: CreditProjection[] } = {
-        fallback: this.fallbackProjection({ ...row, status: decision === 'confirm' ? 'confirmed' : 'declined' }),
+        fallback: this.fallbackProjection({
+          ...row,
+          expired: !row.available,
+          status: decision === 'confirm' ? 'confirmed' : 'declined',
+        }),
       }
       if (decision === 'confirm') {
         const creditedIds = [row.requester_user_id, ...row.present_participant_ids]
@@ -1232,8 +1396,9 @@ export class DatabaseRaidService implements RaidService {
         `SELECT count(*) FROM raid_media
          WHERE raid_id = $1 AND (
            state = 'ready'
-           OR (state = 'pending_upload' AND upload_expires_at > now())
-           OR (state = 'processing' AND processing_started_at > now() - interval '2 minutes')
+           OR (state = 'pending_upload' AND upload_expires_at > clock_timestamp())
+           OR (state = 'processing'
+             AND processing_started_at > clock_timestamp() - interval '2 minutes')
          )`,
         [raid.id],
       )
@@ -1303,7 +1468,7 @@ export class DatabaseRaidService implements RaidService {
     }
     const claim = await transaction(this.pool, async (client) => {
       const raid = await this.lockRaid(client, actorUserId, raidId)
-      this.requireActiveParticipant(raid)
+      this.requireFinalizationCommitParticipant(raid)
       const result = await client.query<{
         id: string
         uploader_user_id: string
@@ -1312,11 +1477,16 @@ export class DatabaseRaidService implements RaidService {
         declared_content_type: string
         upload_capability_hash: string
         upload_expires_at: Date
+        upload_available: boolean
         state: string
         processing_started_at: Date | null
+        processing_fresh: boolean
       }>(
         `SELECT id, uploader_user_id, source_sha256, declared_size_bytes, declared_content_type,
-           upload_capability_hash, upload_expires_at, state, processing_started_at
+           upload_capability_hash, upload_expires_at,
+           upload_expires_at > clock_timestamp() AS upload_available,
+           state, processing_started_at,
+           processing_started_at > clock_timestamp() - interval '2 minutes' AS processing_fresh
          FROM raid_media WHERE id = $1 AND raid_id = $2 FOR UPDATE`,
         [intentId, raid.id],
       )
@@ -1328,77 +1498,101 @@ export class DatabaseRaidService implements RaidService {
       }
       if (media.state === 'ready') return { ready: true as const }
       if (media.state === 'tombstoned') throw this.notFound()
-      if (media.state === 'pending_upload' && media.upload_expires_at.getTime() <= Date.now()) {
+      if (media.state === 'pending_upload' && !media.upload_available) {
         throw new RaidError('MEDIA_INTENT_EXPIRED', 409, 'Загрузка просрочена')
       }
       if (
         media.state === 'processing' &&
-        media.processing_started_at &&
-        media.processing_started_at.getTime() > Date.now() - 120_000
+        media.processing_fresh
       ) {
         throw new RaidError('MEDIA_PROCESSING', 409, 'Фотография уже обрабатывается')
       }
-      await client.query(
-        `UPDATE raid_media SET state = 'processing', processing_started_at = now()
-         WHERE id = $1`,
-        [media.id],
+      const processingToken = randomUUID()
+      const claimed = await client.query(
+        `UPDATE raid_media SET state = 'processing', processing_started_at = clock_timestamp(),
+           processing_token = $2
+         WHERE id = $1 AND (
+           state = 'pending_upload' OR
+           (state = 'processing' AND processing_started_at <= clock_timestamp() - interval '2 minutes')
+         )
+         RETURNING id`,
+        [media.id, processingToken],
       )
-      return { ready: false as const, declaredContentType: media.declared_content_type }
+      if (!claimed.rowCount) {
+        throw new RaidError(
+          'MEDIA_PROCESSING_SUPERSEDED',
+          409,
+          'Обработку фотографии уже продолжил другой запрос',
+        )
+      }
+      return {
+        ready: false as const,
+        declaredContentType: media.declared_content_type as MediaIntentInput['contentType'],
+        processingToken,
+      }
     })
     if (claim.ready) return { media: await this.mediaProjectionById(actorUserId, raidId, intentId) }
 
-    let processed: { data: Buffer; info: { width: number; height: number; size: number } }
+    let processed: ProcessedMedia
     try {
-      const image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
-      const metadata = await image.metadata()
-      if (
-        !metadata.width ||
-        !metadata.height ||
-        metadata.width > 8_000 ||
-        metadata.height > 8_000 ||
-        metadata.width * metadata.height > 12_000_000 ||
-        !['jpeg', 'png', 'webp'].includes(metadata.format ?? '') ||
-        (({ jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' } as Record<
-          string,
-          string
-        >)[metadata.format ?? ''] !== claim.declaredContentType)
-      ) {
-        throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
-      }
-      processed = await image
-        .rotate()
-        .resize({ width: 2_048, height: 2_048, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 82, mozjpeg: true })
-        .toBuffer({ resolveWithObject: true })
-      if (processed.data.length > 3 * 1024 * 1024) {
-        throw new RaidError('MEDIA_OUTPUT_TOO_LARGE', 400, 'Фотография слишком большая')
-      }
+      processed = await this.mediaProcessor(bytes, claim.declaredContentType)
     } catch (error) {
-      await this.pool.query(
-        `UPDATE raid_media SET state = 'pending_upload', processing_started_at = NULL
-         WHERE id = $1 AND state = 'processing'`,
-        [intentId],
-      )
+      try {
+        await transaction(this.pool, async (client) => {
+          const raid = await this.lockRaid(client, actorUserId, raidId)
+          const ownership = await client.query<{ owns_processing: boolean }>(
+            `SELECT state = 'processing' AND processing_token = $3::uuid AS owns_processing
+             FROM raid_media WHERE id = $1 AND raid_id = $2 FOR UPDATE`,
+            [intentId, raidId, claim.processingToken],
+          )
+          if (!ownership.rows[0]?.owns_processing) {
+            throw new RaidError(
+              'MEDIA_PROCESSING_SUPERSEDED',
+              409,
+              'Обработку фотографии уже продолжил другой запрос',
+            )
+          }
+          const commitWindowOpen =
+            raid.participant_state === 'active' &&
+            (raid.state === 'active' ||
+              (raid.state === 'finalizing' &&
+                Boolean(
+                  raid.finalization_deadline_at &&
+                    raid.finalization_deadline_at.getTime() > raid.server_now.getTime(),
+                )))
+          if (commitWindowOpen) {
+            await client.query(
+              `UPDATE raid_media SET state = 'pending_upload', processing_started_at = NULL,
+                 processing_token = NULL
+               WHERE id = $1 AND raid_id = $2 AND state = 'processing'
+                 AND processing_token = $3::uuid`,
+              [intentId, raidId, claim.processingToken],
+            )
+          }
+        })
+      } catch (resetError) {
+        if (
+          resetError instanceof RaidError &&
+          resetError.code === 'MEDIA_PROCESSING_SUPERSEDED'
+        ) {
+          throw resetError
+        }
+        if (!(resetError instanceof RaidError)) throw resetError
+      }
       if (error instanceof RaidError) throw error
       throw new RaidError('MEDIA_INVALID', 400, 'Не удалось прочитать изображение')
     }
     await transaction(this.pool, async (client) => {
       const raid = await this.lockRaid(client, actorUserId, raidId)
-      this.requireActiveParticipant(raid)
-      const row = await client.query<{ state: string }>(
-        'SELECT state FROM raid_media WHERE id = $1 AND raid_id = $2 FOR UPDATE',
-        [intentId, raidId],
-      )
-      if (!row.rows[0]) throw this.notFound()
-      if (row.rows[0].state === 'ready') return
-      if (row.rows[0].state !== 'processing') {
-        throw new RaidError('MEDIA_STATE_CONFLICT', 409, 'Состояние загрузки изменилось')
-      }
-      await client.query(
+      this.requireFinalizationCommitParticipant(raid)
+      const committed = await client.query(
         `UPDATE raid_media SET state = 'ready', content_bytes = $2,
            content_type = 'image/jpeg', size_bytes = $3, width = $4, height = $5,
-           content_sha256 = $6, ready_at = now(), processing_started_at = NULL
-         WHERE id = $1`,
+           content_sha256 = $6, ready_at = clock_timestamp(), processing_started_at = NULL,
+           processing_token = NULL
+         WHERE id = $1 AND raid_id = $7 AND state = 'processing'
+           AND processing_token = $8::uuid
+         RETURNING id`,
         [
           intentId,
           processed.data,
@@ -1406,8 +1600,17 @@ export class DatabaseRaidService implements RaidService {
           processed.info.width,
           processed.info.height,
           createHash('sha256').update(processed.data).digest('hex'),
+          raidId,
+          claim.processingToken,
         ],
       )
+      if (!committed.rowCount) {
+        throw new RaidError(
+          'MEDIA_PROCESSING_SUPERSEDED',
+          409,
+          'Обработку фотографии уже продолжил другой запрос',
+        )
+      }
     })
     return { media: await this.mediaProjectionById(actorUserId, raidId, intentId) }
   }
@@ -1509,6 +1712,13 @@ export class DatabaseRaidService implements RaidService {
       if (row.uploader_user_id !== actorUserId && raid.membership_role !== 'owner') {
         throw this.notFound()
       }
+      if (
+        raid.state === 'finalizing' &&
+        (!raid.finalization_deadline_at ||
+          raid.finalization_deadline_at.getTime() <= raid.server_now.getTime())
+      ) {
+        throw new RaidError('FINALIZATION_CLOSED', 409, 'Окно завершения уже закрыто')
+      }
       const fallbackEvidence = await client.query(
         `SELECT 1 FROM raid_checkin_fallbacks
          WHERE media_id = $1 AND status <> 'declined' LIMIT 1`,
@@ -1532,10 +1742,377 @@ export class DatabaseRaidService implements RaidService {
     })
   }
 
+  async finishRaid(
+    actorUserId: string,
+    raidId: string,
+    input: FinishRaidInput,
+    operationId: string,
+  ): Promise<FinishRaidResponse> {
+    const requestFingerprint = fingerprint('finish', raidId, input)
+    return transaction(this.pool, async (client) => {
+      await this.lockOperation(client, actorUserId, operationId)
+      const replay = await this.replay<FinishRaidResponse>(
+        client,
+        actorUserId,
+        operationId,
+        requestFingerprint,
+      )
+      if (replay) return replay
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireOrganizer(raid, actorUserId)
+      this.requireVersion(raid, input.expectedVersion)
+      if (raid.state !== 'active' && raid.state !== 'paused') {
+        throw this.invalidTransition(raid)
+      }
+      const inventoryTotal =
+        input.inventory.routePending +
+        input.inventory.checkInsPending +
+        input.inventory.mediaPending +
+        input.inventory.needsAction
+      const partial = inventoryTotal > 0
+      if (partial && !input.confirmPartial) {
+        throw new RaidError(
+          'FINALIZATION_PARTIAL_CONFIRMATION_REQUIRED',
+          409,
+          'Подтверди завершение с несинхронизированными данными',
+        )
+      }
+      const nextVersion = raid.version + 1
+      await this.closeActivityWindow(client, raid.id, nextVersion)
+      await this.closeCurrentLease(client, raid.id, 'finish')
+      const finalized = await client.query<{ finalizing_at: Date; finalization_deadline_at: Date }>(
+        `UPDATE raids SET state = 'finalizing', version = $2,
+           finalizing_at = clock_timestamp(),
+           finalization_deadline_at = clock_timestamp() + interval '2 minutes',
+           finalization_partial = $3, finalization_inventory = $4,
+           updated_at = clock_timestamp()
+         WHERE id = $1 RETURNING finalizing_at, finalization_deadline_at`,
+        [raid.id, nextVersion, partial, input.inventory],
+      )
+      const timing = finalized.rows[0]!
+      await client.query(
+        `INSERT INTO raid_route_finalization_cutoffs
+          (raid_id, lease_id, generation, max_sequence, cutoff_at)
+         SELECT raid_id, id, generation, max_accepted_sequence, $2
+         FROM raid_navigator_leases WHERE raid_id = $1`,
+        [raid.id, timing.finalizing_at],
+      )
+      const response: FinishRaidResponse = {
+        raid: await this.project(client, actorUserId, raid.id),
+        finalization: await this.finalizationProjection(client, raid.id),
+      }
+      await this.storeReceipt(client, {
+        actorUserId,
+        operationId,
+        raidId: raid.id,
+        command: 'finish',
+        requestFingerprint,
+        expectedVersion: input.expectedVersion,
+        fromState: raid.state,
+        mutatesState: true,
+        response,
+      })
+      return response
+    })
+  }
+
+  async settleFinalization(
+    actorUserId: string,
+    raidId: string,
+    expectedVersion: number,
+    operationId: string,
+  ): Promise<SettleRaidResponse> {
+    const input = { expectedVersion }
+    const requestFingerprint = fingerprint('settle-finalization', raidId, input)
+    return transaction(this.pool, async (client) => {
+      await this.lockOperation(client, actorUserId, operationId)
+      const replay = await this.replay<SettleRaidResponse>(
+        client,
+        actorUserId,
+        operationId,
+        requestFingerprint,
+      )
+      if (replay) return replay
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireOrganizer(raid, actorUserId)
+      this.requireVersion(raid, expectedVersion)
+      if (raid.state !== 'finalizing' || !raid.finalization_deadline_at || !raid.finalizing_at) {
+        throw this.invalidTransition(raid)
+      }
+      const pending = await this.pendingCounts(client, raid.id)
+      const beforeDeadline = raid.finalization_deadline_at.getTime() > raid.server_now.getTime()
+      if (beforeDeadline && pending.claims + pending.fallbacks + pending.media > 0) {
+        throw new RaidError('FINALIZATION_PENDING', 409, 'Ещё принимаются подтверждения', {
+          pendingCounts: pending,
+          deadlineAt: raid.finalization_deadline_at.toISOString(),
+        })
+      }
+      const terminalizedTail = await this.expireFinalizationTail(client, raid.id)
+      if (terminalizedTail > 0 && !raid.finalization_partial) {
+        await client.query('UPDATE raids SET finalization_partial = true WHERE id = $1', [raid.id])
+        raid.finalization_partial = true
+      }
+      const completedAt = (
+        await client.query<{ completed_at: Date }>('SELECT clock_timestamp() AS completed_at')
+      ).rows[0]!.completed_at
+      const result = await this.buildImmutableResult(client, raid, completedAt, actorUserId)
+      const sharePng = await renderRaidShareCard(result)
+      await this.storeImmutableResult(client, result, sharePng)
+      await client.query(
+        `UPDATE raids SET state = 'completed', version = $2, completed_at = $3,
+           updated_at = $3 WHERE id = $1`,
+        [raid.id, raid.version + 1, completedAt],
+      )
+      const response: SettleRaidResponse = {
+        raid: await this.project(client, actorUserId, raid.id),
+        result,
+      }
+      await this.storeReceipt(client, {
+        actorUserId,
+        operationId,
+        raidId: raid.id,
+        command: 'settle-finalization',
+        requestFingerprint,
+        expectedVersion,
+        fromState: raid.state,
+        mutatesState: true,
+        response,
+      })
+      return response
+    })
+  }
+
+  async leaveRaid(
+    actorUserId: string,
+    raidId: string,
+    expectedVersion: number,
+    operationId: string,
+  ): Promise<{ raid: RaidProjection }> {
+    const input = { expectedVersion }
+    const requestFingerprint = fingerprint('leave', raidId, input)
+    return transaction(this.pool, async (client) => {
+      await this.lockOperation(client, actorUserId, operationId)
+      const replay = await this.replay<{ raid: RaidProjection }>(
+        client,
+        actorUserId,
+        operationId,
+        requestFingerprint,
+      )
+      if (replay) return replay
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireVersion(raid, expectedVersion)
+      if (
+        raid.membership_role === 'owner' ||
+        raid.participant_state !== 'active' ||
+        (raid.state !== 'active' && raid.state !== 'paused')
+      ) {
+        throw this.forbiddenCommand()
+      }
+      if (raid.navigator_user_id === actorUserId) {
+        throw new RaidError('NAVIGATOR_MUST_HANDOFF', 409, 'Сначала передай роль навигатора')
+      }
+      await client.query(
+        `UPDATE raid_participants SET state = 'left', left_at = now(), updated_at = now()
+         WHERE raid_id = $1 AND user_id = $2`,
+        [raid.id, actorUserId],
+      )
+      await client.query('UPDATE raids SET version = $2, updated_at = now() WHERE id = $1', [
+        raid.id,
+        raid.version + 1,
+      ])
+      const response = { raid: await this.project(client, actorUserId, raid.id) }
+      await this.storeReceipt(client, {
+        actorUserId,
+        operationId,
+        raidId: raid.id,
+        command: 'leave',
+        requestFingerprint,
+        expectedVersion,
+        fromState: raid.state,
+        mutatesState: true,
+        response,
+      })
+      return response
+    })
+  }
+
+  async getResult(actorUserId: string, raidId: string): Promise<RaidResult> {
+    const result = await this.pool.query<{
+      result_json: RaidResult
+      duration_seconds: number | null
+      distance_meters: number | null
+      unique_points: number | null
+      photos: number | null
+    }>(
+      `SELECT rr.result_json, rp.duration_seconds, rp.distance_meters,
+         rp.unique_points, rp.photos
+       FROM raid_results rr
+       JOIN kabanda_memberships m
+         ON m.kabanda_id = rr.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
+       LEFT JOIN raid_result_participants rp
+         ON rp.raid_id = rr.raid_id AND rp.user_id = $2
+       WHERE rr.raid_id = $1`,
+      [raidId, actorUserId],
+    )
+    const row = result.rows[0]
+    if (!row) throw this.notFound()
+    return {
+      ...row.result_json,
+      personal: this.metrics(row),
+    }
+  }
+
+  async listHistory(
+    actorUserId: string,
+    kabandaId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<{
+    raids: Array<{
+      raidId: string
+      title: string
+      completedAt: string
+      partial: boolean
+      team: RaidMetrics
+      personal: RaidMetrics
+    }>
+    nextCursor: string | null
+  }> {
+    await this.requireKabandaMembership(actorUserId, kabandaId)
+    const parsedCursor = this.historyCursor(cursor)
+    const result = await this.pool.query<{
+      raid_id: string
+      title: string
+      completed_at: Date
+      partial: boolean
+      team_duration_seconds: number
+      team_distance_meters: number
+      team_unique_points: number
+      team_photos: number
+      duration_seconds: number | null
+      distance_meters: number | null
+      unique_points: number | null
+      photos: number | null
+    }>(
+      `SELECT rr.raid_id, r.title, rr.completed_at, rr.partial,
+         rr.team_duration_seconds, rr.team_distance_meters,
+         rr.team_unique_points, rr.team_photos,
+         rp.duration_seconds, rp.distance_meters, rp.unique_points, rp.photos
+       FROM raid_results rr JOIN raids r ON r.id = rr.raid_id
+       LEFT JOIN raid_result_participants rp
+         ON rp.raid_id = rr.raid_id AND rp.user_id = $2
+       WHERE rr.kabanda_id = $1
+         AND ($3::timestamptz IS NULL OR (rr.completed_at, rr.raid_id) < ($3, $4::uuid))
+       ORDER BY rr.completed_at DESC, rr.raid_id DESC LIMIT $5`,
+      [kabandaId, actorUserId, parsedCursor?.completedAt ?? null, parsedCursor?.raidId ?? null, limit + 1],
+    )
+    const rows = result.rows.slice(0, limit)
+    return {
+      raids: rows.map((row) => ({
+        raidId: row.raid_id,
+        title: row.title,
+        completedAt: row.completed_at.toISOString(),
+        partial: row.partial,
+        team: {
+          durationSeconds: Number(row.team_duration_seconds),
+          distanceMeters: this.roundDistance(row.team_distance_meters),
+          uniquePoints: Number(row.team_unique_points),
+          photos: Number(row.team_photos),
+        },
+        personal: this.metrics(row),
+      })),
+      nextCursor:
+        result.rows.length > limit && rows.length
+          ? Buffer.from(
+              JSON.stringify({
+                completedAt: rows[rows.length - 1]!.completed_at.toISOString(),
+                raidId: rows[rows.length - 1]!.raid_id,
+              }),
+            ).toString('base64url')
+          : null,
+    }
+  }
+
+  async getProgress(
+    actorUserId: string,
+    kabandaId: string,
+  ): Promise<{
+    progress: {
+      team: RaidMetrics & { completedRaids: number }
+      personal: RaidMetrics & { completedRaids: number }
+    }
+  }> {
+    await this.requireKabandaMembership(actorUserId, kabandaId)
+    const result = await this.pool.query<{
+      completed_raids: string
+      team_duration_seconds: string
+      team_distance_meters: number
+      team_photos: string
+      team_unique_points: string
+      personal_completed_raids: string
+      personal_duration_seconds: string
+      personal_distance_meters: number
+      personal_photos: string
+      personal_unique_points: string
+    }>(
+      `SELECT
+         count(DISTINCT rr.raid_id)::text AS completed_raids,
+         coalesce(sum(rr.team_duration_seconds), 0)::text AS team_duration_seconds,
+         coalesce(sum(rr.team_distance_meters), 0) AS team_distance_meters,
+         coalesce(sum(rr.team_photos), 0)::text AS team_photos,
+         (SELECT count(DISTINCT rtp.source_point_id)::text FROM raid_result_points rtp
+          JOIN raid_results tr ON tr.raid_id = rtp.raid_id WHERE tr.kabanda_id = $1)
+           AS team_unique_points,
+         count(rp.raid_id)::text AS personal_completed_raids,
+         coalesce(sum(rp.duration_seconds), 0)::text AS personal_duration_seconds,
+         coalesce(sum(rp.distance_meters), 0) AS personal_distance_meters,
+         coalesce(sum(rp.photos), 0)::text AS personal_photos,
+         (SELECT count(DISTINCT rpp.source_point_id)::text FROM raid_result_points rpp
+          JOIN raid_results pr ON pr.raid_id = rpp.raid_id
+          WHERE pr.kabanda_id = $1 AND rpp.user_id = $2) AS personal_unique_points
+       FROM raid_results rr
+       LEFT JOIN raid_result_participants rp
+         ON rp.raid_id = rr.raid_id AND rp.user_id = $2
+       WHERE rr.kabanda_id = $1`,
+      [kabandaId, actorUserId],
+    )
+    const row = result.rows[0]!
+    return {
+      progress: {
+        team: {
+          completedRaids: Number(row.completed_raids),
+          durationSeconds: Number(row.team_duration_seconds),
+          distanceMeters: this.roundDistance(row.team_distance_meters),
+          uniquePoints: Number(row.team_unique_points),
+          photos: Number(row.team_photos),
+        },
+        personal: {
+          completedRaids: Number(row.personal_completed_raids),
+          durationSeconds: Number(row.personal_duration_seconds),
+          distanceMeters: this.roundDistance(row.personal_distance_meters),
+          uniquePoints: Number(row.personal_unique_points),
+          photos: Number(row.personal_photos),
+        },
+      },
+    }
+  }
+
+  async getShareCard(actorUserId: string, raidId: string): Promise<Buffer> {
+    const result = await this.pool.query<{ share_png: Buffer }>(
+      `SELECT rr.share_png FROM raid_results rr
+       JOIN kabanda_memberships m
+         ON m.kabanda_id = rr.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
+       WHERE rr.raid_id = $1`,
+      [raidId, actorUserId],
+    )
+    if (!result.rows[0]) throw this.notFound()
+    return result.rows[0].share_png
+  }
+
   async getRaid(actorUserId: string, raidId: string): Promise<RaidProjection> {
     const client = await this.pool.connect()
     try {
-      await this.visibleRaid(client, actorUserId, raidId)
+      await this.visibleRaidProjection(client, actorUserId, raidId)
       return this.project(client, actorUserId, raidId)
     } finally {
       client.release()
@@ -1591,7 +2168,7 @@ export class DatabaseRaidService implements RaidService {
     client: PoolClient,
     actorUserId: string,
     raid: RaidRow,
-    action: RaidAction,
+    action: RaidCommandAction,
     input: RaidCommandInput,
     nextVersion: number,
   ): Promise<void> {
@@ -1865,10 +2442,10 @@ export class DatabaseRaidService implements RaidService {
   private async closeCurrentLease(
     client: PoolClient,
     raidId: string,
-    reason: 'pause' | 'cancel' | 'handoff' | 'recover',
+    reason: 'pause' | 'cancel' | 'handoff' | 'recover' | 'finish',
   ): Promise<void> {
     await client.query(
-      `UPDATE raid_navigator_leases SET ended_at = now(), ended_reason = $2,
+      `UPDATE raid_navigator_leases SET ended_at = clock_timestamp(), ended_reason = $2,
          cutover_sequence = max_accepted_sequence
        WHERE raid_id = $1 AND ended_at IS NULL`,
       [raidId, reason],
@@ -1893,7 +2470,7 @@ export class DatabaseRaidService implements RaidService {
     closedVersion: number,
   ): Promise<void> {
     await client.query(
-      `UPDATE raid_activity_windows SET closed_at = now(), closed_version = $2
+      `UPDATE raid_activity_windows SET closed_at = clock_timestamp(), closed_version = $2
        WHERE raid_id = $1 AND closed_at IS NULL`,
       [raidId, closedVersion],
     )
@@ -1976,10 +2553,361 @@ export class DatabaseRaidService implements RaidService {
       : null
   }
 
+  private async pendingCounts(client: PoolClient, raidId: string): Promise<RaidPendingCounts> {
+    const result = await client.query<{
+      claims: string
+      fallbacks: string
+      media: string
+    }>(
+      `SELECT
+         (SELECT count(*)::text FROM raid_checkin_claims
+          WHERE raid_id = $1 AND status = 'pending' AND expires_at > clock_timestamp()) AS claims,
+         (SELECT count(*)::text FROM raid_checkin_fallbacks
+          WHERE raid_id = $1 AND status = 'pending_verifier'
+            AND expires_at > clock_timestamp()) AS fallbacks,
+         (SELECT count(*)::text FROM raid_media WHERE raid_id = $1 AND (
+            state = 'processing' OR
+            (state = 'pending_upload' AND upload_expires_at > clock_timestamp())
+          )) AS media`,
+      [raidId],
+    )
+    const row = result.rows[0]!
+    return {
+      claims: Number(row.claims),
+      fallbacks: Number(row.fallbacks),
+      media: Number(row.media),
+    }
+  }
+
+  private async finalizationProjection(
+    client: PoolClient,
+    raidId: string,
+  ): Promise<RaidFinalizationProjection> {
+    const result = await client.query<{
+      finalization_deadline_at: Date
+      finalization_partial: boolean
+      deadline_elapsed: boolean
+    }>(
+      `SELECT finalization_deadline_at, finalization_partial,
+         finalization_deadline_at <= clock_timestamp() AS deadline_elapsed FROM raids
+       WHERE id = $1 AND state = 'finalizing'`,
+      [raidId],
+    )
+    const row = result.rows[0]
+    if (!row?.finalization_deadline_at) throw new Error('Finalizing raid has no deadline')
+    const pendingCounts = await this.pendingCounts(client, raidId)
+    return {
+      status: 'collecting',
+      partial: row.finalization_partial,
+      pendingCounts,
+      deadlineAt: row.finalization_deadline_at.toISOString(),
+      canSettle:
+        row.deadline_elapsed ||
+        pendingCounts.claims + pendingCounts.fallbacks + pendingCounts.media === 0,
+    }
+  }
+
+  private async expireFinalizationTail(client: PoolClient, raidId: string): Promise<number> {
+    const claims = await client.query(
+      `UPDATE raid_checkin_claims SET status = 'expired_finalization', responded_at = now()
+       WHERE raid_id = $1 AND status = 'pending'`,
+      [raidId],
+    )
+    const fallbacks = await client.query(
+      `UPDATE raid_checkin_fallbacks SET status = 'expired_finalization', responded_at = now()
+       WHERE raid_id = $1 AND status = 'pending_verifier'`,
+      [raidId],
+    )
+    const media = await client.query(
+      `UPDATE raid_media SET state = 'expired_finalization', content_bytes = NULL,
+         processing_started_at = NULL, processing_token = NULL
+       WHERE raid_id = $1 AND state IN ('pending_upload', 'processing')`,
+      [raidId],
+    )
+    return (claims.rowCount ?? 0) + (fallbacks.rowCount ?? 0) + (media.rowCount ?? 0)
+  }
+
+  private async buildImmutableResult(
+    client: PoolClient,
+    raid: RaidRow,
+    completedAt: Date,
+    actorUserId: string,
+  ): Promise<RaidResult> {
+    if (!raid.started_at || !raid.finalizing_at) throw new Error('Raid timing is incomplete')
+    const teamResult = await client.query<{
+      duration_seconds: number
+      distance_meters: number
+      unique_points: number
+      photos: number
+    }>(
+      `WITH ordered AS (
+         SELECT s.lease_id, s.sequence, s.captured_at, s.received_at, s.geom, s.accuracy_m,
+           lag(s.sequence) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_sequence,
+           lag(s.captured_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_at,
+           lag(s.received_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_received_at,
+           lag(s.geom) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_geom,
+           lag(s.accuracy_m) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_accuracy
+         FROM raid_route_samples s
+         JOIN raid_route_finalization_cutoffs c
+           ON c.raid_id = s.raid_id AND c.lease_id = s.lease_id
+            AND s.sequence <= c.max_sequence
+         WHERE s.raid_id = $1
+       ), segments AS (
+         SELECT *, ST_Distance(geom, previous_geom) AS meters,
+           extract(epoch FROM (captured_at - previous_at)) AS seconds
+         FROM ordered WHERE previous_geom IS NOT NULL
+       )
+       SELECT
+         (SELECT floor(coalesce(sum(extract(epoch FROM (closed_at - opened_at))), 0))
+          FROM raid_activity_windows WHERE raid_id = $1) AS duration_seconds,
+         (SELECT coalesce(sum(meters), 0) FROM segments
+          WHERE accuracy_m <= 50 AND previous_accuracy <= 50
+            AND sequence = previous_sequence + 1
+            AND seconds > 0 AND seconds <= 120 AND meters <= 2000
+            AND meters / seconds <= 50
+            AND EXISTS (SELECT 1 FROM raid_activity_windows w
+              WHERE w.raid_id = $1 AND previous_received_at >= w.opened_at
+                AND received_at <= w.closed_at)) AS distance_meters,
+         (SELECT count(DISTINCT point_snapshot_id) FROM raid_point_credits
+          WHERE raid_id = $1) AS unique_points,
+         (SELECT count(*) FROM raid_media
+          WHERE raid_id = $1 AND state = 'ready' AND ready_at <= $2) AS photos`,
+      [raid.id, completedAt],
+    )
+    const participantResult = await client.query<{
+      user_id: string
+      display_name: string
+      duration_seconds: number
+      distance_meters: number
+      unique_points: number
+      photos: number
+    }>(
+      `WITH ordered AS (
+         SELECT s.lease_id, s.sequence, s.captured_at, s.received_at, s.geom, s.accuracy_m,
+           lag(s.sequence) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_sequence,
+           lag(s.captured_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_at,
+           lag(s.received_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_received_at,
+           lag(s.geom) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_geom,
+           lag(s.accuracy_m) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_accuracy
+         FROM raid_route_samples s
+         JOIN raid_route_finalization_cutoffs c
+           ON c.raid_id = s.raid_id AND c.lease_id = s.lease_id
+            AND s.sequence <= c.max_sequence
+         WHERE s.raid_id = $1
+       ), segments AS (
+         SELECT *, ST_Distance(geom, previous_geom) AS meters,
+           extract(epoch FROM (captured_at - previous_at)) AS seconds
+         FROM ordered WHERE previous_geom IS NOT NULL
+       ), valid_segments AS (
+         SELECT * FROM segments WHERE accuracy_m <= 50 AND previous_accuracy <= 50
+           AND sequence = previous_sequence + 1
+           AND seconds > 0 AND seconds <= 120 AND meters <= 2000
+           AND meters / seconds <= 50
+           AND EXISTS (SELECT 1 FROM raid_activity_windows w
+             WHERE w.raid_id = $1 AND previous_received_at >= w.opened_at
+               AND received_at <= w.closed_at)
+       )
+       SELECT p.user_id,
+         coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
+         (SELECT floor(coalesce(sum(greatest(0, extract(epoch FROM (
+            least(w.closed_at, coalesce(p.left_at, $2), coalesce(km.removed_at, $2)) -
+            greatest(w.opened_at, p.active_from, km.joined_at)
+          )))), 0)) FROM raid_activity_windows w
+          WHERE w.raid_id = p.raid_id AND w.closed_at > greatest(p.active_from, km.joined_at)
+            AND w.opened_at < least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2)))
+          AS duration_seconds,
+         (SELECT coalesce(sum(s.meters), 0) FROM valid_segments s
+          WHERE s.previous_received_at >= greatest(p.active_from, km.joined_at)
+            AND s.received_at <= least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2)))
+          AS distance_meters,
+         (SELECT count(DISTINCT c.point_snapshot_id) FROM raid_point_credits c
+          WHERE c.raid_id = p.raid_id AND c.user_id = p.user_id
+            AND c.created_at BETWEEN greatest(p.active_from, km.joined_at)
+              AND least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2))) AS unique_points,
+         (SELECT count(*) FROM raid_media m WHERE m.raid_id = p.raid_id
+          AND m.uploader_user_id = p.user_id AND m.state = 'ready'
+          AND m.ready_at BETWEEN greatest(p.active_from, km.joined_at)
+            AND least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2))) AS photos
+       FROM raid_participants p
+       JOIN raids r ON r.id = p.raid_id
+       JOIN kabanda_memberships km
+         ON km.kabanda_id = r.kabanda_id AND km.user_id = p.user_id
+       JOIN users u ON u.id = p.user_id
+       WHERE p.raid_id = $1 AND p.active_from IS NOT NULL
+       ORDER BY p.active_from, p.user_id`,
+      [raid.id, completedAt],
+    )
+    const team = this.metrics(teamResult.rows[0]!)
+    const participants = participantResult.rows.map((row) => ({
+      userId: row.user_id,
+      displayName: row.display_name,
+      metrics: this.metrics(row),
+    }))
+    const personal = participants.find((participant) => participant.userId === actorUserId)?.metrics ?? {
+      durationSeconds: 0,
+      distanceMeters: 0,
+      uniquePoints: 0,
+      photos: 0,
+    }
+    return {
+      schemaVersion: 1,
+      raid: {
+        id: raid.id,
+        kabandaId: raid.kabanda_id,
+        title: raid.title,
+        startedAt: raid.started_at.toISOString(),
+        completedAt: completedAt.toISOString(),
+        partial: raid.finalization_partial,
+      },
+      team,
+      personal,
+      participants,
+    }
+  }
+
+  private async storeImmutableResult(
+    client: PoolClient,
+    result: RaidResult,
+    sharePng: Buffer,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO raid_results
+        (raid_id, kabanda_id, schema_version, partial, started_at, completed_at,
+         team_duration_seconds, team_distance_meters, team_unique_points, team_photos,
+         result_json, share_png, share_sha256)
+       VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        result.raid.id,
+        result.raid.kabandaId,
+        result.raid.partial,
+        result.raid.startedAt,
+        result.raid.completedAt,
+        result.team.durationSeconds,
+        result.team.distanceMeters,
+        result.team.uniquePoints,
+        result.team.photos,
+        result,
+        sharePng,
+        createHash('sha256').update(sharePng).digest('hex'),
+      ],
+    )
+    for (const participant of result.participants) {
+      await client.query(
+        `INSERT INTO raid_result_participants
+          (raid_id, user_id, display_name, duration_seconds, distance_meters,
+           unique_points, photos)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          result.raid.id,
+          participant.userId,
+          participant.displayName,
+          participant.metrics.durationSeconds,
+          participant.metrics.distanceMeters,
+          participant.metrics.uniquePoints,
+          participant.metrics.photos,
+        ],
+      )
+    }
+    await client.query(
+      `INSERT INTO raid_result_points (raid_id, user_id, source_point_id)
+       SELECT DISTINCT c.raid_id, c.user_id, s.source_point_id
+       FROM raid_point_credits c
+       JOIN raid_point_snapshots s ON s.id = c.point_snapshot_id
+       JOIN raid_participants p ON p.raid_id = c.raid_id AND p.user_id = c.user_id
+       JOIN raids r ON r.id = c.raid_id
+       JOIN kabanda_memberships km
+         ON km.kabanda_id = r.kabanda_id AND km.user_id = c.user_id
+       WHERE c.raid_id = $1 AND p.active_from IS NOT NULL
+         AND c.created_at BETWEEN greatest(p.active_from, km.joined_at)
+           AND least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2))`,
+      [result.raid.id, result.raid.completedAt],
+    )
+  }
+
+  private metrics(row: {
+    duration_seconds?: number | string | null
+    distance_meters?: number | string | null
+    unique_points?: number | string | null
+    photos?: number | string | null
+  }): RaidMetrics {
+    return {
+      durationSeconds: Number(row.duration_seconds ?? 0),
+      distanceMeters: this.roundDistance(Number(row.distance_meters ?? 0)),
+      uniquePoints: Number(row.unique_points ?? 0),
+      photos: Number(row.photos ?? 0),
+    }
+  }
+
+  private roundDistance(value: number): number {
+    return Math.round(Number(value) * 10) / 10
+  }
+
+  private async requireKabandaMembership(actorUserId: string, kabandaId: string): Promise<void> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM kabanda_memberships m JOIN kabandas k ON k.id = m.kabanda_id
+       WHERE m.kabanda_id = $1 AND m.user_id = $2 AND m.removed_at IS NULL
+         AND k.archived_at IS NULL`,
+      [kabandaId, actorUserId],
+    )
+    if (!result.rowCount) throw this.notFound()
+  }
+
+  private historyCursor(cursor?: string): { completedAt: string; raidId: string } | null {
+    if (!cursor) return null
+    try {
+      const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+        completedAt: string
+        raidId: string
+      }
+      if (
+        Number.isNaN(new Date(parsed.completedAt).getTime()) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          parsed.raidId,
+        )
+      ) {
+        throw new Error('invalid')
+      }
+      return parsed
+    } catch {
+      throw new RaidError('HISTORY_CURSOR_INVALID', 400, 'Некорректный cursor')
+    }
+  }
+
+  private requireVersion(raid: RaidRow, expectedVersion: number): void {
+    if (raid.version !== expectedVersion) {
+      throw new RaidError('RAID_VERSION_CONFLICT', 409, 'Рейд уже изменился', {
+        currentVersion: raid.version,
+        currentState: raid.state,
+      })
+    }
+  }
+
+  private invalidTransition(raid: RaidRow): RaidError {
+    return new RaidError('RAID_TRANSITION_INVALID', 409, 'Команда недоступна в текущем состоянии', {
+      currentVersion: raid.version,
+      currentState: raid.state,
+    })
+  }
+
   private requireActiveParticipant(raid: RaidRow): void {
     if (raid.state !== 'active' || raid.participant_state !== 'active') {
       throw new RaidError('CHECKIN_UNAVAILABLE', 409, 'Отметка доступна только в активном рейде')
     }
+  }
+
+  private requireFinalizationCommitParticipant(raid: RaidRow): void {
+    if (raid.participant_state !== 'active') {
+      throw new RaidError('CHECKIN_UNAVAILABLE', 409, 'Операция участника недоступна')
+    }
+    if (raid.state === 'active') return
+    if (
+      raid.state === 'finalizing' &&
+      raid.finalization_deadline_at &&
+      raid.finalization_deadline_at.getTime() > raid.server_now.getTime()
+    ) {
+      return
+    }
+    throw new RaidError('FINALIZATION_CLOSED', 409, 'Окно завершения уже закрыто')
   }
 
   private async requireRaidParticipants(
@@ -2040,7 +2968,8 @@ export class DatabaseRaidService implements RaidService {
       `INSERT INTO raid_checkin_claims (raid_id, attempt_id, user_id)
        SELECT $1, $2, x.user_id FROM unnest($3::uuid[]) x(user_id)
        ON CONFLICT (attempt_id, user_id) DO NOTHING
-       RETURNING id, attempt_id, user_id, status, expires_at`,
+       RETURNING id, attempt_id, user_id, status, expires_at,
+         expires_at <= clock_timestamp() AS expired`,
       [raidId, attemptId, userIds],
     )
     return result.rows.map((row) => this.claimProjection(row))
@@ -2052,15 +2981,17 @@ export class DatabaseRaidService implements RaidService {
     user_id: string
     status: string
     expires_at: Date
+    expired: boolean
   }): ClaimProjection {
     return {
       id: row.id,
       attemptId: row.attempt_id,
       userId: row.user_id,
-      status:
-        row.status === 'pending' && row.expires_at.getTime() <= Date.now()
-          ? 'expired'
-          : (row.status as ClaimProjection['status']),
+      status: resolveExpiringStatus(
+        row.status,
+        'pending',
+        row.expired,
+      ) as ClaimProjection['status'],
       expiresAt: row.expires_at.toISOString(),
     }
   }
@@ -2073,16 +3004,18 @@ export class DatabaseRaidService implements RaidService {
     status: string
     reason: string
     expires_at: Date
+    expired: boolean
   }): FallbackProjection {
     return {
       id: row.id,
       attemptId: row.attempt_id,
       mediaId: row.media_id,
       verifierUserId: row.verifier_user_id,
-      status:
-        row.status === 'pending_verifier' && row.expires_at.getTime() <= Date.now()
-          ? 'expired'
-          : (row.status as FallbackProjection['status']),
+      status: resolveExpiringStatus(
+        row.status,
+        'pending_verifier',
+        row.expired,
+      ) as FallbackProjection['status'],
       reason: row.reason,
       expiresAt: row.expires_at.toISOString(),
     }
@@ -2142,7 +3075,9 @@ export class DatabaseRaidService implements RaidService {
   private async lockRaid(client: PoolClient, actorUserId: string, raidId: string): Promise<RaidRow> {
     const result = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.scheduled_at, r.state, r.version,
+         r.title, r.description, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
+         r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
        FROM raids r
        JOIN kabandas k ON k.id = r.kabanda_id AND k.archived_at IS NULL
@@ -2183,6 +3118,35 @@ export class DatabaseRaidService implements RaidService {
     }
   }
 
+  private async visibleRaidProjection(
+    client: PoolClient,
+    actorUserId: string,
+    raidId: string,
+  ): Promise<void> {
+    const result = await client.query<{
+      state: RaidState
+      role: 'owner' | 'member'
+      participant_state: RaidParticipantState | null
+    }>(
+      `SELECT r.state, m.role, p.state AS participant_state FROM raids r
+       JOIN kabandas k ON k.id = r.kabanda_id AND k.archived_at IS NULL
+       JOIN kabanda_memberships m
+         ON m.kabanda_id = r.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
+       LEFT JOIN raid_participants p ON p.raid_id = r.id AND p.user_id = $2
+       WHERE r.id = $1`,
+      [raidId, actorUserId],
+    )
+    const access = result.rows[0]
+    if (
+      !access ||
+      (access.state !== 'completed' &&
+        access.role !== 'owner' &&
+        (!access.participant_state || !visibleParticipantStates.includes(access.participant_state)))
+    ) {
+      throw this.notFound()
+    }
+  }
+
   private async project(
     client: PoolClient,
     actorUserId: string,
@@ -2190,7 +3154,9 @@ export class DatabaseRaidService implements RaidService {
   ): Promise<RaidProjection> {
     const raidResult = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.scheduled_at, r.state, r.version,
+         r.title, r.description, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
+         r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
        FROM raids r
        JOIN kabanda_memberships m
@@ -2227,6 +3193,10 @@ export class DatabaseRaidService implements RaidService {
     )
     const routeStatus = await this.routeStatus(client, raid)
     const navigatorLease = await this.navigatorLeaseProjection(client, raid, actorUserId)
+    const finalization =
+      raid.state === 'finalizing'
+        ? await this.finalizationProjection(client, raid.id)
+        : null
     return {
       id: raid.id,
       kabandaId: raid.kabanda_id,
@@ -2240,6 +3210,7 @@ export class DatabaseRaidService implements RaidService {
       navigatorReady,
       navigatorBlockers: readiness?.blocker_codes ?? [],
       navigatorWarnings: readiness?.warning_codes ?? [],
+      finalization,
       routeStatus,
       navigatorLease,
       participants: participants.rows.map((participant) => ({
@@ -2253,6 +3224,7 @@ export class DatabaseRaidService implements RaidService {
         role: raid.membership_role,
         participantState: raid.participant_state,
         navigatorReady,
+        finalizationCanSettle: finalization?.canSettle ?? false,
       }),
     }
   }
@@ -2288,7 +3260,13 @@ export class DatabaseRaidService implements RaidService {
       expectedVersion: number | null
       fromState: RaidState | null
       mutatesState: boolean
-      response: RaidCommandResponse | RaidReadinessResponse | RaidLeaseResponse
+      response:
+        | RaidCommandResponse
+        | RaidReadinessResponse
+        | RaidLeaseResponse
+        | FinishRaidResponse
+        | SettleRaidResponse
+        | { raid: RaidProjection }
     },
   ): Promise<void> {
     await client.query(

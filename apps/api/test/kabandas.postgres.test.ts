@@ -9,8 +9,9 @@ const databaseUrl = process.env.DATABASE_URL
 const describePostgres = databaseUrl ? describe : describe.skip
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null
 const service = pool ? new DatabaseKabandaService(pool) : null
+const mediaCapabilitySecret = 'test-media-capability-secret-at-least-32-bytes'
 const raidService = pool
-  ? new DatabaseRaidService(pool, 'test-media-capability-secret-at-least-32-bytes')
+  ? new DatabaseRaidService(pool, mediaCapabilitySecret)
   : null
 
 const bounds = { minLat: 56.8, minLon: 53.1, maxLat: 56.9, maxLon: 53.3 }
@@ -1404,9 +1405,10 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       ),
     ).rejects.toMatchObject({ code: 'MEDIA_IS_FALLBACK_EVIDENCE' })
     await pool!.query(
-      `UPDATE raid_media SET state = 'processing', processing_started_at = now()
+      `UPDATE raid_media SET state = 'processing', processing_started_at = clock_timestamp(),
+         processing_token = $2
        WHERE id = $1`,
-      [uploaded.media.id],
+      [uploaded.media.id, randomUUID()],
     )
     await expect(
       raidService!.respondFallback(
@@ -1418,7 +1420,8 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       ),
     ).rejects.toMatchObject({ code: 'FALLBACK_MEDIA_UNAVAILABLE' })
     await pool!.query(
-      `UPDATE raid_media SET state = 'ready', processing_started_at = NULL WHERE id = $1`,
+      `UPDATE raid_media SET state = 'ready', processing_started_at = NULL,
+         processing_token = NULL WHERE id = $1`,
       [uploaded.media.id],
     )
     await pool!.query("UPDATE raid_media SET purpose = 'gallery' WHERE id = $1", [
@@ -1524,5 +1527,602 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       'checkin-media-confirm-claim',
     )
     expect(confirmed.credit).toMatchObject({ userId: memberId, source: 'claim' })
+  })
+
+  it('fences stale media processors with a server-timed UUID claim token', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('media-fence')
+    const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'media-fence')
+
+    for (const mode of ['commit', 'reset'] as const) {
+      const source = await sharp({
+        create: {
+          width: 12,
+          height: 12,
+          channels: 3,
+          background: mode === 'commit' ? '#245d3b' : '#7a3e18',
+        },
+      })
+        .png()
+        .toBuffer()
+      const sourceSha256 = createHash('sha256').update(source).digest('hex')
+      const intent = await raidService!.createMediaIntent(
+        ownerId,
+        acquired.raid.id,
+        {
+          sourceSha256,
+          sizeBytes: source.length,
+          contentType: 'image/png',
+          purpose: 'gallery',
+        },
+        `media-fence-intent-${mode}`,
+      )
+      await pool!.query(
+        `UPDATE raid_media SET state = 'processing',
+           processing_started_at = clock_timestamp() - interval '3 minutes',
+           processing_token = $2
+         WHERE id = $1`,
+        [intent.intentId, randomUUID()],
+      )
+
+      let enteredProcessor!: () => void
+      const processorEntered = new Promise<void>((resolve) => {
+        enteredProcessor = resolve
+      })
+      let releaseProcessor!: () => void
+      const processorReleased = new Promise<void>((resolve) => {
+        releaseProcessor = resolve
+      })
+      const delayedService = new DatabaseRaidService(
+        pool!,
+        mediaCapabilitySecret,
+        async () => {
+          enteredProcessor()
+          await processorReleased
+          if (mode === 'reset') throw new Error('synthetic processor failure')
+          return {
+            data: source,
+            info: { width: 12, height: 12, size: source.length },
+          }
+        },
+      )
+      const upload = delayedService.uploadMedia(
+        ownerId,
+        acquired.raid.id,
+        intent.intentId,
+        intent.uploadCapability,
+        sourceSha256,
+        source,
+      )
+      await processorEntered
+      const claimed = await pool!.query<{ processing_token: string }>(
+        'SELECT processing_token FROM raid_media WHERE id = $1',
+        [intent.intentId],
+      )
+      const firstToken = claimed.rows[0]!.processing_token
+      const replacementToken = randomUUID()
+      await pool!.query(
+        `UPDATE raid_media SET processing_token = $2,
+           processing_started_at = clock_timestamp()
+         WHERE id = $1 AND processing_token = $3`,
+        [intent.intentId, replacementToken, firstToken],
+      )
+      releaseProcessor()
+
+      await expect(upload).rejects.toMatchObject({
+        code: 'MEDIA_PROCESSING_SUPERSEDED',
+        statusCode: 409,
+      })
+      const stored = await pool!.query<{
+        state: string
+        processing_token: string
+        content_bytes: Buffer | null
+      }>(
+        `SELECT state, processing_token, content_bytes FROM raid_media WHERE id = $1`,
+        [intent.intentId],
+      )
+      expect(stored.rows[0]).toMatchObject({
+        state: 'processing',
+        processing_token: replacementToken,
+        content_bytes: null,
+      })
+    }
+  })
+
+  it('freezes one canonical result, participant cutoffs, history and private PNG', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('results')
+    const { acquired, clientInstanceId, leaseId } = await activeOwnerRaid(
+      ownerId,
+      kabanda.id,
+      'results',
+    )
+    const memberId = await user('results-member@example.com')
+    await pool!.query(
+      `INSERT INTO kabanda_memberships (kabanda_id, user_id, role) VALUES ($1, $2, 'member')`,
+      [kabanda.id, memberId],
+    )
+    await pool!.query(
+      `INSERT INTO raid_participants (raid_id, user_id, state, accepted_at, active_from)
+       VALUES ($1, $2, 'active', now(), now())`,
+      [acquired.raid.id, memberId],
+    )
+    await raidService!.submitRouteBatch(
+      ownerId,
+      acquired.raid.id,
+      {
+        schemaVersion: 1,
+        leaseId,
+        clientInstanceId,
+        samples: [
+          {
+            operationId: 'result-route-sample-one',
+            sequence: 1,
+            capturedAt: new Date().toISOString(),
+            latitude: 56.86,
+            longitude: 53.21,
+            accuracyM: 8,
+          },
+          {
+            operationId: 'result-route-sample-two',
+            sequence: 2,
+            capturedAt: new Date(Date.now() + 1000).toISOString(),
+            latitude: 56.8602,
+            longitude: 53.211,
+            accuracyM: 8,
+          },
+          {
+            operationId: 'result-route-sample-four',
+            sequence: 4,
+            capturedAt: new Date(Date.now() + 2000).toISOString(),
+            latitude: 56.8604,
+            longitude: 53.212,
+            accuracyM: 8,
+          },
+          {
+            operationId: 'result-route-sample-five',
+            sequence: 5,
+            capturedAt: new Date(Date.now() + 3000).toISOString(),
+            latitude: 56.8605,
+            longitude: 53.2122,
+            accuracyM: 8,
+          },
+        ],
+      },
+      'result-route-batch',
+    )
+    const snapshot = (
+      await pool!.query<{ id: string }>(
+        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        [acquired.raid.id],
+      )
+    ).rows[0]!
+    await raidService!.createCheckin(
+      ownerId,
+      acquired.raid.id,
+      {
+        pointSnapshotId: snapshot.id,
+        evidence: {
+          latitude: 56.86,
+          longitude: 53.21,
+          capturedAt: new Date().toISOString(),
+          accuracyMeters: 8,
+        },
+        presentParticipantIds: [memberId],
+        organizerAttestation: true,
+      },
+      'result-checkin',
+    )
+    const mediaId = randomUUID()
+    await pool!.query(
+      `INSERT INTO raid_media
+        (id, raid_id, uploader_user_id, purpose, source_sha256, declared_size_bytes,
+         declared_content_type, upload_capability_hash, upload_expires_at, state,
+         content_bytes, content_type, size_bytes, width, height, content_sha256, ready_at)
+       VALUES ($1, $2, $3, 'gallery', $4, 4, 'image/jpeg', $5, now() + interval '1 minute',
+         'ready', decode('ffd8ffd9', 'hex'), 'image/jpeg', 4, 1, 1, $6, now())`,
+      [mediaId, acquired.raid.id, ownerId, 'a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)],
+    )
+    await expect(
+      raidService!.leaveRaid(
+        ownerId,
+        acquired.raid.id,
+        acquired.raid.version,
+        'result-owner-cannot-leave',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_COMMAND_FORBIDDEN' })
+    const left = await raidService!.leaveRaid(
+      memberId,
+      acquired.raid.id,
+      acquired.raid.version,
+      'result-member-leave',
+    )
+    expect(left.raid.participants.find((participant) => participant.id === memberId)?.state).toBe(
+      'left',
+    )
+    await expect(raidService!.getRaid(memberId, acquired.raid.id)).rejects.toMatchObject({
+      code: 'RAID_NOT_FOUND',
+    })
+    const current = await raidService!.getRaid(ownerId, acquired.raid.id)
+    const finish = await raidService!.finishRaid(
+      ownerId,
+      acquired.raid.id,
+      {
+        expectedVersion: current.version,
+        inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 0 },
+        confirmPartial: false,
+      },
+      'result-finish',
+    )
+    expect(finish.finalization).toMatchObject({ status: 'collecting', partial: false })
+    const finalizationSeconds = Number(
+      (
+        await pool!.query(
+          `SELECT extract(epoch FROM (finalization_deadline_at - finalizing_at)) AS seconds
+           FROM raids WHERE id = $1`,
+          [acquired.raid.id],
+        )
+      ).rows[0]!.seconds,
+    )
+    expect(finalizationSeconds).toBeGreaterThanOrEqual(119.9)
+    expect(finalizationSeconds).toBeLessThanOrEqual(120.1)
+    expect(
+      Number(
+        (
+          await pool!.query(
+            'SELECT count(*) FROM raid_route_finalization_cutoffs WHERE raid_id = $1',
+            [acquired.raid.id],
+          )
+        ).rows[0]!.count,
+      ),
+    ).toBeGreaterThan(0)
+    await expect(
+      raidService!.submitRouteBatch(
+        ownerId,
+        acquired.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId,
+          clientInstanceId,
+          samples: [
+            {
+              operationId: 'result-route-after-cutoff',
+              sequence: 6,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.8603,
+              longitude: 53.2112,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'result-route-after-finish',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_SUPERSEDED' })
+
+    await pool!.query(
+      `UPDATE raids SET started_at = '2026-08-28T10:00:00Z',
+         finalizing_at = '2026-08-28T11:00:00Z' WHERE id = $1`,
+      [acquired.raid.id],
+    )
+    await pool!.query(
+      `UPDATE raid_activity_windows SET opened_at = '2026-08-28T10:00:00Z',
+         closed_at = '2026-08-28T10:30:00Z' WHERE raid_id = $1`,
+      [acquired.raid.id],
+    )
+    await pool!.query(
+      `INSERT INTO raid_activity_windows
+        (raid_id, opened_at, closed_at, opened_version, closed_version)
+       VALUES ($1, '2026-08-28T10:30:00Z', '2026-08-28T11:00:00Z', 100, 100)`,
+      [acquired.raid.id],
+    )
+    await pool!.query(
+      `UPDATE raid_participants SET active_from = '2026-08-28T10:00:00Z',
+         left_at = CASE WHEN user_id = $2 THEN '2026-08-28T10:30:00Z' ELSE NULL END
+       WHERE raid_id = $1`,
+      [acquired.raid.id, memberId],
+    )
+    await pool!.query(
+      `UPDATE raid_route_samples SET
+         captured_at = CASE sequence
+           WHEN 1 THEN '2026-08-28T10:10:10Z'::timestamptz
+           WHEN 2 THEN '2026-08-28T10:10:20Z'::timestamptz
+           WHEN 4 THEN '2026-08-28T10:10:30Z'::timestamptz
+           ELSE '2026-08-28T10:10:40Z'::timestamptz END,
+         received_at = CASE sequence
+           WHEN 1 THEN '2026-08-28T10:10:10Z'::timestamptz
+           WHEN 2 THEN '2026-08-28T10:10:20Z'::timestamptz
+           WHEN 4 THEN '2026-08-28T10:29:50Z'::timestamptz
+           ELSE '2026-08-28T10:30:10Z'::timestamptz END
+       WHERE raid_id = $1`,
+      [acquired.raid.id],
+    )
+    await pool!.query(
+      `UPDATE raid_point_credits SET created_at = '2026-08-28T10:20:00Z' WHERE raid_id = $1`,
+      [acquired.raid.id],
+    )
+    await pool!.query(
+      `UPDATE raid_media SET ready_at = '2026-08-28T10:20:00Z' WHERE id = $1`,
+      [mediaId],
+    )
+    const expectedDistance = Number(
+      (
+        await pool!.query(
+          `SELECT ST_Distance(a.geom, b.geom) AS meters FROM raid_route_samples a
+           JOIN raid_route_samples b ON b.lease_id = a.lease_id AND b.sequence = 2
+           WHERE a.lease_id = $1 AND a.sequence = 1`,
+          [leaseId],
+        )
+      ).rows[0]!.meters,
+    )
+    const settled = await raidService!.settleFinalization(
+      ownerId,
+      acquired.raid.id,
+      finish.raid.version,
+      'result-settle',
+    )
+    expect(settled.result.team).toEqual({
+      durationSeconds: 3600,
+      distanceMeters: Math.round(expectedDistance * 10) / 10,
+      uniquePoints: 1,
+      photos: 1,
+    })
+    expect(
+      settled.result.participants.find((participant) => participant.userId === memberId)?.metrics,
+    ).toMatchObject({ durationSeconds: 1800, uniquePoints: 1, photos: 0 })
+    await expect(
+      raidService!.settleFinalization(
+        ownerId,
+        acquired.raid.id,
+        finish.raid.version,
+        'result-settle',
+      ),
+    ).resolves.toEqual(settled)
+
+    await pool!.query("UPDATE users SET display_name = 'Новое имя' WHERE id = $1", [ownerId])
+    await pool!.query(
+      `UPDATE raid_activity_windows SET opened_at = opened_at + interval '1 minute'
+       WHERE raid_id = $1`,
+      [acquired.raid.id],
+    )
+    await raidService!.tombstoneMedia(
+      ownerId,
+      acquired.raid.id,
+      mediaId,
+      'result-photo-tombstone',
+    )
+    const immutable = await raidService!.getResult(ownerId, acquired.raid.id)
+    expect(immutable).toEqual(settled.result)
+    expect(immutable.team.photos).toBe(1)
+    await expect(
+      pool!.query('UPDATE raid_results SET team_photos = 99 WHERE raid_id = $1', [
+        acquired.raid.id,
+      ]),
+    ).rejects.toMatchObject({ code: '55000' })
+    expect(immutable.participants.some((participant) => participant.displayName === 'Новое имя')).toBe(
+      false,
+    )
+    await expect(raidService!.getRaid(memberId, acquired.raid.id)).resolves.toMatchObject({
+      id: acquired.raid.id,
+      state: 'completed',
+    })
+    const laterMemberId = await user('results-later-member@example.com')
+    await pool!.query(
+      `INSERT INTO kabanda_memberships (kabanda_id, user_id, role) VALUES ($1, $2, 'member')`,
+      [kabanda.id, laterMemberId],
+    )
+    await expect(raidService!.getRaid(laterMemberId, acquired.raid.id)).resolves.toMatchObject({
+      id: acquired.raid.id,
+      state: 'completed',
+    })
+    expect((await raidService!.listHistory(laterMemberId, kabanda.id, 20)).raids[0]!.personal).toEqual({
+      durationSeconds: 0,
+      distanceMeters: 0,
+      uniquePoints: 0,
+      photos: 0,
+    })
+    const history = await raidService!.listHistory(ownerId, kabanda.id, 20)
+    expect(history.raids[0]).toMatchObject({ raidId: acquired.raid.id, team: settled.result.team })
+    const progress = await raidService!.getProgress(ownerId, kabanda.id)
+    expect(progress.progress.team).toMatchObject({ completedRaids: 1, uniquePoints: 1, photos: 1 })
+    const png = await raidService!.getShareCard(ownerId, acquired.raid.id)
+    expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+
+    const outsider = await ownerAndKabanda('results-outsider')
+    await expect(raidService!.getResult(outsider.ownerId, acquired.raid.id)).rejects.toMatchObject({
+      code: 'RAID_NOT_FOUND',
+    })
+  })
+
+  it('serializes settle against finalizing claim and media commits', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('finalizing-race')
+    const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'finalizing-race')
+    const memberId = await user('finalizing-race-member@example.com')
+    await pool!.query(
+      `INSERT INTO kabanda_memberships (kabanda_id, user_id, role) VALUES ($1, $2, 'member')`,
+      [kabanda.id, memberId],
+    )
+    await pool!.query(
+      `INSERT INTO raid_participants (raid_id, user_id, state, accepted_at, active_from)
+       VALUES ($1, $2, 'active', now(), now())`,
+      [acquired.raid.id, memberId],
+    )
+    const snapshot = (
+      await pool!.query<{ id: string }>(
+        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        [acquired.raid.id],
+      )
+    ).rows[0]!
+    const checkin = await raidService!.createCheckin(
+      ownerId,
+      acquired.raid.id,
+      {
+        pointSnapshotId: snapshot.id,
+        evidence: {
+          latitude: 56.86,
+          longitude: 53.21,
+          capturedAt: new Date().toISOString(),
+          accuracyMeters: 8,
+        },
+        presentParticipantIds: [memberId],
+        organizerAttestation: false,
+      },
+      'finalizing-race-checkin',
+    )
+    const claimId = checkin.claims[0]!.id
+    const source = await sharp({
+      create: { width: 20, height: 20, channels: 3, background: '#315d42' },
+    })
+      .png()
+      .toBuffer()
+    const sourceSha = createHash('sha256').update(source).digest('hex')
+    const intent = await raidService!.createMediaIntent(
+      ownerId,
+      acquired.raid.id,
+      {
+        sourceSha256: sourceSha,
+        sizeBytes: source.length,
+        contentType: 'image/png',
+        purpose: 'gallery',
+      },
+      'finalizing-race-media',
+    )
+    const expiredIntent = await raidService!.createMediaIntent(
+      ownerId,
+      acquired.raid.id,
+      {
+        sourceSha256: 'd'.repeat(64),
+        sizeBytes: 100,
+        contentType: 'image/jpeg',
+        purpose: 'gallery',
+      },
+      'finalizing-race-expired-media',
+    )
+    await pool!.query('UPDATE raid_media SET upload_expires_at = now() - interval \'1 second\' WHERE id = $1', [
+      expiredIntent.intentId,
+    ])
+    const finish = await raidService!.finishRaid(
+      ownerId,
+      acquired.raid.id,
+      {
+        expectedVersion: acquired.raid.version,
+        inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 0 },
+        confirmPartial: false,
+      },
+      'finalizing-race-finish',
+    )
+    expect(finish.finalization.partial).toBe(false)
+    const raced = await Promise.allSettled([
+      raidService!.respondClaim(
+        memberId,
+        acquired.raid.id,
+        claimId,
+        'confirm',
+        'finalizing-race-confirm-claim',
+      ),
+      raidService!.uploadMedia(
+        ownerId,
+        acquired.raid.id,
+        intent.intentId,
+        intent.uploadCapability,
+        sourceSha,
+        source,
+      ),
+      raidService!.settleFinalization(
+        ownerId,
+        acquired.raid.id,
+        finish.raid.version,
+        'finalizing-race-settle-first',
+      ),
+    ])
+    expect(raced[0]!.status).toBe('fulfilled')
+    expect(raced[1]!.status).toBe('fulfilled')
+    if (raced[2]!.status === 'rejected') {
+      expect(raced[2]!.reason).toMatchObject({ code: 'FINALIZATION_PENDING' })
+    }
+    const afterRace = await raidService!.getRaid(ownerId, acquired.raid.id)
+    const settled =
+      afterRace.state === 'completed'
+        ? { result: await raidService!.getResult(ownerId, acquired.raid.id) }
+        : await raidService!.settleFinalization(
+            ownerId,
+            acquired.raid.id,
+            afterRace.version,
+            'finalizing-race-settle-second',
+          )
+    expect(settled.result).toMatchObject({
+      raid: { partial: true },
+      team: { uniquePoints: 1, photos: 1 },
+    })
+    expect(
+      settled.result.participants.find((participant) => participant.userId === memberId)?.metrics,
+    ).toMatchObject({ uniquePoints: 1 })
+    expect(
+      (
+        await pool!.query<{ state: string }>('SELECT state FROM raid_media WHERE id = $1', [
+          expiredIntent.intentId,
+        ])
+      ).rows[0]!.state,
+    ).toBe('expired_finalization')
+  })
+
+  it('serializes finish against the last route batch and freezes that generation', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('finish-route-race')
+    const { acquired, clientInstanceId, leaseId } = await activeOwnerRaid(
+      ownerId,
+      kabanda.id,
+      'finish-route-race',
+    )
+    const raced = await Promise.allSettled([
+      raidService!.finishRaid(
+        ownerId,
+        acquired.raid.id,
+        {
+          expectedVersion: acquired.raid.version,
+          inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 0 },
+          confirmPartial: false,
+        },
+        'finish-route-race-finish',
+      ),
+      raidService!.submitRouteBatch(
+        ownerId,
+        acquired.raid.id,
+        {
+          schemaVersion: 1,
+          leaseId,
+          clientInstanceId,
+          samples: [
+            {
+              operationId: 'finish-route-race-sample',
+              sequence: 1,
+              capturedAt: new Date().toISOString(),
+              latitude: 56.86,
+              longitude: 53.21,
+              accuracyM: 8,
+            },
+          ],
+        },
+        'finish-route-race-batch',
+      ),
+    ])
+    expect(raced[0]!.status).toBe('fulfilled')
+    if (raced[1]!.status === 'rejected') {
+      expect(raced[1]!.reason).toMatchObject({ code: 'NAVIGATOR_LEASE_SUPERSEDED' })
+    }
+    const storedSamples = Number(
+      (
+        await pool!.query(
+          'SELECT count(*) FROM raid_route_samples WHERE raid_id = $1 AND lease_id = $2',
+          [acquired.raid.id, leaseId],
+        )
+      ).rows[0]!.count,
+    )
+    const cutoff = Number(
+      (
+        await pool!.query(
+          `SELECT max_sequence FROM raid_route_finalization_cutoffs
+           WHERE raid_id = $1 AND lease_id = $2`,
+          [acquired.raid.id, leaseId],
+        )
+      ).rows[0]!.max_sequence,
+    )
+    expect(cutoff).toBe(storedSamples)
   })
 })

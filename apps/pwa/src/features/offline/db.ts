@@ -12,6 +12,9 @@ import type {
   CheckInOutboxRecord,
   MediaDraftRecord,
   CheckInSenderLeaseRecord,
+  RaidResultRecord,
+  RaidHistoryRecord,
+  KabandaProgressRecord,
 } from './types'
 
 class KabandaOfflineDatabase extends Dexie {
@@ -27,6 +30,9 @@ class KabandaOfflineDatabase extends Dexie {
   checkInOutbox!: EntityTable<CheckInOutboxRecord, 'operationId'>
   mediaDrafts!: EntityTable<MediaDraftRecord, 'operationId'>
   checkInSenderLeases!: EntityTable<CheckInSenderLeaseRecord, 'key'>
+  raidResults!: EntityTable<RaidResultRecord, 'key'>
+  raidHistory!: EntityTable<RaidHistoryRecord, 'key'>
+  kabandaProgress!: EntityTable<KabandaProgressRecord, 'key'>
 
   constructor() {
     super('kabanda-offline')
@@ -100,6 +106,33 @@ class KabandaOfflineDatabase extends Dexie {
         'operationId, clientDraftId, identityId, raidId, purpose, attemptId, status, createdAt, claimUntil, [identityId+raidId+status+createdAt]',
       checkInSenderLeases:
         'key, identityId, raidId, holderTabId, expiresAt',
+    })
+    this.version(7).stores({
+      identities: 'userId, activatedAt',
+      identityContext: 'key, userId, changedAt',
+      outbox:
+        'id, identityId, kind, aggregateId, status, createdAt, [identityId+status+createdAt]',
+      pointCollections:
+        'key, identityId, kabandaId, collectionId, savedAt, [identityId+kabandaId+collectionId]',
+      raidProjections:
+        'key, identityId, raidId, kabandaId, state, savedAt, [identityId+raidId], [identityId+kabandaId+savedAt], [identityId+savedAt]',
+      routeOutbox:
+        'id, identityId, raidId, navigatorLeaseId, status, batchId, sequence, [identityId+raidId+navigatorLeaseId+status+sequence]',
+      recorderSessions:
+        'key, identityId, raidId, navigatorLeaseId, updatedAt, [identityId+raidId+updatedAt]',
+      recorderClients:
+        'key, identityId, raidId, updatedAt, [identityId+raidId]',
+      recorderWriterLeases:
+        'key, identityId, raidId, navigatorLeaseId, holderTabId, expiresAt',
+      checkInOutbox:
+        'operationId, identityId, raidId, status, createdAt, claimUntil, [identityId+raidId+status+createdAt]',
+      mediaDrafts:
+        'operationId, clientDraftId, identityId, raidId, purpose, attemptId, status, createdAt, claimUntil, [identityId+raidId+status+createdAt]',
+      checkInSenderLeases:
+        'key, identityId, raidId, holderTabId, expiresAt',
+      raidResults: 'key, identityId, raidId, kabandaId, savedAt, [identityId+raidId]',
+      raidHistory: 'key, identityId, kabandaId, savedAt, [identityId+kabandaId]',
+      kabandaProgress: 'key, identityId, kabandaId, savedAt, [identityId+kabandaId]',
     })
   }
 }

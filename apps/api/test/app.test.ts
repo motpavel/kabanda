@@ -8,7 +8,14 @@ import {
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import type { KabandaService } from '../src/kabandas.js'
-import { deriveMediaUploadCapability, type RaidService } from '../src/raids.js'
+import {
+  deriveMediaUploadCapability,
+  escapeShareCardXml,
+  renderRaidShareCard,
+  resolveExpiringStatus,
+  type RaidResult,
+  type RaidService,
+} from '../src/raids.js'
 
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
@@ -18,6 +25,16 @@ const user: User = {
 }
 
 const testOrigin = 'http://localhost:5173'
+
+it('projects claim and fallback expiry only from the SQL-derived flag', () => {
+  expect(resolveExpiringStatus('pending', 'pending', false)).toBe('pending')
+  expect(resolveExpiringStatus('pending', 'pending', true)).toBe('expired')
+  expect(resolveExpiringStatus('pending_verifier', 'pending_verifier', false)).toBe(
+    'pending_verifier',
+  )
+  expect(resolveExpiringStatus('pending_verifier', 'pending_verifier', true)).toBe('expired')
+  expect(resolveExpiringStatus('expired_finalization', 'pending', false)).toBe('expired')
+})
 
 function createAuth(overrides: Partial<AuthService> = {}): AuthService {
   return {
@@ -70,6 +87,13 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
     listMedia: vi.fn().mockResolvedValue({ media: [], nextCursor: null }),
     readMedia: vi.fn(),
     tombstoneMedia: vi.fn(),
+    finishRaid: vi.fn(),
+    settleFinalization: vi.fn(),
+    leaveRaid: vi.fn(),
+    getResult: vi.fn(),
+    listHistory: vi.fn().mockResolvedValue({ raids: [], nextCursor: null }),
+    getProgress: vi.fn(),
+    getShareCard: vi.fn(),
     ...overrides,
   }
 }
@@ -129,6 +153,46 @@ describe('API foundation', () => {
         MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
       }),
     ).not.toThrow()
+  })
+
+  it('renders one deterministic metadata-free private PNG result card', async () => {
+    const result: RaidResult = {
+      schemaVersion: 1,
+      raid: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        kabandaId: '2e56a447-23dc-4507-af50-5b8c2430ac81',
+        title: 'Рейд <script>& "кабан"',
+        startedAt: '2026-08-28T10:00:00.000Z',
+        completedAt: '2026-08-28T11:00:00.000Z',
+        partial: false,
+      },
+      team: { durationSeconds: 3600, distanceMeters: 12_345.6, uniquePoints: 7, photos: 3 },
+      personal: { durationSeconds: 1800, distanceMeters: 6000, uniquePoints: 4, photos: 1 },
+      participants: [
+        {
+          userId: user.id,
+          displayName: 'Павел',
+          metrics: { durationSeconds: 1800, distanceMeters: 6000, uniquePoints: 4, photos: 1 },
+        },
+      ],
+    }
+    expect(escapeShareCardXml(result.raid.title)).toBe(
+      'Рейд &lt;script&gt;&amp; &quot;кабан&quot;',
+    )
+    const first = await renderRaidShareCard(result)
+    const second = await renderRaidShareCard(result)
+    expect(first.equals(second)).toBe(true)
+    expect(first.length).toBeLessThan(1024 * 1024)
+    expect(first.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+    const chunkTypes: string[] = []
+    for (let offset = 8; offset + 12 <= first.length; ) {
+      const length = first.readUInt32BE(offset)
+      chunkTypes.push(first.subarray(offset + 4, offset + 8).toString('ascii'))
+      offset += length + 12
+    }
+    expect(chunkTypes).not.toEqual(
+      expect.arrayContaining(['eXIf', 'iTXt', 'tEXt', 'zTXt', 'iCCP']),
+    )
   })
 
   it('reports liveness', async () => {
@@ -620,5 +684,56 @@ describe('API foundation', () => {
       'a'.repeat(64),
       bytes,
     )
+  })
+
+  it('registers exact finish, settle and leave command DTOs', async () => {
+    const finishRaid = vi.fn().mockResolvedValue({ raid: {}, finalization: {} })
+    const settleFinalization = vi.fn().mockResolvedValue({ raid: {}, result: {} })
+    const leaveRaid = vi.fn().mockResolvedValue({ raid: {} })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ finishRaid, settleFinalization, leaveRaid }),
+    )
+    const raidId = '81297402-898c-48d6-bc78-c74b6b38205c'
+    const commonHeaders = {
+      origin: testOrigin,
+      cookie: 'kabanda_session=session',
+      'idempotency-key': 'finalization-operation',
+    }
+    const finish = await app.inject({
+      method: 'POST',
+      url: `/api/raids/${raidId}/commands/finish`,
+      headers: commonHeaders,
+      payload: {
+        expectedVersion: 8,
+        inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 1 },
+        confirmPartial: true,
+      },
+    })
+    expect(finish.statusCode).toBe(200)
+    expect(finishRaid).toHaveBeenCalledWith(
+      user.id,
+      raidId,
+      {
+        expectedVersion: 8,
+        inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 1 },
+        confirmPartial: true,
+      },
+      'finalization-operation',
+    )
+    for (const [path, handler] of [
+      ['finalization/settle', settleFinalization],
+      ['participants/me/leave', leaveRaid],
+    ] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/raids/${raidId}/${path}`,
+        headers: { ...commonHeaders, 'idempotency-key': `operation-${path}` },
+        payload: { expectedVersion: 9 },
+      })
+      expect(response.statusCode).toBe(200)
+      expect(handler).toHaveBeenCalledWith(user.id, raidId, 9, `operation-${path}`)
+    }
   })
 })

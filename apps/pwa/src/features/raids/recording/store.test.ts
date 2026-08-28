@@ -11,6 +11,7 @@ import {
   completeRouteLeaseAttempt,
   markRouteBatchRetryable,
   persistRouteSample,
+  reconcileAndCountUnsyncedRouteWork,
   settleRouteBatch,
   WRITER_LEASE_TTL_MS,
 } from './store'
@@ -122,5 +123,26 @@ describe('fenced route storage', () => {
     }
     expect(await settleRouteBatch(context, fence!, batch!.batchId, complete, now + 1_300)).toBe(true)
     expect((await offlineDb.routeOutbox.where('batchId').equals(batch!.batchId).toArray()).every(({ status }) => status === 'accepted')).toBe(true)
+  })
+
+  it('retains but terminalizes route evidence at the canonical finalization cutoff', async () => {
+    const now = Date.parse('2026-08-28T08:00:00.000Z')
+    await getOrCreateRecorderSession(context, now)
+    const fence = await acquireWriterLease(context, 'tab-a', now)
+    const persisted = await persistRouteSample(context, fence!, sample(1), now + 1_000)
+    expect(await reconcileAndCountUnsyncedRouteWork(now + 1_001)).toBe(1)
+    await offlineDb.raidProjections.put({
+      key: JSON.stringify(['user-a', 'raid-a']), identityId: 'user-a', raidId: 'raid-a',
+      kabandaId: 'kabanda-a', state: 'finalizing', savedAt: new Date(now + 2_000).toISOString(), projection: {},
+    })
+
+    expect(await reconcileAndCountUnsyncedRouteWork(now + 2_001)).toBe(1)
+    expect(await offlineDb.routeOutbox.get(persisted!.id)).toMatchObject({
+      status: 'rejected',
+      latitude: sample(1).latitude,
+      lastErrorCode: 'RAID_FINALIZATION_CUTOFF_LOCAL_RECONCILIATION',
+    })
+    await offlineDb.raidProjections.update(JSON.stringify(['user-a', 'raid-a']), { state: 'completed' })
+    expect(await reconcileAndCountUnsyncedRouteWork(now + 3_000)).toBe(0)
   })
 })

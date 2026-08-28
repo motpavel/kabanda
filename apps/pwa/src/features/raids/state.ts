@@ -11,7 +11,7 @@ import type {
 
 export type RaidPrimaryAction =
   | { kind: 'navigate'; label: string }
-  | { kind: 'command'; command: RaidAllowedAction; label: string }
+  | { kind: 'command'; command: Exclude<RaidAllowedAction, 'finish' | 'leave' | 'settle-finalization'>; label: string }
   | { kind: 'readiness'; label: string }
   | { kind: 'refresh'; label: string }
 

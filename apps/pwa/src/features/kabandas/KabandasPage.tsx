@@ -17,6 +17,7 @@ import {
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
+import { RaidHistory } from '../results/RaidHistory'
 import type {
   KabandaMember,
   KabandaPoint,
@@ -275,6 +276,7 @@ function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: Kaba
       {message && <p className="kb-notice" role="status">{message}</p>}
 
       <RaidHomeCard identityId={user.id} kabanda={kabanda} />
+      <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
 
       <div className="kb-grid">
         <section className="kb-card kb-points">

@@ -1,6 +1,6 @@
 # Жизненный цикл рейда VP
 
-Статус: proposed для VP #29. Визуальный UX утверждается отдельно в #31.
+Статус: рабочий контракт VP #29, материализованный delivery-задачами #34–#37. Визуальный UX утверждается отдельно в #31.
 
 Это целевой lifecycle всего VP. Delivery #34 материализует создание, планирование, lobby, старт,
 pause/resume и cancel; `finalizing/completed`, participant leave/cutoff и связанные команды входят в #37,
@@ -126,8 +126,18 @@ local -> pending -> sending -> accepted
   sequence/idempotency namespace не переиспользуется.
 - Handoff/recover также закрывают прежнюю generation до выдачи новой; клиентское время не определяет
   границу и не может обойти fencing.
-- Offline finish сохраняется как pending command. После reconnect сервер применяет или детерминированно отклоняет его по текущему состоянию.
-- `finalizing` ждёт bounded набор ранее созданных route/check-in/media операций и показывает, что итог ещё собирается.
+- Offline-нажатие finish остаётся локальным намерением и не изображает каноническое завершение. После reconnect
+  PWA сначала foreground-досылает identity-bound очередь, показывает её состав и только затем отправляет online
+  finish; явный `confirmPartial` фиксирует bounded причины и количество недосланных операций.
+- Finish под row lock закрывает activity window и navigator lease, замораживает cutoffs всех route generations и
+  переводит рейд в `finalizing` на две минуты server time. Route ingestion и создание новых check-in/claim/
+  fallback/media intent после этого полностью закрыты; разрешены только terminal decisions уже известных серверу
+  claims/fallbacks и завершение ранее выданных media intents в пределах cutoff.
+- Finish, terminal commits и settle сериализуются тем же raid row lock. Settle завершается раньше deadline только
+  при нулевом pending; после deadline он атомарно помечает остаток `expired_finalization`, считает результат и
+  сохраняет неизменяемый summary v1.
+- Media становится видимым только если нормализация завершилась до server `mediaCutoffAt`; после Sharp финальный
+  commit повторно берёт raid lock. Accepted replay после `completed` возвращает прежний receipt, но не меняет итог.
 - После `completed` рейд не открывается заново. Исправления имеют отдельную audit lineage.
 - Reload/process kill/service-worker update читают серверный raid state и совместимый identity-bound outbox; UI не угадывает состояние по старому client flag.
 
@@ -144,3 +154,6 @@ local -> pending -> sending -> accepted
 9. Local sample становится `saved` только после IndexedDB commit, а canonical — только после server receipt.
 10. Поздняя геолокация и pending claim/fallback не создают canonical credit.
 11. Один участник получает не более одного credit за одну snapshot-точку рейда независимо от replay.
+12. Канонический summary считает route sample только в пределах замороженного lease/generation cutoff и никогда
+    не соединяет сегмент через pause, handoff, join или leave.
+13. Finish, разрешённые finalizing commits и settle не обходят друг друга: их сериализует один raid row lock.
