@@ -27,6 +27,8 @@
 | 4 | Media decoder boundary и dependency audit | Pass | malformed/disguised/GIF/TIFF rejection; production audit clean |
 | 5 | Install/account switch/MapLibre worker | Pass | PWA unit/build и mobile Chromium smoke; physical devices Pending |
 | 6 | Alpha point evidence validator | Pass | 10 validator tests; manifest remains 27/0 |
+| 7 | Exact head `7ef9a8c405cbc600d5902a5a86c56f0adfd1311d` | CI Pass, review Request Changes | reviewer found missing actual restricted-artifact hash verification |
+| 8 | Restricted evidence remediation | Local Pass | import invokes realpath/root/size/SHA-256 verification; missing/hash/traversal/symlink regressions |
 
 Exact commands, SHA и CI run добавляются новой строкой после push. Неуспешные попытки не удаляются.
 

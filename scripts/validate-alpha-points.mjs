@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { realpath, readFile, stat } from 'node:fs/promises'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const manifestPath = new URL('../docs/points/alpha-points.csv', import.meta.url)
@@ -34,6 +37,7 @@ const FIELD_EVIDENCE_SCHEMA_VERSION = '1'
 const MAX_FIELD_GPS_ACCURACY_M = 50
 const COORDINATE_TOLERANCE_DEGREES = 0.000001
 const IZHEVSK_BOUNDS = { minLatitude: 56.7, maxLatitude: 57, minLongitude: 53, maxLongitude: 53.4 }
+const MAX_RESTRICTED_EVIDENCE_BYTES = 25 * 1024 * 1024
 
 function parseCsv(content, expectedHeader, label) {
   const lines = content.replace(/^\uFEFF/, '').trimEnd().split(/\r?\n/)
@@ -191,14 +195,82 @@ export function validateAlphaPointManifests({ manifestContent, fieldEvidenceCont
   return { pointCount: manifestRows.length, fieldEvidenceCount: evidenceRows.length }
 }
 
-function runCli() {
-  const result = validateAlphaPointManifests({
+function staysBeneath(rootPath, candidatePath) {
+  const pathFromRoot = relative(rootPath, candidatePath)
+  return pathFromRoot !== '' && !pathFromRoot.startsWith(`..${sep}`) && pathFromRoot !== '..' && !isAbsolute(pathFromRoot)
+}
+
+export async function validateAlphaPointManifestsWithArtifacts({
+  manifestContent,
+  fieldEvidenceContent,
+  evidenceRoot,
+}) {
+  const result = validateAlphaPointManifests({ manifestContent, fieldEvidenceContent })
+  const manifestRows = parseCsv(manifestContent, expectedManifestHeader, 'alpha point')
+  const fieldVerifiedIds = new Set(
+    manifestRows
+      .filter(({ value }) => value.verification_status === 'field_verified')
+      .map(({ value }) => value.id),
+  )
+  if (fieldVerifiedIds.size === 0) return result
+  if (!evidenceRoot || !isAbsolute(evidenceRoot)) {
+    throw new Error('ALPHA_FIELD_EVIDENCE_ROOT must be an absolute restricted directory for field_verified points')
+  }
+
+  let restrictedRoot
+  try {
+    restrictedRoot = await realpath(resolve(evidenceRoot))
+    if (!(await stat(restrictedRoot)).isDirectory()) throw new Error('not a directory')
+  } catch {
+    throw new Error('Restricted field evidence root is unavailable')
+  }
+
+  const evidenceRows = parseCsv(fieldEvidenceContent, expectedFieldEvidenceHeader, 'field evidence')
+  const evidenceByPointId = new Map(evidenceRows.map(({ value }) => [value.point_id, value]))
+  for (const pointId of fieldVerifiedIds) {
+    const evidence = evidenceByPointId.get(pointId)
+    if (!evidence) throw new Error(`Restricted field evidence is unavailable for ${pointId}`)
+    const candidatePath = resolve(restrictedRoot, evidence.evidence_ref)
+    if (!staysBeneath(restrictedRoot, candidatePath)) {
+      throw new Error(`Restricted field evidence escaped its root for ${pointId}`)
+    }
+
+    let artifactPath
+    let artifactBytes
+    try {
+      artifactPath = await realpath(candidatePath)
+      if (!staysBeneath(restrictedRoot, artifactPath)) {
+        throw new Error('resolved outside restricted root')
+      }
+      const artifactStat = await stat(artifactPath)
+      if (!artifactStat.isFile() || artifactStat.size > MAX_RESTRICTED_EVIDENCE_BYTES) {
+        throw new Error('not a bounded regular file')
+      }
+      artifactBytes = await readFile(artifactPath)
+    } catch {
+      throw new Error(`Restricted field evidence is unavailable for ${pointId}`)
+    }
+    const actualSha256 = createHash('sha256').update(artifactBytes).digest('hex')
+    if (actualSha256 !== evidence.evidence_sha256) {
+      throw new Error(`Restricted field evidence hash mismatch for ${pointId}`)
+    }
+  }
+  return result
+}
+
+async function runCli() {
+  const result = await validateAlphaPointManifestsWithArtifacts({
     manifestContent: readFileSync(manifestPath, 'utf8'),
     fieldEvidenceContent: readFileSync(fieldEvidencePath, 'utf8'),
+    evidenceRoot: process.env.ALPHA_FIELD_EVIDENCE_ROOT,
   })
   console.log(
     `Validated ${result.pointCount} alpha point candidates and ${result.fieldEvidenceCount} versioned field evidence records.`,
   )
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) runCli()
+if (
+  process.argv[1] &&
+  basename(process.argv[1]) === 'validate-alpha-points.mjs' &&
+  pathToFileURL(process.argv[1]).href === import.meta.url
+) await runCli()

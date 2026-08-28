@@ -171,6 +171,11 @@ ALPHA_OWNER_EMAIL='<exact-owner-email>' \
 node "${release}/apps/api/dist/import-alpha.js"
 ```
 
+Когда manifest содержит `field_verified`, к import обязательно добавляется
+`ALPHA_FIELD_EVIDENCE_ROOT=/absolute/restricted/operator-storage`. Import до любых DB mutations проверяет,
+что каждый actual evidence-файл после realpath остаётся внутри root и его SHA-256 совпадает с sidecar.
+Raw evidence, resolved path и bytes не выводятся и не попадают в GitHub.
+
 Backup script принимает только loopback PostgreSQL URI и раскладывает его в libpq environment; пароль не
 попадает в аргументы `pg_dump`, listing, marker или stdout.
 

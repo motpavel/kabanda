@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 
 import {
   expectedFieldEvidenceHeader,
   validateAlphaPointManifests,
+  validateAlphaPointManifestsWithArtifacts,
 } from './validate-alpha-points.mjs'
 
 const manifestContent = readFileSync(new URL('../docs/points/alpha-points.csv', import.meta.url), 'utf8')
@@ -93,3 +98,80 @@ for (const [name, overrides, expectedError] of [
     )
   })
 }
+
+test('requires the actual restricted artifact and verifies its SHA-256 before field_verified import', async (context) => {
+  const fixture = fieldVerifiedFixture()
+  const evidenceBytes = Buffer.from('{"safeStop":"approved","version":1}')
+  const actualSha256 = createHash('sha256').update(evidenceBytes).digest('hex')
+  const evidenceRef = `restricted/alpha-points/${fixture.pointId}/evidence.json`
+  const root = await mkdtemp(join(tmpdir(), 'kabanda-field-evidence-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const artifactPath = join(root, evidenceRef)
+  await mkdir(dirname(artifactPath), { recursive: true })
+  await writeFile(artifactPath, evidenceBytes)
+
+  await assert.doesNotReject(() => validateAlphaPointManifestsWithArtifacts({
+    manifestContent: fixture.manifest,
+    fieldEvidenceContent: evidenceContent({ evidence_sha256: actualSha256, evidence_ref: evidenceRef }),
+    evidenceRoot: root,
+  }))
+  await assert.rejects(
+    () => validateAlphaPointManifestsWithArtifacts({
+      manifestContent: fixture.manifest,
+      fieldEvidenceContent: evidenceContent({ evidence_sha256: 'b'.repeat(64), evidence_ref: evidenceRef }),
+      evidenceRoot: root,
+    }),
+    /hash mismatch/,
+  )
+})
+
+test('fails closed for a missing artifact or missing restricted root', async (context) => {
+  const fixture = fieldVerifiedFixture()
+  const root = await mkdtemp(join(tmpdir(), 'kabanda-field-evidence-missing-'))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const input = {
+    manifestContent: fixture.manifest,
+    fieldEvidenceContent: evidenceContent(),
+  }
+  await assert.rejects(
+    () => validateAlphaPointManifestsWithArtifacts({ ...input, evidenceRoot: root }),
+    /evidence is unavailable/,
+  )
+  await assert.rejects(
+    () => validateAlphaPointManifestsWithArtifacts(input),
+    /ALPHA_FIELD_EVIDENCE_ROOT/,
+  )
+})
+
+test('rejects lexical and symlink traversal outside the restricted evidence root', async (context) => {
+  const fixture = fieldVerifiedFixture()
+  await assert.rejects(
+    () => validateAlphaPointManifestsWithArtifacts({
+      manifestContent: fixture.manifest,
+      fieldEvidenceContent: evidenceContent({ evidence_ref: 'restricted/../outside.json' }),
+      evidenceRoot: '/tmp',
+    }),
+    /opaque restricted\/ reference/,
+  )
+
+  const root = await mkdtemp(join(tmpdir(), 'kabanda-field-evidence-link-'))
+  const outside = await mkdtemp(join(tmpdir(), 'kabanda-field-evidence-outside-'))
+  context.after(() => Promise.all([
+    rm(root, { recursive: true, force: true }),
+    rm(outside, { recursive: true, force: true }),
+  ]))
+  const outsideArtifact = join(outside, 'evidence.json')
+  await writeFile(outsideArtifact, 'outside')
+  const evidenceRef = `restricted/alpha-points/${fixture.pointId}/evidence.json`
+  const linkPath = join(root, evidenceRef)
+  await mkdir(dirname(linkPath), { recursive: true })
+  await symlink(outsideArtifact, linkPath)
+  await assert.rejects(
+    () => validateAlphaPointManifestsWithArtifacts({
+      manifestContent: fixture.manifest,
+      fieldEvidenceContent: evidenceContent({ evidence_ref: evidenceRef }),
+      evidenceRoot: root,
+    }),
+    /evidence is unavailable/,
+  )
+})

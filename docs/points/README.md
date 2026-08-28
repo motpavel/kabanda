@@ -44,6 +44,12 @@
 
 В репозиторий не добавляются исходный GPS-трек, фотографии, видео, EXIF или публичная ссылка на них. Evidence-файл содержит только хеш и непрозрачный restricted ref; доступ к самому пакету остаётся вне репозитория. Порядок выезда и шаблон записи описаны в [field-verification-worksheet.md](field-verification-worksheet.md).
 
+Если хотя бы одна строка имеет `field_verified`, проверка и operator import требуют абсолютный
+`ALPHA_FIELD_EVIDENCE_ROOT`. Каждый `evidence_ref` разрешается только внутри этого root с проверкой
+реального пути (включая symlink), файл должен быть bounded regular file, а SHA-256 его фактического
+содержимого обязан совпасть с `evidence_sha256`. Путь и содержимое evidence не печатаются. Отсутствующий
+root/file или несовпавший hash останавливают import до любых изменений БД.
+
 ## Импорт в alpha-Кабанду
 
 После миграций укажите существующую Кабанду и email её owner в локальном `.env`, затем запустите импорт:
@@ -51,6 +57,8 @@
 ```dotenv
 ALPHA_KABANDA_ID=00000000-0000-0000-0000-000000000000
 ALPHA_OWNER_EMAIL=owner@example.com
+# Required only when manifest contains field_verified rows.
+# ALPHA_FIELD_EVIDENCE_ROOT=/absolute/restricted/operator-storage
 ```
 
 ```bash

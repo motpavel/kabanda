@@ -31,4 +31,7 @@
 1. Добавьте или обновите одну строку в `alpha-points-field-evidence.v1.csv`.
 2. Для `approved` перенесите измеренные координаты в `alpha-points.csv`, поставьте `verification_status=field_verified`, а `verified_at` сделайте равным `measured_at`.
 3. Для `relocate` оставьте точку `source_checked` до повторного выезда. Для `rejected` смените основной статус на `rejected`.
-4. Выполните `pnpm test:points`. Ошибка означает, что повышение статуса не прошло fail-closed проверку.
+4. Убедитесь, что actual evidence-файл существует под абсолютным `ALPHA_FIELD_EVIDENCE_ROOT` по указанному
+   `evidence_ref`, и SHA-256 посчитан с его фактического содержимого.
+5. Выполните `pnpm test:points`, затем operator import с тем же restricted root. Ошибка означает, что
+   повышение статуса не прошло fail-closed проверку; не исправляйте статус вручную в БД.
