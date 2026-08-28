@@ -1815,7 +1815,8 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     )
     await pool!.query(
       `UPDATE raid_participants SET active_from = '2026-08-28T10:00:00Z',
-         left_at = CASE WHEN user_id = $2 THEN '2026-08-28T10:30:00Z' ELSE NULL END
+         left_at = CASE WHEN user_id = $2
+           THEN '2026-08-28T10:30:00Z'::timestamptz ELSE NULL::timestamptz END
        WHERE raid_id = $1`,
       [acquired.raid.id, memberId],
     )
