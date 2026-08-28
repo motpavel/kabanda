@@ -4,6 +4,8 @@ import {
   deliveryStateCopy,
   flows,
   getAdjacentScreen,
+  getPrimaryLabel,
+  getPrimaryTarget,
   isPrototypeRole,
   isScreenInFlow,
   screens,
@@ -224,6 +226,24 @@ function ScreenBody({ role, screen }: { role: PrototypeRole; screen: PrototypeSc
           <label className="vp-field">Почта<input autoComplete="email" defaultValue="pavel@example.test" inputMode="email" type="email" /></label>
         </>
       )
+    case 'auth':
+      return (
+        <>
+          <div className="vp-illustration"><Icon name="person" size={36} /></div>
+          <p className="vp-lead">
+            {role === 'organizer'
+              ? 'Войдите по одноразовой ссылке. Пароль придумывать и хранить не нужно.'
+              : 'Мы сохранили приглашение. После ссылки из письма вы вернётесь к вступлению.'}
+          </p>
+          <label className="vp-field">
+            Почта
+            <input autoComplete="email" defaultValue="pavel@example.test" inputMode="email" type="email" />
+          </label>
+          <div className="vp-card vp-card--quiet">
+            <div className="vp-inline"><Icon name="check" /><div><strong>Без пароля</strong><p>Ссылка одноразовая и действует ограниченное время</p></div></div>
+          </div>
+        </>
+      )
     case 'auth-return':
       return (
         <>
@@ -249,6 +269,19 @@ function ScreenBody({ role, screen }: { role: PrototypeRole; screen: PrototypeSc
         </>
       )
     case 'home':
+      if (role === 'participant') {
+        return (
+          <>
+            <div className="vp-home-hero">
+              <p className="vp-kicker">Сегодня · 19:00</p>
+              <h2>Вечерний рейд уже ждёт</h2>
+              <p>Ижевские кабаны · сбор через 42 минуты</p>
+            </div>
+            <div className="vp-card vp-raid-summary"><div><span className="vp-kicker">Текущий статус</span><h2>Вы в составе</h2><p>Навигатор: Павел</p></div><span className="vp-round-icon"><Icon name="bicycle" /></span></div>
+            <Metrics />
+          </>
+        )
+      }
       return (
         <>
           <div className="vp-home-hero">
@@ -336,7 +369,11 @@ function ScreenBody({ role, screen }: { role: PrototypeRole; screen: PrototypeSc
     case 'offline':
       return (
         <>
-          <p className="vp-lead">Рейд продолжается. Очередь привязана к вашему аккаунту и отправится после возвращения сети.</p>
+          <p className="vp-lead">
+            {role === 'organizer'
+              ? 'Рейд продолжается. Очередь привязана к вашему аккаунту и отправится после возвращения сети.'
+              : 'Связь вернулась, а организатор завершил рейд. В результате видны только принятые операции; локальные черновики остаются в вашей очереди.'}
+          </p>
           <div className="vp-delivery-list">
             <StatusCard detail="Фото сквера · 2,4 МБ" icon="camera" state="local" />
             <StatusCard detail="Чекин у цирка" icon="location" state="sending" />
@@ -371,23 +408,64 @@ function ScreenBody({ role, screen }: { role: PrototypeRole; screen: PrototypeSc
           <article className="vp-history-card vp-history-card--muted"><div className="vp-history-card__map"><Icon name="map" size={38} /></div><div><p className="vp-kicker">24 августа</p><h2>Ночной рейд</h2><p>12,8 км · 4 точки</p></div></article>
         </>
       )
+    case 'map':
+      return (
+        <>
+          <MapPreview />
+          <div className="vp-card">
+            <p className="vp-kicker">Список вместо карты</p>
+            <div className="vp-point-list">
+              <div><span className="vp-round-icon"><Icon name="location" /></span><span><strong>Сквер у цирка</strong><small>34 м · не посещена</small></span></div>
+              <div><span className="vp-round-icon vp-round-icon--quiet"><Icon name="check" /></span><span><strong>Набережная Ижевского пруда</strong><small>620 м · посещена 24 августа</small></span></div>
+              <div><span className="vp-round-icon vp-round-icon--quiet"><Icon name="map" /></span><span><strong>Летний сад</strong><small>1,1 км · не посещена</small></span></div>
+            </div>
+          </div>
+          <p className="vp-note">Если WebGL или provider недоступен, точки и расстояния остаются доступны списком.</p>
+        </>
+      )
+    case 'profile':
+      return (
+        <>
+          <div className="vp-profile-card">
+            <span aria-hidden="true" className="vp-profile-avatar">П</span>
+            <div><h2>Павел</h2><p>pavel@example.test</p></div>
+          </div>
+          <div className="vp-card vp-settings">
+            <label><span><strong>Подсказки установки</strong><small>Показывать перед ролью навигатора</small></span><input defaultChecked type="checkbox" /></label>
+            <label><span><strong>Экономия трафика</strong><small>Загружать облегчённые фото в дороге</small></span><input type="checkbox" /></label>
+          </div>
+          <div className="vp-card vp-card--quiet">
+            <div className="vp-inline"><Icon name="cloud" /><div><strong>Локальные данные</strong><p>3 операции · 4,8 МБ · принадлежат текущему аккаунту</p></div></div>
+          </div>
+          <p className="vp-note">Выход блокирует отправку очереди. Она станет доступна только после повторного входа этого пользователя.</p>
+        </>
+      )
   }
 }
 
-const topLevelScreens = new Set<PrototypeScreenId>(['home', 'kabanda', 'history'])
+const topLevelScreens = new Set<PrototypeScreenId>(['home', 'kabanda', 'history', 'map', 'profile'])
 
-function BottomNav({ screen }: { screen: PrototypeScreenId }) {
+function BottomNav({
+  onNavigate,
+  screen,
+}: {
+  onNavigate: (screen: PrototypeScreenId) => void
+  screen: PrototypeScreenId
+}) {
   if (!topLevelScreens.has(screen)) return null
-  const items: Array<[IconName, string, boolean]> = [
-    ['home', 'Главная', screen === 'home'],
-    ['bicycle', 'Рейды', screen === 'history'],
-    ['map', 'Карта', false],
-    ['group', 'Кабанда', screen === 'kabanda'],
-    ['person', 'Профиль', false],
+  const items: Array<[PrototypeScreenId, IconName, string]> = [
+    ['home', 'home', 'Главная'],
+    ['history', 'bicycle', 'Рейды'],
+    ['map', 'map', 'Карта'],
+    ['kabanda', 'group', 'Кабанда'],
+    ['profile', 'person', 'Профиль'],
   ]
   return (
     <nav aria-label="Основная навигация" className="vp-bottom-nav">
-      {items.map(([icon, label, active]) => <button aria-current={active ? 'page' : undefined} className={active ? 'is-active' : ''} key={label} type="button"><Icon name={icon} size={20} /><span>{label}</span></button>)}
+      {items.map(([target, icon, label]) => {
+        const active = screen === target
+        return <button aria-current={active ? 'page' : undefined} className={active ? 'is-active' : ''} key={label} onClick={() => onNavigate(target)} type="button"><Icon name={icon} size={20} /><span>{label}</span></button>
+      })}
     </nav>
   )
 }
@@ -449,9 +527,9 @@ export function PrototypePage() {
         </div>
 
         <div className="vp-action-bar">
-          <button className="vp-primary-action" onClick={() => setScreen(getAdjacentScreen(role, screen, 1))} type="button">{current.primaryLabel}</button>
+          <button className="vp-primary-action" onClick={() => setScreen(getPrimaryTarget(role, screen))} type="button">{getPrimaryLabel(role, screen)}</button>
         </div>
-        <BottomNav screen={screen} />
+        <BottomNav onNavigate={setScreen} screen={screen} />
       </section>
     </main>
   )

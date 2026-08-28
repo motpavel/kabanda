@@ -56,10 +56,12 @@ first value -> auth -> home -> create Kabanda -> create raid -> lobby
 ```text
 invite deep link -> auth -> return to invite -> browser/install explanation -> join
 -> lobby -> active ride -> confirm check-in -> add photo -> canonical result -> history
+-> home / Kabanda / map / profile
 ```
 
 Both paths use the same canonical ride state. Browser/standalone capability differences alter available
-actions, not the domain lifecycle.
+actions, not the domain lifecycle. Only the organizer can finish the shared ride; an ordinary participant
+can contribute check-ins and photos and inspect the canonical result.
 
 ## Prototype screens
 
@@ -67,6 +69,7 @@ actions, not the domain lifecycle.
 | --- | --- | --- |
 | Entry / role | Which usability path is being tested? | Start chosen path |
 | Invite / value | Why should the participant continue? | Continue with email |
+| Authentication | Can either role enter without losing its intended destination? | Send sign-in link |
 | Magic-link return | Did auth preserve the invite? | Join Kabanda |
 | Install guidance | Why and when does the navigator install? | Open installed PWA / continue in browser |
 | Home | What is the one relevant next action? | Create or continue raid |
@@ -82,6 +85,8 @@ actions, not the domain lifecycle.
 | Finish review | Are pending operations visible before cutoff? | Finish ride |
 | Result | What canonical value did the group create? | Plan next ride |
 | History | Can the result be found again without confusing stale cache? | Open ride |
+| Map | Can a point still be understood without a live map provider? | Open nearest point |
+| Profile | Which device settings and local data belong to this account? | Return home |
 
 ## State rules
 
@@ -90,6 +95,7 @@ actions, not the domain lifecycle.
 - Offline does not block safe local capture; it never masquerades as server acceptance.
 - An update available during an active ride is deferred and never forces reload.
 - Finishing with pending operations first opens a review state; it does not silently discard or double count.
+- Only the organizer flow contains the finish action.
 - Logout clears the active local identity and blocks replay. Pending operations are available only after the
   same user signs in again.
 
