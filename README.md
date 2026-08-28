@@ -4,6 +4,10 @@
 
 Текущая ветка содержит capability-spike для [VP 1/9, issue #30](https://github.com/motpavel/kabanda/issues/30). Стенд измеряет фактическое поведение устанавливаемой PWA до начала основной разработки.
 
+HTTPS-стенд для физических тестов: [motpavel.github.io/kabanda](https://motpavel.github.io/kabanda/).
+
+Статус решения: ожидаются реальные iPhone/Android и полевая проверка alpha-точек. Эмуляция браузера не считается `GO PWA`.
+
 ## Локальный запуск
 
 ```bash
@@ -29,4 +33,3 @@ pnpm preview
 - [физическая device matrix](docs/testing/pwa-device-matrix.md);
 - [правила alpha-точек](docs/points/README.md);
 - PWA Capability Lab, экспортирующий JSON и GeoJSON evidence.
-
