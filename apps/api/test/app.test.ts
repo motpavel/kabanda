@@ -1,11 +1,11 @@
-import type { User } from '@kabanda/contracts'
+import { alphaDiagnosticSignalSchema, type User } from '@kabanda/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildMagicLinkVerificationUrl,
   type AuthService,
   type VerifiedSession,
 } from '../src/auth.js'
-import { buildApp } from '../src/app.js'
+import { buildApp, privacySafeOperationRef } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import type { KabandaService } from '../src/kabandas.js'
 import {
@@ -108,19 +108,80 @@ async function createTestApp(
   auth: AuthService,
   kabandas = createKabandas(),
   raids?: RaidService,
+  options: {
+    environment?: Record<string, string>
+    onDiagnosticSignal?: (signal: Parameters<NonNullable<import('../src/app.js').AppDependencies['onDiagnosticSignal']>>[0]) => void
+  } = {},
 ) {
   const app = await buildApp({
     auth,
     kabandas,
     ...(raids ? { raids } : {}),
-    config: loadConfig({ NODE_ENV: 'test' }),
+    config: loadConfig({ NODE_ENV: 'test', ...options.environment }),
     readiness: vi.fn().mockResolvedValue(undefined),
+    ...(options.onDiagnosticSignal ? { onDiagnosticSignal: options.onDiagnosticSignal } : {}),
   })
   apps.push(app)
   return app
 }
 
 describe('API foundation', () => {
+  it('accepts only the five bounded privacy-safe diagnostic signals', () => {
+    const common = {
+      schemaVersion: 1 as const,
+      signalId: 'f43b057b-4f76-4b85-a898-938e87271b51',
+      diagnosticSessionId: 'c97eff29-882f-4c52-a18f-d27bbbf3b896',
+      occurredAt: '2026-08-28T12:00:00.000Z',
+      clientBuild: 'eee8a18',
+      swBuild: 'eee8a18',
+      displayMode: 'standalone' as const,
+    }
+    expect(alphaDiagnosticSignalSchema.parse({ ...common, kind: 'gps_stale', ageBucket: '15_30s' }).kind).toBe('gps_stale')
+    expect(alphaDiagnosticSignalSchema.parse({ ...common, kind: 'gps_stopped', reason: 'timeout' }).kind).toBe('gps_stopped')
+    expect(alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'queue_stalled',
+      queue: 'route',
+      countBucket: '2_5',
+      oldestAgeBucket: '2_5m',
+      attemptBucket: '3_5',
+      errorClass: 'network',
+    }).kind).toBe('queue_stalled')
+    expect(alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'media_failed',
+      stage: 'upload',
+      terminal: false,
+      attemptBucket: '3_5',
+      errorClass: 'server',
+    }).kind).toBe('media_failed')
+    expect(alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'sw_mismatch',
+      state: 'waiting_deferred',
+      durableWorkBucket: '1_5',
+      recorderActive: true,
+      activeSwBuild: 'old',
+      waitingSwBuild: 'new',
+    }).kind).toBe('sw_mismatch')
+    expect(() => alphaDiagnosticSignalSchema.parse({
+      ...common,
+      kind: 'gps_stale',
+      ageBucket: '15_30s',
+      latitude: 56.85,
+      token: 'private',
+      message: 'free text',
+    })).toThrow()
+  })
+
+  it('hashes operation references without exposing the idempotency key', () => {
+    const raw = 'customer-entered-operation-key'
+    const reference = privacySafeOperationRef(raw)
+    expect(reference).toMatch(/^[a-f0-9]{16}$/)
+    expect(reference).not.toContain(raw)
+    expect(privacySafeOperationRef(raw)).toBe(reference)
+  })
+
   it('derives stable upload capabilities from a dedicated secret and intent identity', () => {
     const args = [
       'test-media-capability-secret-at-least-32-bytes',
@@ -200,6 +261,118 @@ describe('API foundation', () => {
     const response = await app.inject({ method: 'GET', url: '/api/health' })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ status: 'ok', service: 'kabanda-api' })
+    expect(response.headers['x-kabanda-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(response.headers['x-kabanda-api-build']).toBe('dev')
+  })
+
+  it('adds error and hashed operation identifiers without echoing the raw key', async () => {
+    const app = await createTestApp(createAuth())
+    const rawKey = 'private-looking-operation-key'
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { origin: 'https://wrong.example', 'idempotency-key': rawKey },
+    })
+    const body = response.json()
+    expect(response.statusCode).toBe(403)
+    expect(body.error.errorId).toBe(response.headers['x-kabanda-request-id'])
+    expect(body.error.operationRef).toBe(privacySafeOperationRef(rawKey))
+    expect(response.headers['x-kabanda-operation-ref']).toBe(privacySafeOperationRef(rawKey))
+    expect(JSON.stringify(body)).not.toContain(rawKey)
+  })
+
+  it('accepts a bounded diagnostic signal only for an authenticated same-origin session', async () => {
+    const onDiagnosticSignal = vi.fn()
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      undefined,
+      { environment: { ALPHA_DIAGNOSTICS_ENABLED: 'true' }, onDiagnosticSignal },
+    )
+    const signal = {
+      schemaVersion: 1,
+      signalId: 'f43b057b-4f76-4b85-a898-938e87271b51',
+      diagnosticSessionId: 'c97eff29-882f-4c52-a18f-d27bbbf3b896',
+      occurredAt: '2026-08-28T12:00:00.000Z',
+      clientBuild: 'eee8a18',
+      swBuild: null,
+      displayMode: 'browser',
+      kind: 'gps_stopped',
+      reason: 'storage_error',
+    }
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: signal,
+    })
+    expect(accepted.statusCode).toBe(202)
+    expect(accepted.json()).toEqual({ accepted: true })
+    expect(onDiagnosticSignal).toHaveBeenCalledTimes(1)
+
+    const anonymous = await createTestApp(
+      createAuth(),
+      createKabandas(),
+      undefined,
+      { environment: { ALPHA_DIAGNOSTICS_ENABLED: 'true' } },
+    )
+    const denied = await anonymous.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: signal,
+    })
+    expect(denied.statusCode).toBe(401)
+
+    const sensitive = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: { ...signal, longitude: 53.2 },
+    })
+    expect(sensitive.statusCode).toBe(400)
+    expect(onDiagnosticSignal).toHaveBeenCalledTimes(1)
+
+    const oversized = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'x-kabanda-diagnostic-session': signal.diagnosticSessionId,
+        'x-kabanda-client-build': signal.clientBuild,
+      },
+      payload: { ...signal, forbiddenPadding: 'x'.repeat(5_000) },
+    })
+    expect(oversized.statusCode).toBe(413)
+    expect(onDiagnosticSignal).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the diagnostics endpoint disabled by default', async () => {
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }))
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/diagnostics/signals',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: {},
+    })
+    expect(response.statusCode).toBe(404)
   })
 
   it('accepts a valid magic-link request without exposing a token', async () => {

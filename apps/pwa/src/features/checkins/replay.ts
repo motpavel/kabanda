@@ -1,4 +1,11 @@
 import { ApiError } from '../../lib/http'
+import {
+  attemptBucket,
+  classifyDiagnosticError,
+  emitAlphaDiagnostic,
+  operationReference,
+} from '../../lib/diagnostics'
+import type { MediaDraftRecord } from '../offline/types'
 import { createMediaIntent, submitCheckIn, uploadMediaContent } from './api'
 import {
   acquireCheckInSenderLease,
@@ -29,6 +36,30 @@ function isTerminal(error: unknown): boolean {
   return error instanceof ApiError && error.status >= 400 && error.status < 500 &&
     error.status !== 401 && error.status !== 408 && error.status !== 429 &&
     error.code !== 'MEDIA_PROCESSING'
+}
+
+type MediaFailureStage = 'intent' | 'upload' | 'processing'
+
+function reportMediaFailure(
+  media: MediaDraftRecord,
+  stage: MediaFailureStage,
+  error: unknown,
+  terminal: boolean,
+): void {
+  if (!terminal && media.attempts < 3) return
+  const code = errorCode(error)
+  void operationReference(media.operationId).then((operationRef) =>
+    emitAlphaDiagnostic(
+      {
+        kind: 'media_failed',
+        stage: code === 'MEDIA_PROCESSING' ? 'processing' : stage,
+        terminal,
+        attemptBucket: attemptBucket(media.attempts),
+        errorClass: classifyDiagnosticError(code),
+      },
+      { operationRef },
+    ),
+  )
 }
 
 export async function replayOneCheckInOrMedia(input: {
@@ -65,6 +96,7 @@ export async function replayOneCheckInOrMedia(input: {
 
   const media = await claimNextMediaDraft(fence)
   if (!media) return { kind: 'idle' }
+  let stage: MediaFailureStage = 'intent'
   try {
     const intent = await createMediaIntent(media.raidId, media.operationId, {
       sourceSha256: media.sourceSha256,
@@ -75,6 +107,7 @@ export async function replayOneCheckInOrMedia(input: {
       ...(media.attemptId ? { attemptId: media.attemptId } : {}),
     })
     if (!(await rememberMediaIntent(fence, media.operationId, intent.intentId))) return { kind: 'fence_lost' }
+    stage = 'upload'
     const response = await uploadMediaContent(
       media.raidId,
       intent.intentId,
@@ -89,10 +122,12 @@ export async function replayOneCheckInOrMedia(input: {
   } catch (error) {
     if (error instanceof ApiError && error.code === 'MEDIA_INTENT_EXPIRED') {
       const replaced = await replaceExpiredMediaIntent(fence, media.operationId)
+      if (!replaced) reportMediaFailure(media, stage, error, true)
       return replaced ? { kind: 'replaced_expired_intent' } : { kind: 'fence_lost' }
     }
     const terminal = isTerminal(error)
     const marked = await retryMediaDraft(fence, media.operationId, errorCode(error), terminal)
+    reportMediaFailure(media, stage, error, terminal)
     return !marked ? { kind: 'fence_lost' } : terminal
       ? { kind: 'terminal', code: errorCode(error) }
       : { kind: 'retryable' }
@@ -110,6 +145,7 @@ export async function replayOneIssuedMedia(input: {
   if (!fence) return { kind: 'idle' }
   const media = await claimNextMediaDraft(fence, Date.now(), true)
   if (!media) return { kind: 'idle' }
+  let stage: MediaFailureStage = 'intent'
   try {
     const intent = await createMediaIntent(media.raidId, media.operationId, {
       sourceSha256: media.sourceSha256,
@@ -120,6 +156,7 @@ export async function replayOneIssuedMedia(input: {
       ...(media.attemptId ? { attemptId: media.attemptId } : {}),
     })
     if (!(await rememberMediaIntent(fence, media.operationId, intent.intentId))) return { kind: 'fence_lost' }
+    stage = 'upload'
     const response = await uploadMediaContent(
       media.raidId,
       intent.intentId,
@@ -134,10 +171,12 @@ export async function replayOneIssuedMedia(input: {
   } catch (error) {
     if (error instanceof ApiError && error.code === 'MEDIA_INTENT_EXPIRED') {
       const marked = await retryMediaDraft(fence, media.operationId, error.code, true)
+      reportMediaFailure(media, stage, error, true)
       return marked ? { kind: 'terminal', code: error.code } : { kind: 'fence_lost' }
     }
     const terminal = isTerminal(error)
     const marked = await retryMediaDraft(fence, media.operationId, errorCode(error), terminal)
+    reportMediaFailure(media, stage, error, terminal)
     return !marked ? { kind: 'fence_lost' } : terminal
       ? { kind: 'terminal', code: errorCode(error) }
       : { kind: 'retryable' }

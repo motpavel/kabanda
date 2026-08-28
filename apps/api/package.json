@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:postgres": "vitest run test/auth.postgres.test.ts test/kabandas.postgres.test.ts --no-file-parallelism",
+    "e2e:fixture": "tsx src/e2e-fixture-cli.ts",
+    "e2e:run": "tsx src/e2e-run.ts",
     "points:import": "tsx src/import-alpha.ts",
     "db:migrate": "tsx src/migrate.ts"
   },

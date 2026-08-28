@@ -1,5 +1,10 @@
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  diagnosticRequestHeaders,
+  resetDiagnosticsForTests,
+  setAlphaDiagnosticsConsent,
+} from '../../lib/diagnostics'
 import { offlineDb } from './db'
 import {
   activateIdentity,
@@ -23,12 +28,16 @@ const operation: OutboxOperation = {
 
 describe('identity-bound outbox', () => {
   beforeEach(async () => {
+    vi.stubGlobal('__ALPHA_DIAGNOSTICS__', true)
+    vi.stubGlobal('__APP_VERSION__', 'test')
+    resetDiagnosticsForTests()
     await offlineDb.delete()
     await offlineDb.open()
   })
 
   afterEach(async () => {
     await offlineDb.delete()
+    vi.unstubAllGlobals()
   })
 
   it('replays an operation only for the active identity', () => {
@@ -67,6 +76,21 @@ describe('identity-bound outbox', () => {
 
     await activateIdentity('user-a')
     expect((await getReplayBatch('user-a')).map(({ id }) => id)).toEqual([pending.id])
+  })
+
+  it('rotates diagnostic correlation on account switch and logout', async () => {
+    await activateIdentity('user-a')
+    setAlphaDiagnosticsConsent('user-a', true)
+    const userA = diagnosticRequestHeaders()['X-Kabanda-Diagnostic-Session']
+    await activateIdentity('user-b')
+    expect(diagnosticRequestHeaders()['X-Kabanda-Diagnostic-Session']).toBeUndefined()
+    setAlphaDiagnosticsConsent('user-b', true)
+    const userB = diagnosticRequestHeaders()['X-Kabanda-Diagnostic-Session']
+    expect(userB).not.toBe(userA)
+
+    await clearActiveIdentity()
+    const loggedOut = diagnosticRequestHeaders()['X-Kabanda-Diagnostic-Session']
+    expect(loggedOut).toBeUndefined()
   })
 
   it('does not let failed operations starve a new pending operation', async () => {

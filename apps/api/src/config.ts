@@ -1,9 +1,13 @@
+import { buildIdentifierSchema } from '@kabanda/contracts'
 import { z } from 'zod'
 
 const localMediaCapabilitySecret = 'kabanda-media-capability-local-only-change-me'
+const booleanFlagSchema = z.enum(['true', 'false']).default('false').transform((value) => value === 'true')
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  API_BUILD_ID: buildIdentifierSchema.default('dev'),
+  ALPHA_DIAGNOSTICS_ENABLED: booleanFlagSchema,
   API_HOST: z.string().default('127.0.0.1'),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   APP_ORIGIN: z.url().default('http://localhost:5173'),

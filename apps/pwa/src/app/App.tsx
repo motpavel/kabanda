@@ -7,13 +7,14 @@ import { RaidApp } from '../features/raids/RaidApp'
 import { PwaUpdateGate } from '../features/raids/PwaUpdateGate'
 import { RecordingRuntimeProvider } from '../features/raids/recording/runtime'
 import { parseRaidRoute } from '../features/raids/routing'
+import { AlphaDiagnosticsConsent } from './AlphaDiagnosticsConsent'
 
 export function App() {
   if (window.location.pathname.endsWith('/auth/verify')) return <VerifyMagicLinkPage />
   if (window.location.pathname.endsWith('/prototype')) return <PrototypePage />
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab')) return <CapabilityLabPage />
-  return <RecordingRuntimeProvider><AppRoute /><PwaUpdateGate /></RecordingRuntimeProvider>
+  return <RecordingRuntimeProvider><AppRoute /><PwaUpdateGate /><AlphaDiagnosticsConsent /></RecordingRuntimeProvider>
 }
 
 function AppRoute() {

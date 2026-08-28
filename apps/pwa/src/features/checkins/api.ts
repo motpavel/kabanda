@@ -1,4 +1,5 @@
 import { ApiError, requestJson } from '../../lib/http'
+import { diagnosticRequestHeaders } from '../../lib/diagnostics'
 import type {
   CheckInClaim,
   CheckInFallback,
@@ -111,6 +112,7 @@ export async function uploadMediaContent(
     credentials: 'same-origin',
     headers: {
       'Content-Type': blob.type,
+      ...diagnosticRequestHeaders(),
       'X-Upload-Capability': capability,
       'X-Content-SHA256': sha256,
     },
@@ -119,7 +121,14 @@ export async function uploadMediaContent(
   const body = await response.json()
   if (!response.ok) {
     const error = body?.error
-    throw new ApiError(error?.code ?? 'REQUEST_FAILED', error?.message ?? 'Ошибка загрузки', response.status)
+    throw new ApiError(
+      error?.code ?? 'REQUEST_FAILED',
+      error?.message ?? 'Ошибка загрузки',
+      response.status,
+      error?.errorId ?? response.headers.get('X-Kabanda-Request-Id'),
+      response.headers.get('X-Kabanda-Api-Build'),
+      error?.operationRef ?? response.headers.get('X-Kabanda-Operation-Ref'),
+    )
   }
   return body as MediaUploadResponse
 }
