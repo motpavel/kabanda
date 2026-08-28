@@ -28,10 +28,14 @@ if (url.hostname !== '127.0.0.1') {
 if (!url.username || !url.password || !database || database.includes('/')) {
   reject('DATABASE_URL credentials/database are incomplete')
 }
+const port = url.port || '5432'
+if (username !== 'kabanda_preview' || database !== 'kabanda_preview' || port !== '5432') {
+  reject('DATABASE_URL does not identify the isolated Kabanda stand database')
+}
 
 const values = [
   url.hostname,
-  url.port || '5432',
+  port,
   username,
   password,
   database,

@@ -26,6 +26,9 @@ test('rejects non-loopback and incomplete database URLs', () => {
     'postgresql://user@127.0.0.1/kabanda',
     'postgresql://user:secret@127.0.0.1/kabanda?host=database.example',
     'postgresql://user:secret@127.0.0.1/kabanda#override',
+    'postgresql://postgres:secret@127.0.0.1:5432/postgres',
+    'postgresql://kabanda_preview:secret@127.0.0.1:5432/neighbor_database',
+    'postgresql://kabanda_preview:secret@127.0.0.1:5433/kabanda_preview',
   ]) {
     const result = spawnSync(process.execPath, [helper.pathname], {
       env: { DATABASE_URL: databaseUrl },
