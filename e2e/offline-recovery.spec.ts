@@ -138,8 +138,8 @@ test('offline route, check-in and photo survive reload and replay once', async (
     timeout: 30_000,
   }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
-  await context.setGeolocation({ latitude: 56.86015, longitude: 53.21015, accuracy: 8 })
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
+  await context.setGeolocation({ latitude: 56.86015, longitude: 53.21015, accuracy: 8 })
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText('Локально: 2', { exact: true })).toBeVisible()
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
