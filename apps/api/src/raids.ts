@@ -494,6 +494,13 @@ export class DatabaseRaidService implements RaidService {
         if (!current?.client_instance_id) {
           throw new RaidError('NAVIGATOR_LEASE_MISSING', 409, 'Нет lease для восстановления')
         }
+        if (current.client_instance_id === input.clientInstanceId) {
+          throw new RaidError(
+            'NAVIGATOR_LEASE_ALREADY_CURRENT',
+            409,
+            'Это устройство уже владеет записью маршрута',
+          )
+        }
         const ended = await client.query<{ ended_at: Date }>(
           `UPDATE raid_navigator_leases SET ended_at = now(), ended_reason = 'recover',
              cutover_sequence = max_accepted_sequence

@@ -877,6 +877,16 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       { expectedVersion: resumed.raid.version, clientInstanceId: nextClient },
       'route-acquire-after-resume',
     )
+    await expect(
+      raidService!.recoverNavigatorLease(
+        ownerId,
+        resumed.raid.id,
+        { expectedVersion: resumed.raid.version, clientInstanceId: nextClient },
+        'route-recover-same-client',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_LEASE_ALREADY_CURRENT' })
+    const unchanged = await raidService!.getRaid(ownerId, resumed.raid.id)
+    expect(unchanged.navigatorLease).toEqual(acquired.raid.navigatorLease)
     const recoveredClient = randomUUID()
     const recovered = await raidService!.recoverNavigatorLease(
       ownerId,
