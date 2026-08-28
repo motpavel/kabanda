@@ -65,7 +65,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     )
   })
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: { code: 'INVALID_INPUT', message: 'Проверьте введённые данные' },
@@ -81,7 +81,19 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         error: { code: error.code, message: error.message, details: error.details },
       })
     }
-    app.log.error(error)
+    if (request.routeOptions.url === '/api/raids/:raidId/route/batches') {
+      const databaseError = error as { code?: string; constraint?: string }
+      app.log.error(
+        {
+          name: error instanceof Error ? error.name : 'UnknownError',
+          code: databaseError.code,
+          constraint: databaseError.constraint,
+        },
+        'route batch failed',
+      )
+    } else {
+      app.log.error(error)
+    }
     return reply.status(500).send({
       error: { code: 'INTERNAL_ERROR', message: 'Не удалось выполнить запрос' },
     })

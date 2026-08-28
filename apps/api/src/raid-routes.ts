@@ -20,6 +20,7 @@ const createRaidSchema = z.object({
 })
 const commandSchema = z.object({ expectedVersion: z.coerce.number().int().positive() })
 const assignNavigatorSchema = commandSchema.extend({ navigatorUserId: z.uuid() })
+const navigatorLeaseSchema = commandSchema.extend({ clientInstanceId: z.uuid() })
 const readinessSchema = commandSchema.extend({
   appMode: z.enum(['browser', 'standalone']),
   locationPermission: z.enum(['granted', 'prompt', 'denied', 'unsupported', 'unknown']),
@@ -31,6 +32,26 @@ const readinessSchema = commandSchema.extend({
   measuredAt: z.iso.datetime({ offset: true }),
 })
 const actionableQuerySchema = z.object({ scope: z.literal('actionable') })
+const routeBatchSchema = z.object({
+  schemaVersion: z.literal(1),
+  leaseId: z.uuid(),
+  clientInstanceId: z.uuid(),
+  samples: z
+    .array(
+      z.object({
+        operationId: z.string().trim().min(8).max(100),
+        sequence: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        capturedAt: z.iso.datetime({ offset: true }),
+        latitude: z.coerce.number().min(56.7).max(57),
+        longitude: z.coerce.number().min(53).max(53.4),
+        accuracyM: z.coerce.number().min(0).max(10_000),
+        speedMps: z.coerce.number().min(0).max(100).optional(),
+        headingDeg: z.coerce.number().min(0).lt(360).optional(),
+      }),
+    )
+    .min(1)
+    .max(50),
+})
 
 function authRequired(reply: FastifyReply) {
   return reply.status(401).send({
@@ -126,6 +147,47 @@ export async function registerRaidRoutes(
     const input = assignNavigatorSchema.parse(request.body)
     return execute(request, reply, dependencies, 'assign-navigator', input)
   })
+  app.post('/api/raids/:raidId/commands/handoff-navigator', async (request, reply) => {
+    const input = assignNavigatorSchema.parse(request.body)
+    return execute(request, reply, dependencies, 'handoff-navigator', input)
+  })
+  app.post('/api/raids/:raidId/route/lease/acquire', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.acquireNavigatorLease(
+      user.id,
+      raidId,
+      navigatorLeaseSchema.parse(request.body),
+      operationId(request),
+    )
+  })
+  app.post('/api/raids/:raidId/route/lease/recover', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.recoverNavigatorLease(
+      user.id,
+      raidId,
+      navigatorLeaseSchema.parse(request.body),
+      operationId(request),
+    )
+  })
+  app.post(
+    '/api/raids/:raidId/route/batches',
+    { bodyLimit: 64 * 1024 },
+    async (request, reply) => {
+      const user = await currentUser(request, dependencies)
+      if (!user) return authRequired(reply)
+      const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+      return dependencies.raids.submitRouteBatch(
+        user.id,
+        raidId,
+        routeBatchSchema.parse(request.body),
+        operationId(request),
+      )
+    },
+  )
   app.post('/api/raids/:raidId/commands/start', async (request, reply) =>
     execute(request, reply, dependencies, 'start', commandSchema.parse(request.body)),
   )

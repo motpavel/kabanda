@@ -42,3 +42,75 @@ export interface RaidProjectionRecord {
   savedAt: string
   projection: unknown
 }
+
+export type RouteOutboxStatus =
+  | 'pending'
+  | 'sending'
+  | 'retryable'
+  | 'accepted'
+  | 'rejected'
+
+export interface RouteOutboxRecord {
+  id: string
+  identityId: string
+  kabandaId: string
+  raidId: string
+  navigatorLeaseId: string
+  leaseGeneration: number
+  clientInstanceId: string
+  sequence: number
+  capturedAt: string
+  latitude: number
+  longitude: number
+  accuracyM: number
+  speedMps: number | null
+  headingDeg: number | null
+  status: RouteOutboxStatus
+  batchId: string | null
+  attempts: number
+  nextAttemptAt: string | null
+  claimUntil: string | null
+  lastErrorCode?: string
+  acceptedAt?: string
+}
+
+export interface RecorderSessionRecord {
+  key: string
+  identityId: string
+  kabandaId: string
+  raidId: string
+  navigatorLeaseId: string
+  leaseGeneration: number
+  clientInstanceId: string
+  wanted: boolean
+  nextSequence: number
+  lastPersistedSampleAt: string | null
+  lastLatitude: number | null
+  lastLongitude: number | null
+  preliminaryDistanceM: number
+  updatedAt: string
+}
+
+export interface RecorderClientRecord {
+  key: string
+  identityId: string
+  kabandaId: string
+  raidId: string
+  clientInstanceId: string
+  leaseActionFingerprint: string | null
+  leaseActionKey: string | null
+  updatedAt: string
+}
+
+export interface RecorderWriterLeaseRecord {
+  key: string
+  identityId: string
+  raidId: string
+  navigatorLeaseId: string
+  leaseGeneration: number
+  holderTabId: string
+  writerGeneration: number
+  fenceToken: string
+  expiresAt: string
+  updatedAt: string
+}

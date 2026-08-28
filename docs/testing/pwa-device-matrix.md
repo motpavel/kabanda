@@ -2,6 +2,18 @@
 
 Статус: pending physical devices. Автоматические браузерные тесты не закрывают эту матрицу.
 
+## Отдельно от code acceptance #35
+
+- Unit/integration/browser tests могут закрыть DTO, authorization, lease fencing, duplicate replay,
+  IndexedDB durability, truth-state transitions и service-worker update gate, но не доказывают пригодность
+  PWA для реальной 60–90-минутной поездки.
+- Field acceptance #35 остаётся открытым до завершения сценария `Screen-awake + Wake Lock` на обоих
+  обязательных устройствах, а также замеров lock/background gaps, battery и storage.
+- После code acceptance тот же 60–90-минутный маршрут повторяется в настоящем active-raid recorder #35:
+  Capability Lab даёт platform evidence, но один не закрывает end-to-end lease/outbox/replay acceptance.
+- Пока IOS-1 и AND-1 имеют статус `Pending`, нельзя заявлять поддержку background/lock-screen GPS.
+  Допустима только экспериментальная формулировка `standalone + screen awake + Wake Lock при наличии`.
+
 ## Подготовка
 
 1. Открыть HTTPS URL Capability Lab.
@@ -58,4 +70,3 @@
 - [ ] `NO-GO`
 
 Решение нельзя выбирать до приложенного evidence с обоих обязательных устройств.
-

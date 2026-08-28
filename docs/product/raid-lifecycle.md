@@ -47,8 +47,32 @@ invited -> accepted -> ready -> active -> left
 - Для старта нужен свежий server-owned readiness report текущего навигатора и текущей версии lobby.
   Смена навигатора или версии делает старый report неприменимым; неподтверждённый background GPS не
   считается зелёной capability.
-- Handoff создаёт явную точку cutover. Старый lease больше не принимает route batches.
+- Каждый lease принадлежит одной монотонной generation. Canonical server time, а не client `capturedAt`,
+  определяет cutover и право batch на ingestion.
+- Handoff создаёт явную server-time точку cutover и fail-closed закрывает старую generation. Старый lease
+  больше не принимает route batches, даже если клиент пометил samples временем до handoff.
+- Recover — явный fenced takeover, а не автоматическое следствие timeout/offline. Он закрывает прежнюю
+  generation и требует новый acquire; прежний tab/device не может продолжить canonical upload.
 - Потеря связи не передаёт роль автоматически. PWA показывает stale GPS и предлагает pause или явный handoff.
+
+## Local recorder #35
+
+```text
+idle -> starting -> recording
+          |          +-> stale -> starting
+          |          +-> paused -> starting
+          |          +-> stopped
+          +----------+-> error
+```
+
+- Это runtime truth PWA, а не второй server raid lifecycle.
+- `recording` допустим только для canonical navigator с active lease той же generation, живым
+  `watchPosition`, granted permission и свежим sample, durable-записанным в identity-bound IndexedDB.
+- Временный marker, работающий timer или наличие `watchId` без свежего durable sample не являются
+  доказательством записи. После ADR-порога без sample состояние становится `stale`.
+- Permission revoke, page lifecycle warning, IndexedDB/quota failure, incompatible schema и lease fencing
+  переводят recorder из зелёного состояния до recovery.
+- Service worker не записывает GPS и не может переводить recorder в `recording`.
 
 ## Чекин
 
@@ -78,10 +102,20 @@ pending -> sending -> accepted
 - `accepted` означает серверный receipt, а не успешный fetch без разбора ответа.
 - Logout/account switch блокирует replay операций другой identity.
 - Background Sync ускоряет replay, но запуск приложения, возврат в foreground и событие online обязаны инициировать его независимо.
+- Route operation несёт lease ID и generation. Offline replay разрешён только пока на сервере активен тот
+  же lease того же actor; pause/handoff/recover fence-ят прежнюю очередь.
+- Fenced route operation не переписывается под новую generation. Она получает terminal rejection/
+  `needs_action` и сохраняется локально как диагностическое evidence до явной cleanup policy.
 
 ## Пауза, завершение и восстановление
 
 - Pause/finish требуют явного подтверждения и актуальной версии рейда.
+- Pause fail-closed фиксирует server-time cutover и закрывает активную route generation. Pending batches
+  старой generation после pause не становятся canonical задним числом.
+- Resume создаёт новую route generation через lease acquire, даже если navigator не изменился. Старый
+  sequence/idempotency namespace не переиспользуется.
+- Handoff/recover также закрывают прежнюю generation до выдачи новой; клиентское время не определяет
+  границу и не может обойти fencing.
 - Offline finish сохраняется как pending command. После reconnect сервер применяет или детерминированно отклоняет его по текущему состоянию.
 - `finalizing` ждёт bounded набор ранее созданных route/check-in/media операций и показывает, что итог ещё собирается.
 - После `completed` рейд не открывается заново. Исправления имеют отдельную audit lineage.
@@ -96,3 +130,5 @@ pending -> sending -> accepted
 5. Повторная доставка operation не создаёт повторный credit, media или distance.
 6. Данные до join и после leave не начисляются участнику.
 7. Private route/media никогда не попадают в общий app-shell cache.
+8. Pause, handoff и recover не доверяют client clock и необратимо fence-ят прежнюю route generation.
+9. Local sample становится `saved` только после IndexedDB commit, а canonical — только после server receipt.

@@ -52,6 +52,9 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
     createDraft: vi.fn(),
     command: vi.fn(),
     reportReadiness: vi.fn(),
+    acquireNavigatorLease: vi.fn(),
+    recoverNavigatorLease: vi.fn(),
+    submitRouteBatch: vi.fn(),
     getRaid: vi.fn(),
     getCurrent: vi.fn().mockResolvedValue(null),
     listActionable: vi.fn().mockResolvedValue([]),
@@ -399,6 +402,103 @@ describe('API foundation', () => {
       '81297402-898c-48d6-bc78-c74b6b38205c',
       payload,
       'readiness-operation',
+    )
+  })
+
+  it('passes a bounded route batch without echoing private coordinates', async () => {
+    const submitRouteBatch = vi.fn().mockResolvedValue({
+      batchId: '6ca90319-e4ea-43a3-acd9-48055411bd80',
+      accepted: [{ operationId: 'sample-operation-one', acceptedAt: '2026-08-28T12:00:01.000Z' }],
+      duplicates: [],
+      rejected: [],
+      routeStatus: {
+        status: 'fresh',
+        navigatorUserId: user.id,
+        generation: 1,
+        lastSampleAt: '2026-08-28T12:00:00.000Z',
+        lastReceivedAt: '2026-08-28T12:00:01.000Z',
+        acceptedSampleCount: 1,
+        missingSequenceCount: 0,
+      },
+      serverAt: '2026-08-28T12:00:01.000Z',
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ submitRouteBatch }),
+    )
+    const payload = {
+      schemaVersion: 1,
+      leaseId: '9ad92175-8a47-4131-86ad-10ed765f8168',
+      clientInstanceId: '7bc3d6a1-181e-4d14-a62e-16324b6a9a4f',
+      samples: [
+        {
+          operationId: 'sample-operation-one',
+          sequence: 1,
+          capturedAt: '2026-08-28T12:00:00.000Z',
+          latitude: 56.85,
+          longitude: 53.2,
+          accuracyM: 8,
+        },
+      ],
+    } as const
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/route/batches',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'route-batch-operation',
+      },
+      payload,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(submitRouteBatch).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      payload,
+      'route-batch-operation',
+    )
+    expect(JSON.stringify(response.json())).not.toContain('56.85')
+    expect(JSON.stringify(response.json())).not.toContain('53.2')
+  })
+
+  it('registers the canonical route lease acquire endpoint', async () => {
+    const acquireNavigatorLease = vi.fn().mockResolvedValue({
+      receipt: {
+        operationId: 'route-acquire-operation',
+        command: 'acquire-route',
+        serverAt: '2026-08-28T12:00:00.000Z',
+      },
+      raid: { id: '81297402-898c-48d6-bc78-c74b6b38205c' },
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ acquireNavigatorLease }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/route/lease/acquire',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'route-acquire-operation',
+      },
+      payload: {
+        expectedVersion: 5,
+        clientInstanceId: '7bc3d6a1-181e-4d14-a62e-16324b6a9a4f',
+      },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(acquireNavigatorLease).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      {
+        expectedVersion: 5,
+        clientInstanceId: '7bc3d6a1-181e-4d14-a62e-16324b6a9a4f',
+      },
+      'route-acquire-operation',
     )
   })
 })

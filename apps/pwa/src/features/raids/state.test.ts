@@ -21,6 +21,14 @@ const raid: RaidProjection = {
   navigatorReady: false,
   navigatorBlockers: [],
   navigatorWarnings: [],
+  routeStatus: {
+    status: 'awaiting_lease',
+    lastSampleAt: null,
+    lastReceivedAt: null,
+    acceptedSampleCount: 0,
+    missingSequenceCount: 0,
+  },
+  navigatorLease: null,
   participants: [],
   allowedActions: [],
 }

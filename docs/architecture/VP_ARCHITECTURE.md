@@ -78,6 +78,78 @@ packages/domain    — чистые правила без React/Fastify/PostgreS
   преждевременные finalize/complete routes и не изображает готовый результат. Participant leave также
   добавляется вместе с правилами credit/cutoff в последующем полевом срезе, а не как безусловная кнопка.
 
+## Граница #35: активный рейд, recorder и offline replay
+
+Для закрытой альфы до 20 человек маршрут синхронизируется обычными same-origin HTTP-командами и
+видимым polling канонической проекции. WebSocket/SSE, Redis, отдельный broker и live-позиции участников
+не нужны. Page runtime записывает GPS; service worker может только ускорить replay той же application-owned
+очереди и никогда не владеет geolocation, raid state или navigator lease.
+
+### Server lease и fencing
+
+- На рейд существует не более одного активного server-issued route lease. Lease привязан к raid,
+  canonical navigator, identity, `clientInstanceId` и монотонной generation/epoch.
+- Потеря сети не завершает lease и не передаёт роль автоматически. Конкурирующий tab/device получает
+  deterministic conflict; takeover возможен только named recovery или handoff.
+- Pause, handoff и recover выполняются fail-closed: сервер под row lock фиксирует собственный cutover,
+  закрывает текущую generation и больше не принимает для неё batches. Client `capturedAt`, local clock и
+  поздно доставленный outbox не могут расширить lease interval назад или вперёд.
+- Resume никогда не переоткрывает старый lease. Даже тот же navigator получает новую generation через
+  acquire; старые operation IDs и local sequence остаются fenced в прежней generation.
+- Offline replay допустим только для того же actor и всё ещё активного lease той же generation. Если
+  другой клиент уже выполнил pause/handoff/recover, сервер возвращает bounded terminal rejection;
+  локальная операция остаётся диагностическим evidence/`needs_action`, но не становится canonical route.
+
+### HTTP и DTO contract
+
+- `GET /api/raids/:raidId` добавляет bounded `RaidRouteStatus`: generation, navigator, server ingestion
+  health, last accepted sample time/count и server-allowed actions; raw coordinates и `clientInstanceId`
+  не выдаются. Local recorder truth остаётся только в PWA runtime.
+- `POST /api/raids/:raidId/route/lease/acquire` принимает `RouteLeaseRequest` и возвращает
+  `RouteLeaseResponse`. Повтор того же operation возвращает immutable prior response.
+- `POST /api/raids/:raidId/route/lease/recover` использует те же DTO, явно fence-ит прежнюю generation
+  и создаёт новую только после server authorization.
+- `POST /api/raids/:raidId/route/batches` принимает bounded `RouteBatchInput` с `RouteSampleInput[]`
+  (не более 50 samples и 64 KiB) и возвращает immutable `RouteBatchReceipt`.
+- `POST /api/raids/:raidId/commands/handoff-navigator` принимает `HandoffNavigatorInput`, закрывает
+  прежний lease и меняет canonical navigator в одной транзакции. Новый navigator затем acquire-ит
+  собственную generation.
+- Все mutation requests используют `Idempotency-Key`; повтор с тем же fingerprint возвращает prior
+  receipt, а reuse ключа с другим payload получает conflict. Lease/batch writes не доверяют client totals.
+
+### Данные и local durability
+
+- PostgreSQL хранит `raid_route_leases`, `raid_route_batches` и `raid_route_samples`. Unique active-lease
+  constraint и `(lease_id, local_seq)` защищают one-recorder и no-duplicate invariants; координаты приватны.
+- Dexie хранит identity-bound `recorderSessions`, `routeSamples`, versioned outbox и короткий sender lock.
+  Sample сначала durable-записывается в IndexedDB и лишь затем может сделать recorder зелёным.
+- Local recorder имеет только runtime states
+  `idle | starting | recording | stale | paused | stopped | error`; это не второй raid lifecycle.
+  `recording` требует canonical navigator/active lease, живой `watchPosition`, granted permission,
+  свежий locally durable sample и отсутствие известного lifecycle/storage failure.
+- Без свежего durable sample дольше ADR-порога (предварительно 15 секунд) recorder становится `stale`.
+  Permission revoke, IndexedDB failure, incompatible schema и fenced lease не могут оставлять зелёный UI.
+- Replay запускается на startup, `pageshow`, foreground/visible, `online` и manual retry. Background Sync
+  остаётся optional acceleration. 401 приостанавливает очередь; account switch никогда не меняет actor.
+- Service-worker update показывается как deferred и не вызывает принудительный reload во время active
+  recorder или несовместимой pending queue.
+
+### Active shell и границы следующих delivery
+
+- Active shell показывает raid/navigator, честный recorder state, online/offline, locally saved/syncing count,
+  bounded route preview и не более одного primary action. Local time/distance помечаются `предварительно ·
+  на телефоне` и не смешиваются с canonical totals.
+- #35 не публикует background/lock-screen GPS promise. Supported navigator mode остаётся experimental до
+  физического решения #30/ADR-0001.
+- #36 добавляет check-in, canonical eligible/nearest point, media payloads/endpoints и настоящий point
+  progress. #35 только готовит versioned outbox boundary и не изображает эти операции выполненными.
+- #37 добавляет `finalizing/completed`, канонические distance/time, history и result card. #35 не считает
+  live provisional metrics финальным результатом.
+
+Code acceptance #35 покрывает mocked geolocation/lifecycle, PostgreSQL auth/idempotency/fencing, Dexie
+reload/replay, account isolation, service-worker update gate и mobile shell. Product/field acceptance остаётся
+открытым до отдельного 60–90-минутного physical smoke на реальных iPhone и Android по матрице #30.
+
 ## Локальная среда
 
 `infra/compose.yaml` поднимает PostGIS, S3-compatible MinIO и Mailpit. Приложения запускаются обычным pnpm workspace. Managed-провайдеры выбираются перед staging без изменения доменных контрактов.
