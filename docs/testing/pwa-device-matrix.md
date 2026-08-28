@@ -51,6 +51,8 @@
 | Offline photo upload | 10 мин | draft переживает reload, после online появляется один accepted media | Pending | Pending |
 | Five-person check-in | 10 мин | claims видят только выбранные участники, credit не дублируется | Pending | Pending |
 | Web Share/download | 5 мин | evidence передаётся или скачивается | Pending | Pending |
+| Finish после offline-очереди | 10 мин | очередь видна, foreground replay не теряется, partial требует явного подтверждения | Pending | Pending |
+| Finalizing/reload | 5 мин | deadline и pending берутся с сервера, итог появляется один раз | Pending | Pending |
 | Storage pressure/clear site data | 10 мин | потеря/восстановление описаны без ложных обещаний | Pending | Pending |
 
 ## Метрики
@@ -67,6 +69,7 @@
 - время от primary action до durable local receipt;
 - время offline photo от reconnect до accepted gallery item;
 - количество duplicate credits/media после reload и повторного нажатия;
+- время от online finish до immutable result и причины partial finalization;
 - app-caused confusion и developer help requests.
 
 ## Решение

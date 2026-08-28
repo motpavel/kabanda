@@ -78,6 +78,45 @@ describe('raid lifecycle', () => {
     ).toContain('start')
   })
 
+  it('exposes finish, leave and settle only to the eligible actor and state', () => {
+    for (const state of ['active', 'paused'] as const) {
+      expect(
+        getRaidAllowedActions({
+          state,
+          role: 'owner',
+          participantState: 'active',
+          navigatorReady: false,
+        }),
+      ).toContain('finish')
+      expect(
+        getRaidAllowedActions({
+          state,
+          role: 'member',
+          participantState: 'active',
+          navigatorReady: false,
+        }),
+      ).toContain('leave')
+    }
+    expect(
+      getRaidAllowedActions({
+        state: 'finalizing',
+        role: 'owner',
+        participantState: 'active',
+        navigatorReady: false,
+        finalizationCanSettle: false,
+      }),
+    ).not.toContain('settle-finalization')
+    expect(
+      getRaidAllowedActions({
+        state: 'finalizing',
+        role: 'owner',
+        participantState: 'active',
+        navigatorReady: false,
+        finalizationCanSettle: true,
+      }),
+    ).toContain('settle-finalization')
+  })
+
   it('fails route health closed across lease and pause boundaries', () => {
     expect(
       getRouteStatusCode({

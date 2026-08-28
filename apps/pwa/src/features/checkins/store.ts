@@ -259,6 +259,7 @@ export async function replaceExpiredMediaIntent(
 export async function claimNextMediaDraft(
   fence: CheckInSenderFence,
   now = Date.now(),
+  issuedOnly = false,
 ): Promise<MediaDraftRecord | null> {
   return offlineDb.transaction(
     'rw',
@@ -275,6 +276,7 @@ export async function claimNextMediaDraft(
       const candidate = rows
         .filter((row) => row.status === 'local' || row.status === 'intent' || row.status === 'retryable' ||
           (row.status === 'uploading' && row.claimUntil !== null && Date.parse(row.claimUntil) <= now))
+        .filter((row) => !issuedOnly || row.intentId !== null)
         .filter((row) => !row.nextAttemptAt || Date.parse(row.nextAttemptAt) <= now)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
       if (!candidate) return null
@@ -469,7 +471,11 @@ export async function reconcileAndCountUnsyncedCheckInWork(now = Date.now()): Pr
           updatedAt: timestamp,
         }))
       const terminalMedia = media
-        .filter((row) => replayableMediaStatuses.has(row.status) && stateByRaid.has(row.raidId) && stateByRaid.get(row.raidId) !== 'active')
+        .filter((row) => {
+          if (!replayableMediaStatuses.has(row.status) || !stateByRaid.has(row.raidId)) return false
+          const state = stateByRaid.get(row.raidId)
+          return state !== 'active' && !(state === 'finalizing' && row.intentId !== null)
+        })
         .map((row) => ({
           ...row,
           status: 'rejected' as const,

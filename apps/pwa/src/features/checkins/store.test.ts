@@ -126,6 +126,53 @@ describe('identity-bound check-in outbox', () => {
     })
   })
 
+  it('claims only an already-issued media intent during finalizing drain', async () => {
+    const now = Date.parse('2026-08-28T08:00:00.000Z')
+    const local = await persistMediaDraft({
+      identityId: 'user-a', kabandaId: 'kabanda-a', raidId: 'raid-a',
+      blob: new Blob(['local'], { type: 'image/jpeg' }), sourceSha256: 'local', sizeBytes: 5,
+      contentType: 'image/jpeg', caption: null, purpose: 'gallery', attemptId: null,
+    }, now)
+    const issued = await persistMediaDraft({
+      identityId: 'user-a', kabandaId: 'kabanda-a', raidId: 'raid-a',
+      blob: new Blob(['issued'], { type: 'image/jpeg' }), sourceSha256: 'issued', sizeBytes: 6,
+      contentType: 'image/jpeg', caption: null, purpose: 'gallery', attemptId: null,
+    }, now + 1)
+    await offlineDb.mediaDrafts.update(issued!.operationId, { intentId: 'intent-a' })
+    const fence = await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-a', now + 2)
+    expect((await claimNextMediaDraft(fence!, now + 3, true))?.operationId).toBe(issued?.operationId)
+    expect((await offlineDb.mediaDrafts.get(local!.operationId))?.status).toBe('local')
+  })
+
+  it('keeps only an issued media upload replayable in finalizing', async () => {
+    const now = Date.parse('2026-08-28T08:00:00.000Z')
+    const checkIn = await enqueueCheckIn('user-a', 'kabanda-a', 'raid-a', {
+      pointSnapshotId: 'point-a', evidence, presentParticipantIds: ['user-a'], organizerAttestation: false,
+    }, now)
+    const local = await persistMediaDraft({
+      identityId: 'user-a', kabandaId: 'kabanda-a', raidId: 'raid-a',
+      blob: new Blob(['local'], { type: 'image/jpeg' }), sourceSha256: 'local', sizeBytes: 5,
+      contentType: 'image/jpeg', caption: null, purpose: 'gallery', attemptId: null,
+    }, now)
+    const issued = await persistMediaDraft({
+      identityId: 'user-a', kabandaId: 'kabanda-a', raidId: 'raid-a',
+      blob: new Blob(['issued'], { type: 'image/jpeg' }), sourceSha256: 'issued', sizeBytes: 6,
+      contentType: 'image/jpeg', caption: null, purpose: 'gallery', attemptId: null,
+    }, now + 1)
+    await offlineDb.mediaDrafts.update(issued!.operationId, { intentId: 'intent-a' })
+    await offlineDb.raidProjections.put({
+      key: JSON.stringify(['user-a', 'raid-a']), identityId: 'user-a', raidId: 'raid-a',
+      kabandaId: 'kabanda-a', state: 'finalizing', savedAt: new Date(now + 2).toISOString(), projection: {},
+    })
+
+    expect(await reconcileAndCountUnsyncedCheckInWork(now + 3)).toBe(1)
+    expect(await offlineDb.checkInOutbox.get(checkIn!.operationId)).toMatchObject({ status: 'rejected' })
+    expect(await offlineDb.mediaDrafts.get(local!.operationId)).toMatchObject({ status: 'rejected' })
+    expect(await offlineDb.mediaDrafts.get(issued!.operationId)).toMatchObject({
+      status: 'local', intentId: 'intent-a', sourceSha256: 'issued',
+    })
+  })
+
   it('terminalizes replay work after the canonical raid leaves active without deleting evidence', async () => {
     const now = Date.parse('2026-08-28T08:00:00.000Z')
     const checkIn = await enqueueCheckIn('user-a', 'kabanda-a', 'raid-a', {

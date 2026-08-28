@@ -69,7 +69,7 @@ export interface RouteRecorderView {
   routeStatus: RouteStatusProjection
   message: string | null
   recover: () => void
-  flush: () => void
+  flush: () => Promise<void>
 }
 
 export type StoredRecorderSession = RecorderSessionRecord

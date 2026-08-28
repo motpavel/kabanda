@@ -556,3 +556,51 @@ export async function getRecorderLocalStats(
     lastPersistedSampleAt: session.lastPersistedSampleAt,
   }
 }
+
+const replayableRouteStatuses = new Set<RouteOutboxRecord['status']>([
+  'pending',
+  'sending',
+  'retryable',
+])
+
+/**
+ * Reconciles route work against the active identity's canonical raid cache.
+ * Finalization closes route ingestion, so those rows become retained terminal
+ * diagnostics instead of being replayed forever or blocking an SW update.
+ */
+export async function reconcileAndCountUnsyncedRouteWork(now = Date.now()): Promise<number> {
+  return offlineDb.transaction(
+    'rw',
+    offlineDb.identityContext,
+    offlineDb.raidProjections,
+    offlineDb.routeOutbox,
+    async () => {
+      const identityId = (await offlineDb.identityContext.get('active'))?.userId
+      if (!identityId) return 0
+      const [projections, rows] = await Promise.all([
+        offlineDb.raidProjections.where('identityId').equals(identityId).toArray(),
+        offlineDb.routeOutbox.where('identityId').equals(identityId).toArray(),
+      ])
+      const stateByRaid = new Map(projections.map((projection) => [projection.raidId, projection.state]))
+      const closedStates = new Set(['finalizing', 'completed', 'cancelled'])
+      const timestamp = new Date(now).toISOString()
+      const terminal = rows
+        .filter((row) => replayableRouteStatuses.has(row.status) && closedStates.has(stateByRaid.get(row.raidId) ?? ''))
+        .map((row) => ({
+          ...row,
+          status: 'rejected' as const,
+          claimUntil: null,
+          nextAttemptAt: null,
+          lastErrorCode: stateByRaid.get(row.raidId) === 'finalizing'
+            ? 'RAID_FINALIZATION_CUTOFF_LOCAL_RECONCILIATION'
+            : 'RAID_CLOSED_LOCAL_RECONCILIATION',
+        }))
+      if (terminal.length) await offlineDb.routeOutbox.bulkPut(terminal)
+      const terminalIds = new Set(terminal.map(({ id }) => id))
+      const replayable = rows.filter((row) => replayableRouteStatuses.has(row.status) && !terminalIds.has(row.id)).length
+      // Reloading while the server is collecting known tails can strand the
+      // finalization runner even after the route cutoff has been reconciled.
+      return replayable + (projections.some(({ state }) => state === 'finalizing') ? 1 : 0)
+    },
+  )
+}

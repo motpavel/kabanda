@@ -75,6 +75,9 @@ export type RaidAction =
   | 'start'
   | 'pause'
   | 'resume'
+  | 'finish'
+  | 'leave'
+  | 'settle-finalization'
   | 'cancel'
 
 export function isRaidStateTransitionAllowed(state: RaidState, action: RaidAction): boolean {
@@ -93,6 +96,12 @@ export function isRaidStateTransitionAllowed(state: RaidState, action: RaidActio
       return state === 'active' || state === 'paused'
     case 'resume':
       return state === 'paused'
+    case 'finish':
+      return state === 'active' || state === 'paused'
+    case 'leave':
+      return state === 'active' || state === 'paused'
+    case 'settle-finalization':
+      return state === 'finalizing'
     case 'cancel':
       return ['draft', 'planned', 'lobby', 'active', 'paused'].includes(state)
   }
@@ -103,6 +112,7 @@ export function getRaidAllowedActions(input: {
   role: 'owner' | 'member'
   participantState: RaidParticipantState | null
   navigatorReady: boolean
+  finalizationCanSettle?: boolean
 }): RaidAction[] {
   const actions: RaidAction[] = []
   if (input.role === 'owner') {
@@ -113,6 +123,10 @@ export function getRaidAllowedActions(input: {
     }
     if (input.state === 'active') actions.push('pause')
     if (input.state === 'paused') actions.push('resume')
+    if (input.state === 'active' || input.state === 'paused') actions.push('finish')
+    if (input.state === 'finalizing' && input.finalizationCanSettle) {
+      actions.push('settle-finalization')
+    }
     if (input.state === 'active' || input.state === 'paused') {
       actions.push('handoff-navigator')
     }
@@ -123,6 +137,13 @@ export function getRaidAllowedActions(input: {
   }
   if (input.state === 'lobby' && input.participantState === 'accepted') {
     actions.push('ready')
+  }
+  if (
+    input.role === 'member' &&
+    input.participantState === 'active' &&
+    (input.state === 'active' || input.state === 'paused')
+  ) {
+    actions.push('leave')
   }
   return actions
 }

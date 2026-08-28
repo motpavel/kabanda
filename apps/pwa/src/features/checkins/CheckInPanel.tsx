@@ -53,11 +53,13 @@ export function CheckInPanel({
   raid,
   staleProjection,
   onCanonicalRefresh,
+  serverTailOnly = false,
 }: {
   identityId: string
   raid: RaidProjection
   staleProjection: boolean
   onCanonicalRefresh: () => Promise<unknown>
+  serverTailOnly?: boolean
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState('')
@@ -304,7 +306,7 @@ export function CheckInPanel({
       : [...current, participantId])
   }
 
-  const primaryKind = selectCheckInPrimary({
+  const selectedPrimaryKind = selectCheckInPrimary({
     hasPendingClaim: Boolean(pendingClaim),
     hasPendingFallback: Boolean(pendingFallback),
     hasManualAttempt: Boolean(manualResponse),
@@ -316,6 +318,9 @@ export function CheckInPanel({
     viewerIsNavigator,
     hasSelectedPoint: Boolean(selectedPointId),
   })
+  const primaryKind = serverTailOnly && selectedPrimaryKind !== 'claim' && selectedPrimaryKind !== 'verify_fallback'
+    ? null
+    : selectedPrimaryKind
   const primary = primaryKind === 'claim' && pendingClaim
     ? { label: 'Подтвердить, что я был здесь', action: () => claimAction(pendingClaim, 'confirm') }
     : primaryKind === 'verify_fallback' && pendingFallback
@@ -335,7 +340,7 @@ export function CheckInPanel({
         <div><p className="kb-kicker">Точка рейда</p><h2>{manualResponse ? 'Нужна ручная проверка' : 'Кто сейчас здесь?'}</h2></div>
         {local?.unsynced ? <span className="checkin-pending">Локально: {local.unsynced}</span> : null}
       </div>
-      <p className="kb-muted">Для каждой попытки берём отдельную координату. Маршрут навигатора не используется как evidence.</p>
+      <p className="kb-muted">{serverTailOnly ? 'В finalizing доступны только уже созданные server-side подтверждения.' : 'Для каждой попытки берём отдельную координату. Маршрут навигатора не используется как evidence.'}</p>
 
       {pendingClaim && <div className="kb-notice"><strong>Вас отметил участник рейда.</strong><p>Подтвердите только своё присутствие или отклоните claim.</p></div>}
       {pendingFallback && <div className="kb-notice"><strong>Вас выбрали verifier.</strong><p>Подтверждение будет отдельным от автора попытки.</p></div>}

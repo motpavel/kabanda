@@ -55,6 +55,9 @@ import type {
   ReadinessStatus,
 } from './types'
 import { ActiveRaidPanel } from './recording/ActiveRaidPanel'
+import { FinalizationPanel } from '../results/FinalizationPanel'
+import { ResultPanel } from '../results/ResultPanel'
+import { leaveRaid } from '../results/api'
 import './raids.css'
 
 type RaidIdentity = { id: string }
@@ -332,7 +335,10 @@ function RaidDetailPage({
     return { logical, key }
   }
 
-  const applyCommand = async (command: RaidAllowedAction, extra?: { navigatorUserId: string }) => {
+  const applyCommand = async (
+    command: Exclude<RaidAllowedAction, 'finish' | 'leave' | 'settle-finalization'>,
+    extra?: { navigatorUserId: string },
+  ) => {
     if (resource.stale || operation || !navigator.onLine) return
     const { logical, key } = keyFor(extra ? `${command}:${extra.navigatorUserId}` : command)
     setOperation(command)
@@ -357,6 +363,23 @@ function RaidDetailPage({
       } else {
         setMessage('Команда не подтверждена сервером. Повтор сохранит тот же ключ действия.')
       }
+    } finally {
+      setOperation(null)
+    }
+  }
+
+  const leaveCurrentRaid = async () => {
+    if (resource.stale || operation || !navigator.onLine || !allowed.has('leave')) return
+    if (!window.confirm('Выйти из активного рейда? Новый вклад после выхода не начисляется.')) return
+    const { logical, key } = keyFor('leave')
+    setOperation('leave')
+    setMessage(null)
+    try {
+      const next = await leaveRaid(raid.id, raid.version, key)
+      operationKeys.current.delete(logical)
+      await resource.applyRaid(next)
+    } catch (error) {
+      setMessage(error instanceof ApiError ? error.message : 'Выход не подтверждён. Повтор использует тот же ключ.')
     } finally {
       setOperation(null)
     }
@@ -476,7 +499,7 @@ function RaidDetailPage({
         </section>
       )}
 
-      {(viewerIsNavigator || raid.navigatorUserId) && (
+      {(raid.state === 'draft' || raid.state === 'planned' || raid.state === 'lobby') && (viewerIsNavigator || raid.navigatorUserId) && (
         <section className="kb-card raid-readiness">
           <div className="kb-section-head"><div><p className="kb-kicker">Перед стартом</p><h2>Готов ли телефон?</h2></div><span className={`readiness-pill readiness-pill--${readinessStatus}`}>{readinessStatus}</span></div>
           <p className="kb-muted">Проверяем только измеримое. КАБАНДА не обещает запись при выключенном экране.</p>
@@ -487,7 +510,7 @@ function RaidDetailPage({
         </section>
       )}
 
-      {(raid.state === 'active' || raid.state === 'paused' || raid.state === 'finalizing') && (
+      {(raid.state === 'active' || raid.state === 'paused') && (
         <ActiveRaidPanel
           identityId={user.id}
           raid={raid}
@@ -499,6 +522,18 @@ function RaidDetailPage({
           onApplyRaid={resource.applyRaid}
         />
       )}
+
+      {raid.state === 'finalizing' && (
+        <FinalizationPanel
+          identityId={user.id}
+          raid={raid}
+          staleProjection={resource.stale}
+          onCanonicalRefresh={resource.refresh}
+          onApplyRaid={resource.applyRaid}
+        />
+      )}
+
+      {raid.state === 'completed' && <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />}
 
       {allowed.has('handoff-navigator') && !resource.stale && handoffCandidates.length > 0 && (
         <section className="kb-card raid-handoff">
@@ -535,6 +570,7 @@ function RaidDetailPage({
         <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && !navigator.onLine)} onClick={handlePrimary}>{operation ? 'Подтверждаем…' : primary.label}</button>
       )}
       {allowed.has('cancel') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'cancel'} onClick={() => window.confirm('Отменить рейд для всей команды?') && applyCommand('cancel')}>Отменить рейд</button>}
+      {allowed.has('leave') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'leave' || !navigator.onLine} onClick={leaveCurrentRaid}>{operation === 'leave' ? 'Выходим…' : 'Выйти из рейда'}</button>}
     </RaidShell>
   )
 }

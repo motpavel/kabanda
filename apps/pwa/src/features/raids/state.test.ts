@@ -29,6 +29,7 @@ const raid: RaidProjection = {
     missingSequenceCount: 0,
   },
   navigatorLease: null,
+  finalization: null,
   participants: [],
   allowedActions: [],
 }

@@ -2,8 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
-import type { RaidAction } from '@kabanda/domain'
-import type { RaidCommandInput, RaidService } from './raids.js'
+import type { RaidCommandAction, RaidCommandInput, RaidService } from './raids.js'
 
 type RouteDependencies = {
   auth: AuthService
@@ -19,6 +18,26 @@ const createRaidSchema = z.object({
   scheduledAt: z.iso.datetime({ offset: true }).nullable().optional(),
 })
 const commandSchema = z.object({ expectedVersion: z.coerce.number().int().positive() })
+const finishSchema = commandSchema
+  .extend({
+    inventory: z.object({
+      routePending: z.coerce.number().int().min(0).max(10_000),
+      checkInsPending: z.coerce.number().int().min(0).max(10_000),
+      mediaPending: z.coerce.number().int().min(0).max(10_000),
+      needsAction: z.coerce.number().int().min(0).max(10_000),
+    }),
+    confirmPartial: z.boolean(),
+  })
+  .superRefine((value, context) => {
+    const pending =
+      value.inventory.routePending +
+      value.inventory.checkInsPending +
+      value.inventory.mediaPending +
+      value.inventory.needsAction
+    if (pending > 0 && !value.confirmPartial) {
+      context.addIssue({ code: 'custom', message: 'Partial finish must be confirmed' })
+    }
+  })
 const assignNavigatorSchema = commandSchema.extend({ navigatorUserId: z.uuid() })
 const navigatorLeaseSchema = commandSchema.extend({ clientInstanceId: z.uuid() })
 const readinessSchema = commandSchema.extend({
@@ -90,6 +109,10 @@ const mediaListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(24),
   cursor: z.string().trim().max(200).optional(),
 })
+const historySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().trim().max(240).optional(),
+})
 
 function authRequired(reply: FastifyReply) {
   return reply.status(401).send({
@@ -110,7 +133,7 @@ async function execute(
   request: FastifyRequest,
   reply: FastifyReply,
   dependencies: RouteDependencies,
-  action: RaidAction,
+  action: RaidCommandAction,
   input: RaidCommandInput,
 ) {
   const user = await currentUser(request, dependencies)
@@ -155,11 +178,53 @@ export async function registerRaidRoutes(
     return { raids: await dependencies.raids.listActionable(user.id, kabandaId) }
   })
 
+  app.get('/api/kabandas/:kabandaId/raids/history', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const kabandaId = resourceIdSchema.parse(
+      (request.params as { kabandaId: string }).kabandaId,
+    )
+    const query = historySchema.parse(request.query)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.listHistory(user.id, kabandaId, query.limit, query.cursor))
+  })
+
+  app.get('/api/kabandas/:kabandaId/progress', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const kabandaId = resourceIdSchema.parse(
+      (request.params as { kabandaId: string }).kabandaId,
+    )
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.getProgress(user.id, kabandaId))
+  })
+
   app.get('/api/raids/:raidId', async (request, reply) => {
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)
     const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
     return { raid: await dependencies.raids.getRaid(user.id, raidId) }
+  })
+
+  app.get('/api/raids/:raidId/result', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send({ result: await dependencies.raids.getResult(user.id, raidId) })
+  })
+
+  app.get('/api/raids/:raidId/share-card', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .type('image/png')
+      .send(await dependencies.raids.getShareCard(user.id, raidId))
   })
 
   app.get('/api/raids/:raidId/check-ins/nearby', async (request, reply) => {
@@ -387,6 +452,41 @@ export async function registerRaidRoutes(
   app.post('/api/raids/:raidId/commands/resume', async (request, reply) =>
     execute(request, reply, dependencies, 'resume', commandSchema.parse(request.body)),
   )
+  app.post('/api/raids/:raidId/commands/finish', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return dependencies.raids.finishRaid(
+      user.id,
+      raidId,
+      finishSchema.parse(request.body),
+      operationId(request),
+    )
+  })
+  app.post('/api/raids/:raidId/finalization/settle', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const input = commandSchema.parse(request.body)
+    return dependencies.raids.settleFinalization(
+      user.id,
+      raidId,
+      input.expectedVersion,
+      operationId(request),
+    )
+  })
+  app.post('/api/raids/:raidId/participants/me/leave', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const input = commandSchema.parse(request.body)
+    return dependencies.raids.leaveRaid(
+      user.id,
+      raidId,
+      input.expectedVersion,
+      operationId(request),
+    )
+  })
   app.post('/api/raids/:raidId/commands/cancel', async (request, reply) =>
     execute(request, reply, dependencies, 'cancel', commandSchema.parse(request.body)),
   )

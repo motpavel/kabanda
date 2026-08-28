@@ -4,12 +4,19 @@ import { useRegisterSW } from 'virtual:pwa-register/react'
 import { reconcileAndCountUnsyncedCheckInWork } from '../checkins/store'
 import { shouldDeferServiceWorkerUpdate } from './recording/state'
 import { useRecordingRuntime } from './recording/runtime'
+import { reconcileAndCountUnsyncedRouteWork } from './recording/store'
 
 export function PwaUpdateGate() {
   const { phase, unsyncedCheckInWork } = useRecordingRuntime()
   const [durableUnsyncedWork, setDurableUnsyncedWork] = useState(0)
   useEffect(() => {
-    const subscription = liveQuery(reconcileAndCountUnsyncedCheckInWork).subscribe({
+    const subscription = liveQuery(async () => {
+      const [checkIns, route] = await Promise.all([
+        reconcileAndCountUnsyncedCheckInWork(),
+        reconcileAndCountUnsyncedRouteWork(),
+      ])
+      return checkIns + route
+    }).subscribe({
       next: setDurableUnsyncedWork,
       error: () => setDurableUnsyncedWork(1),
     })

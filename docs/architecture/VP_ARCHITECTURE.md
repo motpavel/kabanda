@@ -175,6 +175,29 @@ reload/replay, account isolation, service-worker update gate и mobile shell. Pr
 - Просроченный media intent заменяется новым operation ID при том же stable draft/SHA. WebSocket, Redis,
   S3 и native background upload для alpha не требуются.
 
+## Граница #37: завершение, результат и повод вернуться
+
+- Только owner завершает рейд online named command с `expectedVersion` и actor-wide `Idempotency-Key`.
+  Локальное нажатие offline — намерение, а не второй lifecycle. Перед finish PWA показывает route/check-in/media
+  inventory; обычный путь требует пустой очереди, а `confirmPartial` явно сохраняет bounded counts/reasons.
+- Finish под raid row lock закрывает activity window и navigator lease, замораживает cutoffs каждой
+  lease/generation и задаёт двухминутный server deadline. Route ingestion после перехода полностью закрыт;
+  новые полевые операции не создаются, а partial route/check-in inventory остаётся диагностическим evidence.
+- Finish, оставшиеся terminal claim/fallback/media commits и settle используют один raid row lock. Settle либо
+  завершается раньше при нулевом pending, либо после deadline атомарно expire-ит остаток, пишет immutable
+  summary v1 и переводит рейд в `completed`.
+- Командная дистанция суммирует только соседние route samples одной lease/generation и одного activity window
+  внутри frozen cutoff. Персональный сегмент дополнительно требует, чтобы обе точки находились внутри одного
+  participation interval; границы join/leave/pause/handoff никогда не соединяются.
+- Итог берёт points из immutable credits, фото — только accepted и не tombstoned на момент settle, участников —
+  из канонических интервалов. Исправление результата и универсальная analytics-модель отложены за VP.
+- Private membership-gated API выдаёт result, cursor history до 20 записей, detail и четыре метрики progress:
+  completed raids, distance, unique points и visible photos. IndexedDB cache привязан к identity; private media
+  и ответы не попадают в общий Cache Storage.
+- Share card — один детерминированный authenticated `image/png` с `private, no-store`: бренд, название/дата,
+  distance/time и counts. Маршрут, имена, фото, точная геолокация и публичная ссылка в VP не входят.
+- Redis/worker, BI/trends, публичная лента, достижения, видео и production observability для #37 не строятся.
+
 ## Локальная среда
 
 `infra/compose.yaml` поднимает только PostGIS и Mailpit. Для alpha медиа остаются в PostgreSQL, поэтому

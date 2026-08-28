@@ -25,6 +25,9 @@ export type RaidAllowedAction =
   | 'resume'
   | 'cancel'
   | 'handoff-navigator'
+  | 'finish'
+  | 'leave'
+  | 'settle-finalization'
   | 'accept'
   | 'decline'
   | 'ready'
@@ -76,8 +79,17 @@ export interface RaidProjection {
   navigatorWarnings: string[]
   routeStatus: RouteStatusProjection
   navigatorLease: NavigatorLeaseProjection | null
+  finalization: RaidFinalizationProjection | null
   participants: RaidParticipant[]
   allowedActions: RaidAllowedAction[]
+}
+
+export interface RaidFinalizationProjection {
+  status: 'collecting'
+  partial: boolean
+  pendingCounts: { claims: number; fallbacks: number; media: number }
+  deadlineAt: string
+  canSettle: boolean
 }
 
 export interface RouteBatchSample {

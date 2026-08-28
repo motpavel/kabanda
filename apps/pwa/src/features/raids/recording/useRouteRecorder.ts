@@ -66,7 +66,7 @@ export function useRouteRecorder(input: {
   const [message, setMessage] = useState<string | null>(null)
   const [recoverNonce, setRecoverNonce] = useState(0)
   const leaseRequestInFlight = useRef(false)
-  const flushRef = useRef<() => void>(() => undefined)
+  const flushRef = useRef<() => Promise<void>>(async () => undefined)
   const previousContext = useRef<RecorderContext | null>(null)
   const { setPhase: setRuntimePhase } = useRecordingRuntime()
   const tabId = useRef(getTabId()).current
@@ -172,7 +172,7 @@ export function useRouteRecorder(input: {
     if (!eligible || !context) {
       setPhase(raid.state === 'paused' ? 'paused' : 'ineligible')
       setStats(emptyStats)
-      flushRef.current = () => undefined
+      flushRef.current = async () => undefined
       return
     }
 
@@ -286,7 +286,7 @@ export function useRouteRecorder(input: {
         replaying = false
       }
     }
-    flushRef.current = () => void flush()
+    flushRef.current = flush
 
     const startPageRecorder = async () => {
       if (cancelled || starting || document.visibilityState !== 'visible') return
@@ -428,7 +428,7 @@ export function useRouteRecorder(input: {
 
     return () => {
       cancelled = true
-      flushRef.current = () => undefined
+      flushRef.current = async () => undefined
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('online', handleResume)
       window.removeEventListener('focus', handleResume)
