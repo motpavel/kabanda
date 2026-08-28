@@ -1,11 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { Pool } from 'pg'
 import { DatabaseKabandaService, KabandaError, type ManifestPoint } from '../src/kabandas.js'
+import { DatabaseRaidService } from '../src/raids.js'
 
 const databaseUrl = process.env.DATABASE_URL
 const describePostgres = databaseUrl ? describe : describe.skip
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null
 const service = pool ? new DatabaseKabandaService(pool) : null
+const raidService = pool ? new DatabaseRaidService(pool) : null
 
 const bounds = { minLat: 56.8, minLon: 53.1, maxLat: 56.9, maxLon: 53.3 }
 const manifest: ManifestPoint[] = [
@@ -49,6 +51,51 @@ async function ownerAndKabanda(suffix: string) {
   const ownerId = await user(`owner-${suffix}@example.com`)
   const kabanda = await service!.createKabanda(ownerId, `Кабанда ${suffix}`, '🐗', `create-${suffix}`)
   return { ownerId, kabanda }
+}
+
+function readiness(online = true) {
+  const measuredAt = new Date().toISOString()
+  return {
+    appMode: 'standalone' as const,
+    locationPermission: 'granted' as const,
+    coordinateMeasuredAt: measuredAt,
+    accuracyM: 12,
+    indexedDbWritable: true,
+    storageAvailable: true,
+    online,
+    measuredAt,
+  }
+}
+
+async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
+  const created = await raidService!.createDraft(
+    ownerId,
+    kabandaId,
+    { title: `Рейд ${suffix}` },
+    `raid-create-${suffix}`,
+  )
+  const raidId = created.raid.id
+  await raidService!.command(ownerId, raidId, 'open-lobby', { expectedVersion: 1 }, `lobby-${suffix}`)
+  await raidService!.command(
+    ownerId,
+    raidId,
+    'assign-navigator',
+    { expectedVersion: 2, navigatorUserId: ownerId },
+    `navigator-${suffix}`,
+  )
+  const ready = await raidService!.command(
+    ownerId,
+    raidId,
+    'ready',
+    { expectedVersion: 3 },
+    `ready-${suffix}`,
+  )
+  return raidService!.reportReadiness(
+    ownerId,
+    raidId,
+    { expectedVersion: ready.raid.version, ...readiness() },
+    `readiness-${suffix}`,
+  )
 }
 
 describePostgres('Kabandas and points PostgreSQL invariants', () => {
@@ -265,5 +312,356 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
         100,
       ),
     ).rejects.toMatchObject({ code: 'BBOX_INVALID' })
+  })
+
+  it('runs the server-owned lobby, readiness, start, pause, resume and cancel lifecycle', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-happy')
+    const ready = await readyRaid(ownerId, kabanda.id, 'happy')
+    expect(ready.raid).toMatchObject({ state: 'lobby', version: 4, navigatorReady: true })
+    expect(ready.raid.allowedActions).toContain('start')
+
+    const started = await raidService!.command(
+      ownerId,
+      ready.raid.id,
+      'start',
+      { expectedVersion: 4 },
+      'start-happy',
+    )
+    expect(started.raid).toMatchObject({ state: 'active', version: 5 })
+    await expect(raidService!.getCurrent(ownerId)).resolves.toMatchObject({ id: ready.raid.id })
+
+    const paused = await raidService!.command(
+      ownerId,
+      ready.raid.id,
+      'pause',
+      { expectedVersion: 5 },
+      'pause-happy',
+    )
+    const resumed = await raidService!.command(
+      ownerId,
+      ready.raid.id,
+      'resume',
+      { expectedVersion: paused.raid.version },
+      'resume-happy',
+    )
+    const cancelled = await raidService!.command(
+      ownerId,
+      ready.raid.id,
+      'cancel',
+      { expectedVersion: resumed.raid.version },
+      'cancel-happy',
+    )
+    expect(cancelled.raid).toMatchObject({ state: 'cancelled', version: 8 })
+    await expect(raidService!.getCurrent(ownerId)).resolves.toBeNull()
+  })
+
+  it('creates a future scheduled raid as planned and opens its lobby', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-planned')
+    const scheduledAt = '2099-08-28T12:00:00.000Z'
+    const created = await raidService!.createDraft(
+      ownerId,
+      kabanda.id,
+      { title: 'Scheduled ride', scheduledAt },
+      'planned-create-operation',
+    )
+    expect(created.receipt.command).toBe('create-raid')
+    expect(created.raid).toMatchObject({ state: 'planned', version: 1, scheduledAt })
+    const immediate = await raidService!.createDraft(
+      ownerId,
+      kabanda.id,
+      { title: 'Ride now' },
+      'draft-create-operation',
+    )
+    expect(immediate.raid).toMatchObject({ state: 'draft', version: 1, scheduledAt: null })
+
+    const lobby = await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'open-lobby',
+      { expectedVersion: 1 },
+      'planned-open-lobby',
+    )
+    expect(lobby.raid).toMatchObject({ state: 'lobby', version: 2, scheduledAt })
+  })
+
+  it('returns an immutable canonical replay and rejects a reused key or stale version', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-replay')
+    const created = await raidService!.createDraft(
+      ownerId,
+      kabanda.id,
+      { title: 'Replay ride' },
+      'create-replay',
+    )
+    const [first, duplicate] = await Promise.all([
+      raidService!.command(
+        ownerId,
+        created.raid.id,
+        'open-lobby',
+        { expectedVersion: 1 },
+        'same-lobby-operation',
+      ),
+      raidService!.command(
+        ownerId,
+        created.raid.id,
+        'open-lobby',
+        { expectedVersion: 1 },
+        'same-lobby-operation',
+      ),
+    ])
+    expect(duplicate).toEqual(first)
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'cancel',
+      { expectedVersion: 2 },
+      'cancel-after-replay',
+    )
+    await expect(
+      raidService!.command(
+        ownerId,
+        created.raid.id,
+        'open-lobby',
+        { expectedVersion: 1 },
+        'same-lobby-operation',
+      ),
+    ).resolves.toEqual(first)
+    await expect(
+      raidService!.command(
+        ownerId,
+        created.raid.id,
+        'cancel',
+        { expectedVersion: 2 },
+        'same-lobby-operation',
+      ),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+    await expect(
+      raidService!.command(
+        ownerId,
+        created.raid.id,
+        'cancel',
+        { expectedVersion: 1 },
+        'stale-cancel-operation',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_VERSION_CONFLICT' })
+    expect(
+      Number(
+        (
+          await pool!.query(
+            `SELECT count(*) FROM raid_command_receipts
+             WHERE raid_id = $1 AND command = 'open-lobby'`,
+            [created.raid.id],
+          )
+        ).rows[0]?.count,
+      ),
+    ).toBe(1)
+  })
+
+  it('lets an accepted non-navigator become ready exactly once', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-member-ready')
+    const memberId = await user('raid-ready-member@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'ready-member-membership')
+
+    const created = await raidService!.createDraft(
+      ownerId,
+      kabanda.id,
+      { title: 'Everyone can be ready' },
+      'member-ready-create',
+    )
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'open-lobby',
+      { expectedVersion: 1 },
+      'member-ready-lobby',
+    )
+    await raidService!.command(
+      memberId,
+      created.raid.id,
+      'accept',
+      { expectedVersion: 2 },
+      'member-ready-accept',
+    )
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'assign-navigator',
+      { expectedVersion: 3, navigatorUserId: ownerId },
+      'member-ready-navigator',
+    )
+
+    const ready = await raidService!.command(
+      memberId,
+      created.raid.id,
+      'ready',
+      { expectedVersion: 4 },
+      'member-ready-once',
+    )
+    expect(ready.raid.navigatorUserId).toBe(ownerId)
+    expect(ready.raid.participants).toContainEqual(
+      expect.objectContaining({ id: memberId, state: 'ready' }),
+    )
+    expect(ready.raid.allowedActions).not.toContain('ready')
+    await expect(
+      raidService!.command(
+        memberId,
+        created.raid.id,
+        'ready',
+        { expectedVersion: 5 },
+        'member-ready-twice',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_COMMAND_FORBIDDEN' })
+  })
+
+  it('allows one winner for two-tab start and only one active raid per Kabanda', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-race')
+    const first = await readyRaid(ownerId, kabanda.id, 'race-first')
+    const startResults = await Promise.allSettled([
+      raidService!.command(
+        ownerId,
+        first.raid.id,
+        'start',
+        { expectedVersion: 4 },
+        'start-tab-one',
+      ),
+      raidService!.command(
+        ownerId,
+        first.raid.id,
+        'start',
+        { expectedVersion: 4 },
+        'start-tab-two',
+      ),
+    ])
+    expect(startResults.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+    expect(startResults.filter(({ status }) => status === 'rejected')).toHaveLength(1)
+    expect(Number((await pool!.query("SELECT count(*) FROM raids WHERE state = 'active'")).rows[0]?.count)).toBe(1)
+
+    const second = await readyRaid(ownerId, kabanda.id, 'race-second')
+    await expect(
+      raidService!.command(
+        ownerId,
+        second.raid.id,
+        'start',
+        { expectedVersion: 4 },
+        'start-second-raid',
+      ),
+    ).rejects.toMatchObject({ code: 'ACTIVE_RAID_EXISTS' })
+  })
+
+  it('invalidates stale readiness, blocks offline readiness and hides cross-tenant raid IDs', async () => {
+    const first = await ownerAndKabanda('raid-tenant-a')
+    const second = await ownerAndKabanda('raid-tenant-b')
+    const created = await raidService!.createDraft(
+      first.ownerId,
+      first.kabanda.id,
+      { title: 'Private ride' },
+      'private-create',
+    )
+    await raidService!.command(
+      first.ownerId,
+      created.raid.id,
+      'open-lobby',
+      { expectedVersion: 1 },
+      'private-lobby',
+    )
+    await raidService!.command(
+      first.ownerId,
+      created.raid.id,
+      'assign-navigator',
+      { expectedVersion: 2, navigatorUserId: first.ownerId },
+      'private-navigator',
+    )
+    const participantReady = await raidService!.command(
+      first.ownerId,
+      created.raid.id,
+      'ready',
+      { expectedVersion: 3 },
+      'private-participant-ready',
+    )
+    const offlineReport = { expectedVersion: participantReady.raid.version, ...readiness(false) }
+    const blocked = await raidService!.reportReadiness(
+      first.ownerId,
+      created.raid.id,
+      offlineReport,
+      'private-offline-ready',
+    )
+    await expect(
+      raidService!.reportReadiness(
+        first.ownerId,
+        created.raid.id,
+        offlineReport,
+        'private-offline-ready',
+      ),
+    ).resolves.toEqual(blocked)
+    expect(blocked.report).toMatchObject({ status: 'fail', raidVersion: 4 })
+    expect(blocked.raid.navigatorReady).toBe(false)
+    await expect(
+      raidService!.command(
+        first.ownerId,
+        created.raid.id,
+        'start',
+        { expectedVersion: 4 },
+        'private-blocked-start',
+      ),
+    ).rejects.toMatchObject({ code: 'NAVIGATOR_NOT_READY' })
+    const recovered = await raidService!.reportReadiness(
+      first.ownerId,
+      created.raid.id,
+      { expectedVersion: 4, ...readiness(true), storageAvailable: null },
+      'private-online-ready',
+    )
+    expect(recovered.report).toMatchObject({ status: 'warn', raidVersion: 4 })
+    expect(recovered.report.blockers).not.toContain('STORAGE_UNAVAILABLE')
+    expect(recovered.raid).toMatchObject({ version: 4, navigatorReady: true })
+    expect(recovered.raid.navigatorWarnings).toContain('STORAGE_UNKNOWN')
+
+    await expect(raidService!.getRaid(second.ownerId, created.raid.id)).rejects.toMatchObject({
+      code: 'RAID_NOT_FOUND',
+    })
+    await expect(
+      raidService!.listActionable(second.ownerId, first.kabanda.id),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+  })
+
+  it('does not replay a private receipt after membership removal', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-removed-replay')
+    const memberId = await user('raid-removed-member@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'raid-member-accept')
+
+    const created = await raidService!.createDraft(
+      ownerId,
+      kabanda.id,
+      { title: 'Private replay' },
+      'private-replay-create',
+    )
+    await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'open-lobby',
+      { expectedVersion: 1 },
+      'private-replay-lobby',
+    )
+    const accepted = await raidService!.command(
+      memberId,
+      created.raid.id,
+      'accept',
+      { expectedVersion: 2 },
+      'private-member-accept',
+    )
+    expect(accepted.raid.version).toBe(3)
+
+    await service!.removeMember(ownerId, kabanda.id, memberId)
+    await expect(
+      raidService!.command(
+        memberId,
+        created.raid.id,
+        'accept',
+        { expectedVersion: 2 },
+        'private-member-accept',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
   })
 })

@@ -8,6 +8,7 @@ import {
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import type { KabandaService } from '../src/kabandas.js'
+import type { RaidService } from '../src/raids.js'
 
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
@@ -46,16 +47,33 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
   }
 }
 
+function createRaids(overrides: Partial<RaidService> = {}): RaidService {
+  return {
+    createDraft: vi.fn(),
+    command: vi.fn(),
+    reportReadiness: vi.fn(),
+    getRaid: vi.fn(),
+    getCurrent: vi.fn().mockResolvedValue(null),
+    listActionable: vi.fn().mockResolvedValue([]),
+    ...overrides,
+  }
+}
+
 const apps: Array<Awaited<ReturnType<typeof buildApp>>> = []
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()))
 })
 
-async function createTestApp(auth: AuthService, kabandas = createKabandas()) {
+async function createTestApp(
+  auth: AuthService,
+  kabandas = createKabandas(),
+  raids?: RaidService,
+) {
   const app = await buildApp({
     auth,
     kabandas,
+    ...(raids ? { raids } : {}),
     config: loadConfig({ NODE_ENV: 'test' }),
     readiness: vi.fn().mockResolvedValue(undefined),
   })
@@ -275,5 +293,112 @@ describe('API foundation', () => {
     expect(response.statusCode).toBe(200)
     expect(previewContinuation).toHaveBeenCalledWith(invite.continuation, false, user.id)
     expect(response.json().invite.kabanda.name).toBe('Ночные кабаны')
+  })
+
+  it('passes expectedVersion and Idempotency-Key to a named raid command', async () => {
+    const command = vi.fn().mockResolvedValue({
+      receipt: {
+        operationId: 'start-operation',
+        command: 'start',
+        resultingVersion: 5,
+        serverAt: new Date().toISOString(),
+      },
+      raid: { id: '81297402-898c-48d6-bc78-c74b6b38205c', state: 'active', version: 5 },
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ command }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/commands/start',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'start-operation',
+      },
+      payload: { expectedVersion: 4 },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(command).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      'start',
+      { expectedVersion: 4 },
+      'start-operation',
+    )
+  })
+
+  it('reports device readiness separately from participant readiness', async () => {
+    const command = vi.fn().mockResolvedValue({
+      receipt: {
+        operationId: 'participant-ready-operation',
+        command: 'ready',
+        resultingVersion: 4,
+        serverAt: '2026-08-28T12:00:00.000Z',
+      },
+      raid: { id: '81297402-898c-48d6-bc78-c74b6b38205c', state: 'lobby', version: 4 },
+    })
+    const reportReadiness = vi.fn().mockResolvedValue({
+      report: {
+        status: 'fail',
+        blockers: ['LOCATION_PERMISSION', 'LOCATION_STALE', 'LOCATION_INACCURATE'],
+        expiresAt: '2026-08-28T12:02:00.000Z',
+        raidVersion: 4,
+      },
+      raid: { id: '81297402-898c-48d6-bc78-c74b6b38205c', state: 'lobby', version: 4 },
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ command, reportReadiness }),
+    )
+    const participantResponse = await app.inject({
+      method: 'POST',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/participants/me/ready',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'participant-ready-operation',
+      },
+      payload: { expectedVersion: 3 },
+    })
+    expect(participantResponse.statusCode).toBe(200)
+    expect(command).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      'ready',
+      { expectedVersion: 3 },
+      'participant-ready-operation',
+    )
+    const payload = {
+      expectedVersion: 4,
+      appMode: 'standalone',
+      locationPermission: 'unknown',
+      coordinateMeasuredAt: null,
+      accuracyM: null,
+      indexedDbWritable: true,
+      storageAvailable: null,
+      online: true,
+      measuredAt: '2026-08-28T12:00:00.000Z',
+    }
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/readiness',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'readiness-operation',
+      },
+      payload,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(reportReadiness).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      payload,
+      'readiness-operation',
+    )
   })
 })

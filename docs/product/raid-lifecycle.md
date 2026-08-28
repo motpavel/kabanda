@@ -2,14 +2,20 @@
 
 Статус: proposed для VP #29. Визуальный UX утверждается отдельно в #31.
 
+Это целевой lifecycle всего VP. Delivery #34 материализует создание, планирование, lobby, старт,
+pause/resume и cancel; `finalizing/completed`, participant leave/cutoff и связанные команды входят в #37,
+когда появятся канонический полевой outbox и правила завершения. Наличие состояния в схеме #34 не означает
+публикацию преждевременного HTTP-перехода.
+
 ## Канонические состояния рейда
 
 ```text
-planned -> lobby -> active <-> paused -> finalizing -> completed
-    |         |         |             |                
-    +---------+---------+-------------+-> cancelled
+draft -> planned -> lobby -> active <-> paused -> finalizing -> completed
+   |        |         |         |             |
+   +--------+---------+---------+-------------+-> cancelled
 ```
 
+- `draft`: канонический серверный черновик; его можно безопасно продолжить после reload.
 - `planned`: рейд создан, но приглашения ещё можно менять без влияния на поездку.
 - `lobby`: приглашения отправлены, участники принимают или отклоняют участие, навигатор проходит readiness.
 - `active`: сервер подтвердил один старт и одну действующую роль навигатора.
@@ -18,7 +24,7 @@ planned -> lobby -> active <-> paused -> finalizing -> completed
 - `completed`: канонический результат зафиксирован; изменения возможны только отдельной audited correction.
 - `cancelled`: рейд не даёт прогресса; уже принятые технические операции сохраняются в аудите без начисления.
 
-Переходы выполняются named commands с `operationId`, actor, expected version и captured time. Универсального PATCH состояния нет.
+Переходы выполняются named commands с `operationId`, actor, expected version и captured time. Универсального PATCH состояния нет. Receipt сохраняет fingerprint запроса и неизменяемый bounded snapshot канонического ответа; повторная доставка не пересчитывает ответ из более нового состояния рейда.
 
 ## Участник
 
@@ -38,6 +44,9 @@ invited -> accepted -> ready -> active -> left
 
 - Одновременно существует один server-issued navigator lease.
 - Старт невозможен без readiness навигатора по ADR-0001.
+- Для старта нужен свежий server-owned readiness report текущего навигатора и текущей версии lobby.
+  Смена навигатора или версии делает старый report неприменимым; неподтверждённый background GPS не
+  считается зелёной capability.
 - Handoff создаёт явную точку cutover. Старый lease больше не принимает route batches.
 - Потеря связи не передаёт роль автоматически. PWA показывает stale GPS и предлагает pause или явный handoff.
 
@@ -87,4 +96,3 @@ pending -> sending -> accepted
 5. Повторная доставка operation не создаёт повторный credit, media или distance.
 6. Данные до join и после leave не начисляются участнику.
 7. Private route/media никогда не попадают в общий app-shell cache.
-

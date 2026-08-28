@@ -4,6 +4,7 @@ import type {
   LocalIdentity,
   OutboxOperation,
   PointCollectionProjection,
+  RaidProjectionRecord,
 } from './types'
 
 class KabandaOfflineDatabase extends Dexie {
@@ -11,6 +12,7 @@ class KabandaOfflineDatabase extends Dexie {
   identityContext!: EntityTable<IdentityContext, 'key'>
   outbox!: EntityTable<OutboxOperation, 'id'>
   pointCollections!: EntityTable<PointCollectionProjection, 'key'>
+  raidProjections!: EntityTable<RaidProjectionRecord, 'key'>
 
   constructor() {
     super('kabanda-offline')
@@ -32,6 +34,16 @@ class KabandaOfflineDatabase extends Dexie {
         'id, identityId, kind, aggregateId, status, createdAt, [identityId+status+createdAt]',
       pointCollections:
         'key, identityId, kabandaId, collectionId, savedAt, [identityId+kabandaId+collectionId]',
+    })
+    this.version(4).stores({
+      identities: 'userId, activatedAt',
+      identityContext: 'key, userId, changedAt',
+      outbox:
+        'id, identityId, kind, aggregateId, status, createdAt, [identityId+status+createdAt]',
+      pointCollections:
+        'key, identityId, kabandaId, collectionId, savedAt, [identityId+kabandaId+collectionId]',
+      raidProjections:
+        'key, identityId, raidId, kabandaId, state, savedAt, [identityId+raidId], [identityId+kabandaId+savedAt], [identityId+savedAt]',
     })
   }
 }

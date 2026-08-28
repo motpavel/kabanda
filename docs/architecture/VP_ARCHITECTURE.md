@@ -55,6 +55,29 @@ packages/domain    — чистые правила без React/Fastify/PostgreS
 Пока #30 не даст field verification, manifest остаётся `source_checked`: его можно импортировать и
 показывать для разработки, но нельзя объявлять проверенной полевой коллекцией или разрешать обычный чекин.
 
+## Граница #34: рейд и lobby
+
+- Рейд создаётся как серверный `draft`: незавершённая форма переживает reload, а PWA не изображает
+  каноническое состояние локальным флагом.
+- Состояние меняют только named commands. Каждая критичная команда передаёт `expectedVersion` и
+  `Idempotency-Key`; receipt хранит нормализованный fingerprint и неизменяемый bounded snapshot ответа.
+  Lost-response replay возвращает этот snapshot, даже если рейд позже перешёл в другое состояние.
+- `open-lobby` фиксирует заранее выбранных активных участников Кабанды. UUID рейда — только locator:
+  direct-ID read/write всё равно требует активное membership и строку участника; чужой tenant получает 404.
+- Единственный активный рейд обеспечивается partial unique constraint для
+  `active | paused | finalizing`. Несколько draft/planned/lobby допустимы и никогда не сворачиваются в
+  случайный «current»: deep link читает exact raid, home показывает детерминированный actionable list,
+  а current endpoint относится только к каноническому активному рейду.
+- Старт доступен только online после свежего server-owned readiness report текущего навигатора для
+  текущей версии lobby. Report фиксирует режим PWA, location permission, свежесть/точность sample,
+  IndexedDB/storage и connectivity. Смена навигатора или версии инвалидирует старый report.
+- До физического решения #30 background/lock-screen GPS остаётся `unknown`, а не зелёным обещанием.
+  Lobby обновляется при open/focus/online и видимым polling; offline cache read-only и всегда помечен stale.
+- В delivery #34 реально достижимы `draft | planned | lobby | active | paused | cancelled`.
+  `finalizing | completed` остаются зарезервированной доменной/SQL-основой для #37: #34 не публикует
+  преждевременные finalize/complete routes и не изображает готовый результат. Participant leave также
+  добавляется вместе с правилами credit/cutoff в последующем полевом срезе, а не как безусловная кнопка.
+
 ## Локальная среда
 
 `infra/compose.yaml` поднимает PostGIS, S3-compatible MinIO и Mailpit. Приложения запускаются обычным pnpm workspace. Managed-провайдеры выбираются перед staging без изменения доменных контрактов.

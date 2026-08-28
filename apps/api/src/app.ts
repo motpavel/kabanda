@@ -12,10 +12,13 @@ import type { AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
 import { registerKabandaRoutes } from './kabanda-routes.js'
 import { KabandaError, type KabandaService } from './kabandas.js'
+import { registerRaidRoutes } from './raid-routes.js'
+import { RaidError, type RaidService } from './raids.js'
 
 export interface AppDependencies {
   auth: AuthService
   kabandas: KabandaService
+  raids?: RaidService
   config: ApiConfig
   readiness: () => Promise<void>
 }
@@ -71,6 +74,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     if (error instanceof KabandaError) {
       return reply.status(error.statusCode).send({
         error: { code: error.code, message: error.message },
+      })
+    }
+    if (error instanceof RaidError) {
+      return reply.status(error.statusCode).send({
+        error: { code: error.code, message: error.message, details: error.details },
       })
     }
     app.log.error(error)
@@ -145,6 +153,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   })
 
   await registerKabandaRoutes(app, dependencies)
+  if (dependencies.raids) await registerRaidRoutes(app, { ...dependencies, raids: dependencies.raids })
 
   return app
 }

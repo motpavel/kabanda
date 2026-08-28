@@ -5,6 +5,7 @@ import { loadConfig } from './config.js'
 import { assertDatabaseReady, createDatabase } from './database.js'
 import { SmtpMagicLinkMailer } from './mailer.js'
 import { DatabaseKabandaService } from './kabandas.js'
+import { DatabaseRaidService } from './raids.js'
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url) })
 
@@ -13,9 +14,11 @@ const database = createDatabase(config.DATABASE_URL)
 const mailer = new SmtpMagicLinkMailer(config.SMTP_HOST, config.SMTP_PORT, config.SMTP_FROM)
 const auth = new DatabaseAuthService(database, mailer, config)
 const kabandas = new DatabaseKabandaService(database)
+const raids = new DatabaseRaidService(database)
 const app = await buildApp({
   auth,
   kabandas,
+  raids,
   config,
   readiness: () => assertDatabaseReady(database),
 })

@@ -43,3 +43,80 @@ export function isBoundedIzhevskQuery(bounds: GeographicBounds): boolean {
     bounds.maxLon - bounds.minLon <= 0.25
   )
 }
+
+export const RAID_STATES = [
+  'draft',
+  'planned',
+  'lobby',
+  'active',
+  'paused',
+  'finalizing',
+  'completed',
+  'cancelled',
+] as const
+
+export type RaidState = (typeof RAID_STATES)[number]
+export type RaidParticipantState =
+  | 'invited'
+  | 'accepted'
+  | 'declined'
+  | 'ready'
+  | 'active'
+  | 'left'
+  | 'removed'
+
+export type RaidAction =
+  | 'open-lobby'
+  | 'accept'
+  | 'decline'
+  | 'ready'
+  | 'assign-navigator'
+  | 'start'
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+
+export function isRaidStateTransitionAllowed(state: RaidState, action: RaidAction): boolean {
+  switch (action) {
+    case 'open-lobby':
+      return state === 'draft' || state === 'planned'
+    case 'accept':
+    case 'decline':
+    case 'ready':
+    case 'assign-navigator':
+    case 'start':
+      return state === 'lobby'
+    case 'pause':
+      return state === 'active'
+    case 'resume':
+      return state === 'paused'
+    case 'cancel':
+      return ['draft', 'planned', 'lobby', 'active', 'paused'].includes(state)
+  }
+}
+
+export function getRaidAllowedActions(input: {
+  state: RaidState
+  role: 'owner' | 'member'
+  participantState: RaidParticipantState | null
+  navigatorReady: boolean
+}): RaidAction[] {
+  const actions: RaidAction[] = []
+  if (input.role === 'owner') {
+    if (isRaidStateTransitionAllowed(input.state, 'open-lobby')) actions.push('open-lobby')
+    if (input.state === 'lobby') {
+      actions.push('assign-navigator')
+      if (input.navigatorReady) actions.push('start')
+    }
+    if (input.state === 'active') actions.push('pause')
+    if (input.state === 'paused') actions.push('resume')
+    if (isRaidStateTransitionAllowed(input.state, 'cancel')) actions.push('cancel')
+  }
+  if (input.state === 'lobby' && input.participantState === 'invited') {
+    actions.push('accept', 'decline')
+  }
+  if (input.state === 'lobby' && input.participantState === 'accepted') {
+    actions.push('ready')
+  }
+  return actions
+}
