@@ -1,7 +1,9 @@
 import cookie from '@fastify/cookie'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
+import fastifyStatic from '@fastify/static'
 import { createHash, randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import {
   alphaDiagnosticSignalSchema,
   buildIdentifierSchema,
@@ -34,6 +36,10 @@ function unauthorized() {
 
 const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+function isApiPath(url: string): boolean {
+  return /^\/api(?:\/|$)/.test(new URL(url, 'http://kabanda.local').pathname)
+}
+
 export function privacySafeOperationRef(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16)
 }
@@ -58,16 +64,41 @@ function latencyBucket(milliseconds: number): string {
 }
 
 export async function buildApp(dependencies: AppDependencies): Promise<FastifyInstance> {
+  const publicOrigin = new URL(dependencies.config.APP_ORIGIN)
   const app = Fastify({
     logger: dependencies.config.NODE_ENV !== 'test',
     logController: new LogController({ disableRequestLogging: true }),
     genReqId: () => randomUUID(),
     bodyLimit: 128 * 1024,
     requestTimeout: 10_000,
+    trustProxy: dependencies.config.TRUST_PROXY_ADDRESS ?? false,
   })
   await app.register(cookie)
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(rateLimit, { global: false })
+  if (dependencies.config.PWA_DIST_DIR) {
+    await app.register(fastifyStatic, {
+      root: dependencies.config.PWA_DIST_DIR,
+      cacheControl: false,
+      setHeaders(response, pathName) {
+        const fileName = basename(pathName)
+        if (
+          pathName.includes('/assets/') ||
+          /^(?:workbox|sw-build)-[A-Za-z0-9._-]+\.js$/.test(fileName)
+        ) {
+          response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        } else if (
+          fileName === 'index.html' ||
+          fileName === 'sw.js' ||
+          fileName.endsWith('.webmanifest')
+        ) {
+          response.setHeader('Cache-Control', 'no-store')
+        } else {
+          response.setHeader('Cache-Control', 'no-cache')
+        }
+      },
+    })
+  }
   app.addContentTypeParser(
     ['application/octet-stream', 'image/jpeg', 'image/png', 'image/webp'],
     { parseAs: 'buffer', bodyLimit: 8 * 1024 * 1024 },
@@ -77,10 +108,27 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   app.addHook('onRequest', async (request, reply) => {
     reply.header('X-Kabanda-Request-Id', request.id)
     reply.header('X-Kabanda-Api-Build', dependencies.config.API_BUILD_ID)
+    reply.header('X-Kabanda-App-Build', dependencies.config.API_BUILD_ID)
+    reply.header(
+      'Permissions-Policy',
+      'camera=(self), geolocation=(self), screen-wake-lock=(self)',
+    )
+    if (dependencies.config.NODE_ENV === 'production') {
+      if (request.host.toLowerCase() !== publicOrigin.host.toLowerCase()) {
+        return reply.status(421).send({
+          error: { code: 'HOST_NOT_ALLOWED', message: 'Адрес запроса не разрешён' },
+        })
+      }
+      if (publicOrigin.protocol === 'https:' && request.protocol !== 'https') {
+        return reply.status(400).send({
+          error: { code: 'HTTPS_REQUIRED', message: 'Требуется защищённое соединение' },
+        })
+      }
+    }
     const operationRef = requestOperationRef(request)
     if (operationRef) reply.header('X-Kabanda-Operation-Ref', operationRef)
     if (
-      request.url.startsWith('/api/') &&
+      isApiPath(request.url) &&
       !safeMethods.has(request.method) &&
       request.headers.origin !== dependencies.config.APP_ORIGIN
     ) {
@@ -265,6 +313,24 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   await registerKabandaRoutes(app, dependencies)
   if (dependencies.raids) await registerRaidRoutes(app, { ...dependencies, raids: dependencies.raids })
+
+  app.setNotFoundHandler((request, reply) => {
+    const acceptsHtml = request.headers.accept
+      ?.split(',')
+      .some((mediaType) => mediaType.trim().split(';')[0] === 'text/html')
+    if (
+      dependencies.config.PWA_DIST_DIR &&
+      (request.method === 'GET' || request.method === 'HEAD') &&
+      !isApiPath(request.url) &&
+      acceptsHtml
+    ) {
+      reply.header('Cache-Control', 'no-store')
+      return reply.sendFile('index.html')
+    }
+    return reply.status(404).send({
+      error: { code: 'NOT_FOUND', message: 'Ресурс не найден' },
+    })
+  })
 
   return app
 }

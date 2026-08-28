@@ -20,6 +20,11 @@ const migrationMax = process.env.MIGRATION_MAX
 const files = (await readdir(migrationsDirectory))
   .filter((file) => file.endsWith('.sql') && (!migrationMax || file <= migrationMax))
   .sort()
+if (files.at(-1) !== config.EXPECTED_MIGRATION) {
+  throw new Error(
+    `Migration set mismatch: expected final migration ${config.EXPECTED_MIGRATION}, found ${files.at(-1) ?? 'none'}`,
+  )
+}
 for (const file of files) {
   const alreadyApplied = await database.query('SELECT 1 FROM schema_migrations WHERE name = $1', [file])
   if (alreadyApplied.rowCount) continue
@@ -38,6 +43,13 @@ for (const file of files) {
   } finally {
     client.release()
   }
+}
+
+const currentMigration = await database.query<{ name: string }>(
+  'SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1',
+)
+if (currentMigration.rows[0]?.name !== config.EXPECTED_MIGRATION) {
+  throw new Error('Database did not reach the expected final migration')
 }
 
 await database.end()

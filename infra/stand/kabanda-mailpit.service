@@ -1,0 +1,25 @@
+[Unit]
+Description=Kabanda loopback-only demo mail capture
+After=network.target
+
+[Service]
+Type=simple
+User=kabanda
+Group=kabanda
+ExecStart=/usr/local/bin/mailpit --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025 --database /var/lib/kabanda-mailpit/mailpit.db --max 50 --max-age 7d --max-message-size 2 --disable-version-check --block-remote-css-and-fonts
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/kabanda-mailpit
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

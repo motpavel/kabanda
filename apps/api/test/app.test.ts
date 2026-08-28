@@ -1,5 +1,8 @@
 import { alphaDiagnosticSignalSchema, type User } from '@kabanda/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   buildMagicLinkVerificationUrl,
   type AuthService,
@@ -99,9 +102,11 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
 }
 
 const apps: Array<Awaited<ReturnType<typeof buildApp>>> = []
+const temporaryDirectories: string[] = []
 
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()))
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })))
 })
 
 async function createTestApp(
@@ -214,6 +219,132 @@ describe('API foundation', () => {
         MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
       }),
     ).not.toThrow()
+  })
+
+  it('requires HTTPS for a non-loopback production origin and paired SMTP credentials', () => {
+    const productionSecret = 'production-media-capability-secret-at-least-32-bytes'
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        MEDIA_CAPABILITY_SECRET: productionSecret,
+        APP_ORIGIN: 'http://preview.example.com',
+      }),
+    ).toThrow('APP_ORIGIN must use HTTPS outside loopback in production')
+    expect(() => loadConfig({ SMTP_USER: 'preview-user' })).toThrow(
+      'SMTP_USER and SMTP_PASSWORD must be configured together',
+    )
+    expect(() =>
+      loadConfig({ SMTP_USER: 'preview-user', SMTP_PASSWORD: 'preview-password' }),
+    ).toThrow('Authenticated SMTP requires implicit TLS or required STARTTLS')
+    expect(
+      loadConfig({
+        SMTP_USER: 'preview-user',
+        SMTP_PASSWORD: 'preview-password',
+        SMTP_REQUIRE_TLS: 'true',
+      }).SMTP_USER,
+    ).toBe('preview-user')
+  })
+
+  it('serves the production PWA with bounded caching and keeps API 404s as JSON', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kabanda-static-'))
+    temporaryDirectories.push(directory)
+    await mkdir(join(directory, 'assets'))
+    await writeFile(join(directory, 'index.html'), '<!doctype html><title>Kabanda preview</title>')
+    await writeFile(join(directory, 'manifest.webmanifest'), '{"name":"Kabanda"}')
+    await writeFile(join(directory, 'sw.js'), 'self.addEventListener("fetch",()=>{})')
+    await writeFile(join(directory, 'assets', 'app-abc123.js'), 'globalThis.kabanda=true')
+
+    const app = await createTestApp(createAuth(), createKabandas(), undefined, {
+      environment: { PWA_DIST_DIR: directory, API_BUILD_ID: 'preview-build' },
+    })
+    const spa = await app.inject({
+      method: 'GET',
+      url: '/app',
+      headers: { accept: 'text/html,application/xhtml+xml' },
+    })
+    expect(spa.statusCode).toBe(200)
+    expect(spa.body).toContain('Kabanda preview')
+    expect(spa.headers['cache-control']).toBe('no-store')
+    expect(spa.headers['permissions-policy']).toContain('geolocation=(self)')
+    expect(spa.headers['x-kabanda-app-build']).toBe('preview-build')
+
+    const asset = await app.inject({ method: 'GET', url: '/assets/app-abc123.js' })
+    expect(asset.statusCode).toBe(200)
+    expect(asset.headers['cache-control']).toBe('public, max-age=31536000, immutable')
+
+    const missingAsset = await app.inject({
+      method: 'GET',
+      url: '/assets/missing.js',
+      headers: { accept: '*/*' },
+    })
+    expect(missingAsset.statusCode).toBe(404)
+    expect(missingAsset.headers['content-type']).toContain('application/json')
+
+    const manifest = await app.inject({ method: 'GET', url: '/manifest.webmanifest' })
+    expect(manifest.headers['cache-control']).toBe('no-store')
+
+    const missingApi = await app.inject({ method: 'GET', url: '/api/not-real' })
+    expect(missingApi.statusCode).toBe(404)
+    expect(missingApi.json()).toEqual({
+      error: expect.objectContaining({ code: 'NOT_FOUND' }),
+    })
+    expect(missingApi.headers['content-type']).toContain('application/json')
+
+    const exactApi = await app.inject({
+      method: 'GET',
+      url: '/api?from=navigation',
+      headers: { accept: 'text/html' },
+    })
+    expect(exactApi.statusCode).toBe(404)
+    expect(exactApi.headers['content-type']).toContain('application/json')
+  })
+
+  it('fails closed on the wrong production host, protocol, or mutation origin', async () => {
+    const origin = 'https://preview.trycloudflare.com'
+    const app = await createTestApp(createAuth(), createKabandas(), undefined, {
+      environment: {
+        NODE_ENV: 'production',
+        APP_ORIGIN: origin,
+        TRUST_PROXY_ADDRESS: '127.0.0.1',
+        MEDIA_CAPABILITY_SECRET: 'production-media-capability-secret-at-least-32-bytes',
+      },
+    })
+    const canonicalHeaders = {
+      host: 'preview.trycloudflare.com',
+      'x-forwarded-proto': 'https',
+      origin,
+    }
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: canonicalHeaders,
+      remoteAddress: '127.0.0.1',
+    })
+    expect(accepted.statusCode).toBe(204)
+
+    const foreignOrigin = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { ...canonicalHeaders, origin: 'https://foreign.example' },
+      remoteAddress: '127.0.0.1',
+    })
+    expect(foreignOrigin.statusCode).toBe(403)
+
+    const wrongHost = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: '127.0.0.1:3000', 'x-forwarded-proto': 'https' },
+      remoteAddress: '127.0.0.1',
+    })
+    expect(wrongHost.statusCode).toBe(421)
+
+    const insecure = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: 'preview.trycloudflare.com' },
+      remoteAddress: '127.0.0.1',
+    })
+    expect(insecure.statusCode).toBe(400)
   })
 
   it('renders one deterministic metadata-free private PNG result card', async () => {

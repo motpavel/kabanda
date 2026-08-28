@@ -1,0 +1,34 @@
+[Unit]
+Description=Kabanda closed-preview API and PWA
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kabanda
+Group=kabanda
+WorkingDirectory=/opt/kabanda/current
+EnvironmentFile=/etc/kabanda/kabanda.env
+Environment=PATH=/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/env node apps/api/dist/server.js
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=20s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

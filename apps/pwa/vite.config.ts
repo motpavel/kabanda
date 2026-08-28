@@ -81,7 +81,7 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         importScripts: [swBuildAsset],
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
         runtimeCaching: []
       },
       devOptions: {

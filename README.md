@@ -6,7 +6,8 @@
 - `apps/api` — same-origin Fastify API;
 - `packages/contracts` — проверяемые DTO;
 - `packages/domain` — чистые продуктовые правила;
-- `infra` — локальные PostGIS, private object storage и тестовая почта.
+- `infra` — локальные PostGIS, тестовая почта и минимальный закрытый stand; private media VP хранится в
+  PostgreSQL под проверяемыми capability-ссылками.
 
 Capability-spike для [VP 1/9, issue #30](https://github.com/motpavel/kabanda/issues/30) доступен на `/lab` и измеряет фактическое поведение устанавливаемой PWA. В [issue #32](https://github.com/motpavel/kabanda/issues/32) поверх него собирается минимальный рабочий фундамент закрытой альфы; production shell Кабанды открывается на `/app` и является `start_url` установки.
 
@@ -25,6 +26,10 @@ pnpm dev
 ```
 
 Полная инструкция: [docs/development/LOCAL_SETUP.md](docs/development/LOCAL_SETUP.md). Для service worker, геолокации, камеры и Wake Lock используйте HTTPS или localhost.
+
+Временный закрытый preview полного VP разворачивается без merge через Cloudflare Quick Tunnel. Его
+ограничения, backup-before-migrate и порядок smoke описаны в
+[docs/deployment/CLOUDFLARE_PREVIEW.md](docs/deployment/CLOUDFLARE_PREVIEW.md).
 
 ## Проверки
 
