@@ -26,10 +26,11 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Создать рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
   await page.getByLabel('Название').fill('Синтетический золотой рейд')
-  const createRaidResponse = page.waitForResponse((response) =>
-    response.url().includes(`/api/kabandas/${kabanda.id}/raids`) && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Создать рейд' }).click()
-  const raid = (await (await createRaidResponse).json()).raid as { id: string }
+  await page.waitForURL(/\/app\?raid=[0-9a-f-]+$/)
+  const raidId = new URL(page.url()).searchParams.get('raid')
+  expect(raidId).toBeTruthy()
+  const raid = { id: raidId as string }
 
   await page.getByRole('button', { name: 'Открыть lobby' }).click()
   await page.getByLabel('Выбрать из готовых').selectOption(identity.userId)
