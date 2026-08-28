@@ -8,6 +8,7 @@ import {
 } from './capabilities'
 import { appendEvent, db, getOrCreateSession } from './db'
 import { buildEvidenceBundle, buildGeoJson, downloadJson } from './evidence'
+import { resetGpsWatch } from './gps-watch'
 import type {
   CapabilityEvent,
   CapabilitySession,
@@ -223,9 +224,15 @@ export function CapabilityLabPage() {
         })
       },
       (error) => {
-        setRecorderStatus('error')
-        setMessage(`${error.code}: ${error.message}`)
-        void appendEvent(session.id, 'gps.error', { code: error.code, message: error.message })
+        const reportError = () => {
+          setRecorderStatus('error')
+          setMessage(`${error.code}: ${error.message}`)
+          void appendEvent(session.id, 'gps.error', { code: error.code, message: error.message })
+        }
+        void resetGpsWatch(navigator.geolocation, watchIdRef, releaseWakeLock).then(
+          reportError,
+          reportError,
+        )
       },
       {
         enableHighAccuracy: true,
@@ -233,13 +240,11 @@ export function CapabilityLabPage() {
         timeout: STALE_AFTER_MS,
       },
     )
-  }, [recordEvent, requestWakeLock, session])
+  }, [recordEvent, releaseWakeLock, requestWakeLock, session])
 
   const stopRecording = useCallback(async () => {
-    if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
-    watchIdRef.current = null
+    await resetGpsWatch(navigator.geolocation, watchIdRef, releaseWakeLock)
     setRecorderStatus('stopped')
-    await releaseWakeLock()
     await recordEvent('gps.stopped', { sampleCount })
   }, [recordEvent, releaseWakeLock, sampleCount])
 
