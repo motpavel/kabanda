@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { isBoundedIzhevskQuery, normalizeEmail, sanitizeReturnTo } from './index'
+import {
+  getRaidAllowedActions,
+  isBoundedIzhevskQuery,
+  isRaidStateTransitionAllowed,
+  normalizeEmail,
+  sanitizeReturnTo,
+} from './index'
 
 describe('identity helpers', () => {
   it('normalizes an email address', () => {
@@ -30,5 +36,43 @@ describe('point query bounds', () => {
     expect(
       isBoundedIzhevskQuery({ minLat: 55.7, minLon: 53.1, maxLat: 55.8, maxLon: 53.2 }),
     ).toBe(false)
+  })
+})
+
+describe('raid lifecycle', () => {
+  it('keeps terminal states terminal and names valid transitions', () => {
+    expect(isRaidStateTransitionAllowed('lobby', 'start')).toBe(true)
+    expect(isRaidStateTransitionAllowed('planned', 'open-lobby')).toBe(true)
+    expect(isRaidStateTransitionAllowed('active', 'pause')).toBe(true)
+    expect(isRaidStateTransitionAllowed('paused', 'resume')).toBe(true)
+    expect(isRaidStateTransitionAllowed('completed', 'cancel')).toBe(false)
+    expect(isRaidStateTransitionAllowed('cancelled', 'open-lobby')).toBe(false)
+  })
+
+  it('exposes start only after navigator readiness', () => {
+    expect(
+      getRaidAllowedActions({
+        state: 'lobby',
+        role: 'owner',
+        participantState: 'accepted',
+        navigatorReady: false,
+      }),
+    ).not.toContain('start')
+    expect(
+      getRaidAllowedActions({
+        state: 'lobby',
+        role: 'member',
+        participantState: 'accepted',
+        navigatorReady: false,
+      }),
+    ).toContain('ready')
+    expect(
+      getRaidAllowedActions({
+        state: 'lobby',
+        role: 'owner',
+        participantState: 'ready',
+        navigatorReady: true,
+      }),
+    ).toContain('start')
   })
 })

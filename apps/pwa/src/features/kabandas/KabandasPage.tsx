@@ -16,6 +16,7 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
+import { RaidHomeCard } from '../raids/RaidHomeCard'
 import type {
   KabandaMember,
   KabandaPoint,
@@ -139,7 +140,7 @@ function AuthenticatedKabandas({ user }: { user: User }) {
 
       <section className="kb-heading-row">
         <div><p className="kb-kicker">Команды</p><h1>Мои Кабанды</h1></div>
-        <button className="kb-primary" type="button" onClick={() => setShowCreate((value) => !value)}>+ Создать</button>
+        <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>
       </section>
 
       {showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
@@ -160,7 +161,7 @@ function AuthenticatedKabandas({ user }: { user: User }) {
         <section className="kb-card kb-empty"><h2>Пока без Кабанды</h2><p>Создайте первую команду или откройте приглашение, которое вам прислали.</p><button className="kb-primary" type="button" onClick={() => setShowCreate(true)}>Создать Кабанду</button></section>
       )}
 
-      {selected && <KabandaWorkspace key={selected.id} user={user} kabanda={selected} onLeft={() => removeKabandaLocally(selected.id)} />}
+      {selected && !showCreate && <KabandaWorkspace key={selected.id} user={user} kabanda={selected} onLeft={() => removeKabandaLocally(selected.id)} />}
     </main>
   )
 }
@@ -272,6 +273,8 @@ function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: Kaba
 
       {staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
       {message && <p className="kb-notice" role="status">{message}</p>}
+
+      <RaidHomeCard identityId={user.id} kabanda={kabanda} />
 
       <div className="kb-grid">
         <section className="kb-card kb-points">

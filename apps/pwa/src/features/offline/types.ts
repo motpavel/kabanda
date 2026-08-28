@@ -32,3 +32,13 @@ export interface PointCollectionProjection {
   savedAt: string
   points: unknown[]
 }
+
+export interface RaidProjectionRecord {
+  key: string
+  identityId: string
+  raidId: string
+  kabandaId: string
+  state: string
+  savedAt: string
+  projection: unknown
+}
