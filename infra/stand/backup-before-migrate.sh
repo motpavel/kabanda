@@ -14,8 +14,20 @@ marker="${archive}.marker"
 umask 077
 install -d -m 0700 "${backup_directory}"
 
-# PGDATABASE accepts a libpq URI and keeps credentials out of the process arguments.
-export PGDATABASE="${DATABASE_URL}"
+connection_parts=()
+while IFS= read -r -d '' part; do
+  connection_parts+=("${part}")
+done < <(node "$(dirname "${BASH_SOURCE[0]}")/libpq-connection.mjs")
+test "${#connection_parts[@]}" -eq 5
+export PGHOST="${connection_parts[0]}"
+export PGPORT="${connection_parts[1]}"
+export PGUSER="${connection_parts[2]}"
+export PGPASSWORD="${connection_parts[3]}"
+export PGDATABASE="${connection_parts[4]}"
+export PGCONNECT_TIMEOUT=5
+unset DATABASE_URL
+
+# Connection secrets stay in the root operator environment, never in process arguments or logs.
 pg_dump --format=custom --no-owner --no-privileges --file="${archive}"
 pg_restore --list "${archive}" > "${listing}"
 test -s "${archive}"

@@ -143,6 +143,9 @@ release="/opt/kabanda/releases/${API_BUILD_ID}"
 node "${release}/apps/api/dist/migrate.js"
 ```
 
+Backup script принимает только loopback PostgreSQL URI и раскладывает его в libpq environment; пароль не
+попадает в аргументы `pg_dump`, listing, marker или stdout.
+
 Readiness проверяет PostgreSQL, PostGIS и exact последнюю миграцию. Production запросы с чужим host,
 не-HTTPS proxy context или чужим `Origin` отклоняются fail-closed.
 
