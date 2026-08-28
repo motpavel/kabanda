@@ -1825,13 +1825,13 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
          captured_at = CASE sequence
            WHEN 1 THEN '2026-08-28T10:10:10Z'::timestamptz
            WHEN 2 THEN '2026-08-28T10:10:20Z'::timestamptz
-           WHEN 4 THEN '2026-08-28T10:10:30Z'::timestamptz
-           ELSE '2026-08-28T10:10:40Z'::timestamptz END,
-         received_at = CASE sequence
-           WHEN 1 THEN '2026-08-28T10:10:10Z'::timestamptz
-           WHEN 2 THEN '2026-08-28T10:10:20Z'::timestamptz
            WHEN 4 THEN '2026-08-28T10:29:50Z'::timestamptz
-           ELSE '2026-08-28T10:30:10Z'::timestamptz END
+           ELSE '2026-08-28T10:30:10Z'::timestamptz END,
+         received_at = CASE sequence
+           WHEN 1 THEN '2026-08-28T10:45:10Z'::timestamptz
+           WHEN 2 THEN '2026-08-28T10:45:20Z'::timestamptz
+           WHEN 4 THEN '2026-08-28T10:45:30Z'::timestamptz
+           ELSE '2026-08-28T10:45:40Z'::timestamptz END
        WHERE raid_id = $1`,
       [acquired.raid.id],
     )
@@ -1867,7 +1867,12 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     })
     expect(
       settled.result.participants.find((participant) => participant.userId === memberId)?.metrics,
-    ).toMatchObject({ durationSeconds: 1800, uniquePoints: 1, photos: 0 })
+    ).toMatchObject({
+      durationSeconds: 1800,
+      distanceMeters: Math.round(expectedDistance * 10) / 10,
+      uniquePoints: 1,
+      photos: 0,
+    })
     await expect(
       raidService!.settleFinalization(
         ownerId,

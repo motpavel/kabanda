@@ -2641,10 +2641,9 @@ export class DatabaseRaidService implements RaidService {
       photos: number
     }>(
       `WITH ordered AS (
-         SELECT s.lease_id, s.sequence, s.captured_at, s.received_at, s.geom, s.accuracy_m,
+         SELECT s.lease_id, s.sequence, s.captured_at, s.geom, s.accuracy_m,
            lag(s.sequence) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_sequence,
            lag(s.captured_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_at,
-           lag(s.received_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_received_at,
            lag(s.geom) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_geom,
            lag(s.accuracy_m) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_accuracy
          FROM raid_route_samples s
@@ -2666,8 +2665,8 @@ export class DatabaseRaidService implements RaidService {
             AND seconds > 0 AND seconds <= 120 AND meters <= 2000
             AND meters / seconds <= 50
             AND EXISTS (SELECT 1 FROM raid_activity_windows w
-              WHERE w.raid_id = $1 AND previous_received_at >= w.opened_at
-                AND received_at <= w.closed_at)) AS distance_meters,
+              WHERE w.raid_id = $1 AND previous_at >= w.opened_at
+                AND captured_at <= w.closed_at)) AS distance_meters,
          (SELECT count(DISTINCT point_snapshot_id) FROM raid_point_credits
           WHERE raid_id = $1) AS unique_points,
          (SELECT count(*) FROM raid_media
@@ -2683,10 +2682,9 @@ export class DatabaseRaidService implements RaidService {
       photos: number
     }>(
       `WITH ordered AS (
-         SELECT s.lease_id, s.sequence, s.captured_at, s.received_at, s.geom, s.accuracy_m,
+         SELECT s.lease_id, s.sequence, s.captured_at, s.geom, s.accuracy_m,
            lag(s.sequence) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_sequence,
            lag(s.captured_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_at,
-           lag(s.received_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_received_at,
            lag(s.geom) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_geom,
            lag(s.accuracy_m) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_accuracy
          FROM raid_route_samples s
@@ -2704,8 +2702,8 @@ export class DatabaseRaidService implements RaidService {
            AND seconds > 0 AND seconds <= 120 AND meters <= 2000
            AND meters / seconds <= 50
            AND EXISTS (SELECT 1 FROM raid_activity_windows w
-             WHERE w.raid_id = $1 AND previous_received_at >= w.opened_at
-               AND received_at <= w.closed_at)
+             WHERE w.raid_id = $1 AND previous_at >= w.opened_at
+               AND captured_at <= w.closed_at)
        )
        SELECT p.user_id,
          coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
@@ -2715,10 +2713,10 @@ export class DatabaseRaidService implements RaidService {
           )))), 0)) FROM raid_activity_windows w
           WHERE w.raid_id = p.raid_id AND w.closed_at > p.active_from
             AND w.opened_at < coalesce(p.left_at, $2))
-          AS duration_seconds,
+         AS duration_seconds,
          (SELECT coalesce(sum(s.meters), 0) FROM valid_segments s
-          WHERE s.previous_received_at >= p.active_from
-            AND s.received_at <= coalesce(p.left_at, $2))
+          WHERE s.previous_at >= p.active_from
+            AND s.captured_at <= coalesce(p.left_at, $2))
           AS distance_meters,
          (SELECT count(DISTINCT c.point_snapshot_id) FROM raid_point_credits c
           WHERE c.raid_id = p.raid_id AND c.user_id = p.user_id
