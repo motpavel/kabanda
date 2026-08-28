@@ -21,7 +21,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const kabanda = (await (await createKabandaResponse).json()).kabanda as { id: string }
   fixture('attach-point', kabanda.id)
   await page.reload()
-  await expect(page.getByText('Синтетическая точка E2E')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
 
   await page.getByRole('button', { name: 'Создать рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
@@ -48,8 +48,10 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     return response.raid.routeStatus.acceptedSampleCount
   }, { timeout: 30_000 }).toBeGreaterThan(0)
 
+  await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
   await page.getByRole('button', { name: 'Найти точку рядом' }).click()
   await expect(page.getByText('Синтетическая точка E2E')).toBeVisible()
+  await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
 

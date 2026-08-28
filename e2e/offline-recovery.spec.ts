@@ -125,6 +125,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   await page.goto(`/app?raid=${raid.id}`)
   await waitForServiceWorkerControl(page)
   await expect(page.getByText('fresh', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
   await page.getByRole('button', { name: 'Найти точку рядом' }).click()
   await expect(page.getByText('Синтетическая точка E2E')).toBeVisible()
 
