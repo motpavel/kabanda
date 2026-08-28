@@ -2710,28 +2710,23 @@ export class DatabaseRaidService implements RaidService {
        SELECT p.user_id,
          coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
          (SELECT floor(coalesce(sum(greatest(0, extract(epoch FROM (
-            least(w.closed_at, coalesce(p.left_at, $2), coalesce(km.removed_at, $2)) -
-            greatest(w.opened_at, p.active_from, km.joined_at)
+            least(w.closed_at, coalesce(p.left_at, $2)) -
+            greatest(w.opened_at, p.active_from)
           )))), 0)) FROM raid_activity_windows w
-          WHERE w.raid_id = p.raid_id AND w.closed_at > greatest(p.active_from, km.joined_at)
-            AND w.opened_at < least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2)))
+          WHERE w.raid_id = p.raid_id AND w.closed_at > p.active_from
+            AND w.opened_at < coalesce(p.left_at, $2))
           AS duration_seconds,
          (SELECT coalesce(sum(s.meters), 0) FROM valid_segments s
-          WHERE s.previous_received_at >= greatest(p.active_from, km.joined_at)
-            AND s.received_at <= least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2)))
+          WHERE s.previous_received_at >= p.active_from
+            AND s.received_at <= coalesce(p.left_at, $2))
           AS distance_meters,
          (SELECT count(DISTINCT c.point_snapshot_id) FROM raid_point_credits c
           WHERE c.raid_id = p.raid_id AND c.user_id = p.user_id
-            AND c.created_at BETWEEN greatest(p.active_from, km.joined_at)
-              AND least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2))) AS unique_points,
+            AND c.created_at BETWEEN p.active_from AND coalesce(p.left_at, $2)) AS unique_points,
          (SELECT count(*) FROM raid_media m WHERE m.raid_id = p.raid_id
           AND m.uploader_user_id = p.user_id AND m.state = 'ready'
-          AND m.ready_at BETWEEN greatest(p.active_from, km.joined_at)
-            AND least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2))) AS photos
+          AND m.ready_at BETWEEN p.active_from AND coalesce(p.left_at, $2)) AS photos
        FROM raid_participants p
-       JOIN raids r ON r.id = p.raid_id
-       JOIN kabanda_memberships km
-         ON km.kabanda_id = r.kabanda_id AND km.user_id = p.user_id
        JOIN users u ON u.id = p.user_id
        WHERE p.raid_id = $1 AND p.active_from IS NOT NULL
        ORDER BY p.active_from, p.user_id`,
@@ -2814,12 +2809,8 @@ export class DatabaseRaidService implements RaidService {
        FROM raid_point_credits c
        JOIN raid_point_snapshots s ON s.id = c.point_snapshot_id
        JOIN raid_participants p ON p.raid_id = c.raid_id AND p.user_id = c.user_id
-       JOIN raids r ON r.id = c.raid_id
-       JOIN kabanda_memberships km
-         ON km.kabanda_id = r.kabanda_id AND km.user_id = c.user_id
        WHERE c.raid_id = $1 AND p.active_from IS NOT NULL
-         AND c.created_at BETWEEN greatest(p.active_from, km.joined_at)
-           AND least(coalesce(p.left_at, $2), coalesce(km.removed_at, $2))`,
+         AND c.created_at BETWEEN p.active_from AND coalesce(p.left_at, $2)`,
       [result.raid.id, result.raid.completedAt],
     )
   }
