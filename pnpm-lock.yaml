@@ -65,6 +65,9 @@ importers:
 
   apps/pwa:
     dependencies:
+      '@fontsource-variable/geist':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@kabanda/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -978,6 +981,9 @@ packages:
 
   '@fastify/rate-limit@11.2.0':
     resolution: {integrity: sha512-X7osJd4XSvMoejYrnJkSZYYjY1eNYoBqhjlzf1RakC2204qExFqZFTKj5+T7VuzA/iUI9Z3UoSqQRkB2HpG0oQ==}
+
+  '@fontsource-variable/geist@5.3.0':
+    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
   '@isaacs/cliui@9.0.0':
     resolution: {integrity: sha512-AokJm4tuBHillT+FpMtxQ60n8ObyXBatq7jD2/JA9dxbDDokKQm8KMht5ibGzLVU9IJDIKK4TPKgMHEYMn3lMg==}
@@ -3857,6 +3863,8 @@ snapshots:
       fastify-plugin: 6.0.0
       ip-address: 10.5.0
       toad-cache: 3.7.4
+
+  '@fontsource-variable/geist@5.3.0': {}
 
   '@isaacs/cliui@9.0.0': {}
 
