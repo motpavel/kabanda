@@ -88,20 +88,30 @@ draft -> evidence_pending -> submitted -> accepted
 - Один `operationId` создаёт не более одного канонического результата.
 - Повторное посещение остаётся в истории, но не увеличивает unique points.
 - Organizer attestation и manual fallback отличаются от обычного GPS-чекина в данных и интерфейсе.
+- Геолокация снимается one-shot в момент действия и не берётся из recorder cache.
+- Поздний первый offline replay сохраняет evidence как `needs_manual_verification`, но не получает credit.
+- Credit неизменяем и уникален для участника и snapshot-точки рейда; новые evidence и corrections
+  добавляются отдельно, а не переписывают историю.
+- Self-claim подтверждает только сам участник. Manual fallback требует accepted media и другого активного
+  verifier; self-verification не может заменить серверную проверку расстояния.
 
 ## Локальная операция PWA
 
 ```text
-pending -> sending -> accepted
+local -> pending -> sending -> accepted
               |       
               +-> retryable -> sending
-              +-> rejected
+              +-> rejected/needs_action
 ```
 
 - Outbox запись содержит schema version, operation ID, actor ID, Kabanda ID, raid ID и captured time.
 - `accepted` означает серверный receipt, а не успешный fetch без разбора ответа.
 - Logout/account switch блокирует replay операций другой identity.
 - Background Sync ускоряет replay, но запуск приложения, возврат в foreground и событие online обязаны инициировать его независимо.
+- `pending` показывается только после успешного Dexie commit. Запись `sending` имеет bounded `claimUntil`;
+  после crash/reload просроченный claim возвращается в retryable. Две вкладки используют sender lease/fence.
+- Photo draft сохраняет stable `clientDraftId`, SHA и Blob, но никогда не сохраняет upload capability.
+  Истёкший intent создаётся заново с новым operation ID, не меняя пользовательский draft или bytes.
 - Route operation несёт lease ID и generation. Offline replay разрешён только пока на сервере активен тот
   же lease того же actor; pause/handoff/recover fence-ят прежнюю очередь.
 - Fenced route operation не переписывается под новую generation. Она получает terminal rejection/
@@ -132,3 +142,5 @@ pending -> sending -> accepted
 7. Private route/media никогда не попадают в общий app-shell cache.
 8. Pause, handoff и recover не доверяют client clock и необратимо fence-ят прежнюю route generation.
 9. Local sample становится `saved` только после IndexedDB commit, а canonical — только после server receipt.
+10. Поздняя геолокация и pending claim/fallback не создают canonical credit.
+11. Один участник получает не более одного credit за одну snapshot-точку рейда независимо от replay.

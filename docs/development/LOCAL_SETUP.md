@@ -13,7 +13,6 @@ pnpm dev
 - PWA: http://localhost:5173
 - API health через PWA proxy: http://localhost:5173/api/health
 - Mailpit: http://localhost:8025
-- MinIO console: http://localhost:9001
 
 Остановка сервисов без удаления данных:
 

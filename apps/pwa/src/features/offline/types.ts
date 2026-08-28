@@ -114,3 +114,87 @@ export interface RecorderWriterLeaseRecord {
   expiresAt: string
   updatedAt: string
 }
+
+export type CheckInOutboxStatus =
+  | 'pending'
+  | 'sending'
+  | 'retryable'
+  | 'accepted'
+  | 'needs_action'
+  | 'rejected'
+
+export interface CheckInEvidenceRecord {
+  latitude: number
+  longitude: number
+  capturedAt: string
+  accuracyMeters: number
+}
+
+export interface CheckInOutboxRecord {
+  operationId: string
+  identityId: string
+  kabandaId: string
+  raidId: string
+  pointSnapshotId: string
+  evidence: CheckInEvidenceRecord
+  presentParticipantIds: string[]
+  organizerAttestation: boolean
+  status: CheckInOutboxStatus
+  attempts: number
+  claimUntil: string | null
+  nextAttemptAt: string | null
+  createdAt: string
+  updatedAt: string
+  lastErrorCode: string | null
+  response: unknown | null
+  fallbackSubmission?: {
+    operationId: string
+    input: {
+      attemptId: string
+      mediaId: string
+      verifierUserId: string
+      presentParticipantIds: string[]
+      reason: string
+    }
+    status: 'pending' | 'submitted'
+    fallbackId: string | null
+    updatedAt: string
+  }
+}
+
+export type MediaDraftStatus = 'local' | 'intent' | 'uploading' | 'retryable' | 'accepted' | 'rejected'
+
+export interface MediaDraftRecord {
+  operationId: string
+  clientDraftId: string
+  identityId: string
+  kabandaId: string
+  raidId: string
+  blob: Blob
+  sourceSha256: string
+  sizeBytes: number
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp'
+  caption: string | null
+  purpose: 'gallery' | 'fallback'
+  attemptId: string | null
+  status: MediaDraftStatus
+  intentId: string | null
+  mediaId: string | null
+  attempts: number
+  claimUntil: string | null
+  nextAttemptAt: string | null
+  createdAt: string
+  updatedAt: string
+  lastErrorCode: string | null
+}
+
+export interface CheckInSenderLeaseRecord {
+  key: string
+  identityId: string
+  raidId: string
+  holderTabId: string
+  generation: number
+  fenceToken: string
+  expiresAt: string
+  updatedAt: string
+}

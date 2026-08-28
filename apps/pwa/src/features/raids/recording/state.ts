@@ -47,8 +47,9 @@ export function selectActivePrimaryAction(
 
 export function shouldDeferServiceWorkerUpdate(
   phase: RecorderPhase,
+  unsyncedCheckInWork = 0,
 ): boolean {
-  return phase === 'standby' || phase === 'recovering' || phase === 'waiting' || phase === 'fresh' || phase === 'stale'
+  return unsyncedCheckInWork > 0 || phase === 'standby' || phase === 'recovering' || phase === 'waiting' || phase === 'fresh' || phase === 'stale'
 }
 
 export function routeStatusLabel(phase: RecorderPhase): string {

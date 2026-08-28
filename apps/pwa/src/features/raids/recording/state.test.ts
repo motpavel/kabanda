@@ -38,5 +38,6 @@ describe('route recorder truth', () => {
     expect(shouldDeferServiceWorkerUpdate('fresh')).toBe(true)
     expect(shouldDeferServiceWorkerUpdate('stale')).toBe(true)
     expect(shouldDeferServiceWorkerUpdate('paused')).toBe(false)
+    expect(shouldDeferServiceWorkerUpdate('paused', 1)).toBe(true)
   })
 })

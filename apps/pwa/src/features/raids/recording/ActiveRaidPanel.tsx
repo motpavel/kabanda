@@ -2,6 +2,7 @@ import type { RaidPrimaryAction } from '../state'
 import type { RaidProjection } from '../types'
 import { routeStatusLabel, selectActivePrimaryAction, wakeLockLabel } from './state'
 import { useRouteRecorder } from './useRouteRecorder'
+import { CheckInPanel } from '../../checkins/CheckInPanel'
 
 export function ActiveRaidPanel({
   identityId,
@@ -33,6 +34,8 @@ export function ActiveRaidPanel({
     : `${Math.round(recorder.preliminaryDistanceM)} м`
 
   return (
+    <>
+    {raid.state === 'active' && <CheckInPanel identityId={identityId} raid={raid} staleProjection={staleProjection} onCanonicalRefresh={onCanonicalRefresh} />}
     <section className="kb-card route-recorder" data-phase={recorder.phase}>
       <div className="kb-section-head">
         <div><p className="kb-kicker">Маршрут навигатора</p><h2>{routeStatusLabel(recorder.phase)}</h2></div>
@@ -54,15 +57,16 @@ export function ActiveRaidPanel({
       </p>
       {recorder.message && <p className="kb-error" role="alert">{recorder.message}</p>}
       {primary === 'recover' && (
-        <button className="kb-primary raid-primary" type="button" onClick={recorder.recover}>
+        <button className={raid.state === 'active' ? 'kb-link-button route-recorder__secondary' : 'kb-primary raid-primary'} type="button" onClick={recorder.recover}>
           {recorder.phase === 'standby' ? 'Продолжить здесь' : 'Возобновить запись'}
         </button>
       )}
       {primary === 'server' && serverPrimary && (
-        <button className="kb-primary raid-primary" type="button" disabled={operationPending} onClick={onServerPrimary}>
+        <button className={raid.state === 'active' ? 'kb-link-button route-recorder__secondary' : 'kb-primary raid-primary'} type="button" disabled={operationPending} onClick={onServerPrimary}>
           {operationPending ? 'Подтверждаем…' : serverPrimary.label}
         </button>
       )}
     </section>
+    </>
   )
 }
