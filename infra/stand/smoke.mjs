@@ -23,7 +23,9 @@ function expectStatus(response, expected, label) {
   }
 }
 
-const app = await request('/app')
+const app = await request('/app', {
+  headers: { accept: 'text/html' },
+})
 expectStatus(app, 200, 'PWA shell')
 const html = await app.text()
 if (!html.toLowerCase().includes('<!doctype html')) throw new Error('PWA shell is not HTML')
@@ -65,13 +67,15 @@ expectStatus(ready, 200, 'readiness')
 
 const canonicalLogout = await request('/api/auth/logout', {
   method: 'POST',
-  headers: { origin },
+  headers: { origin, 'content-type': 'application/json' },
+  body: '{}',
 })
 expectStatus(canonicalLogout, 204, 'canonical mutation')
 
 const foreignLogout = await request('/api/auth/logout', {
   method: 'POST',
-  headers: { origin: 'https://foreign-origin.invalid' },
+  headers: { origin: 'https://foreign-origin.invalid', 'content-type': 'application/json' },
+  body: '{}',
 })
 expectStatus(foreignLogout, 403, 'foreign-origin mutation')
 

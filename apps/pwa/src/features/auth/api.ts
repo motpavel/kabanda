@@ -31,7 +31,7 @@ export async function getCurrentUser(): Promise<User> {
 
 export async function logout(): Promise<void> {
   try {
-    await requestJson<null>('/api/auth/logout', { method: 'POST' })
+    await requestJson<null>('/api/auth/logout', { method: 'POST', body: '{}' })
   } finally {
     await clearActiveIdentity()
   }
