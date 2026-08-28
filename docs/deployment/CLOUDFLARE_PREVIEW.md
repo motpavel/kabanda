@@ -131,6 +131,10 @@ test "$(git -C "${release}" rev-parse HEAD)" = "${sha}"
    `node infra/stand/smoke.mjs <origin> <sha>`.
 6. Отдельно проверить login: запросить ссылку тестовому email, забрать одноразовый URL из loopback Mailpit,
    войти, создать Кабанду и открыть основной `/app` flow.
+7. После создания конкретной alpha Кабанды выполнить идемпотентный import manifest exact release. Без этого
+   карта новой database пуста. `source_checked` точки разрешают проверить карту и pre-start UX, но не
+   разрешают canonical start. Статус `field_verified` выставляется только после реальной проверки точки и
+   обновления evidence manifest; ручное изменение DB ради старта запрещено.
 
 EnvironmentFile перед backup загружается с экспортом, чтобы дочерние `pg_*` и script получили exact env:
 
@@ -141,10 +145,18 @@ set +a
 release="/opt/kabanda/releases/${API_BUILD_ID}"
 "${release}/infra/stand/backup-before-migrate.sh"
 node "${release}/apps/api/dist/migrate.js"
+
+ALPHA_KABANDA_ID='<exact-kabanda-uuid>' \
+ALPHA_OWNER_EMAIL='<exact-owner-email>' \
+node "${release}/apps/api/dist/import-alpha.js"
 ```
 
 Backup script принимает только loopback PostgreSQL URI и раскладывает его в libpq environment; пароль не
 попадает в аргументы `pg_dump`, listing, marker или stdout.
+
+Import возвращает `reportId`, `collectionId`, `rowCount` и `replayed`. Эти bounded поля фиксируются в
+restricted operator evidence без email, invite/session tokens и координат. Повторный запуск exact manifest
+должен вернуть replay/idempotent result, а не создать второй collection.
 
 Readiness проверяет PostgreSQL, PostGIS и exact последнюю миграцию. Production запросы с чужим host,
 не-HTTPS proxy context или чужим `Origin` отклоняются fail-closed.

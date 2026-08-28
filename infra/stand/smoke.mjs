@@ -30,6 +30,14 @@ expectStatus(app, 200, 'PWA shell')
 const html = await app.text()
 if (!html.toLowerCase().includes('<!doctype html')) throw new Error('PWA shell is not HTML')
 if (app.headers.get('cache-control') !== 'no-store') throw new Error('PWA shell must not be cached')
+if (!html.includes('href="/icon.svg"') || !html.includes('href="/apple-touch-icon.png"')) {
+  throw new Error('PWA shell must use canonical root icon paths')
+}
+
+const icon = await request('/icon.svg')
+expectStatus(icon, 200, 'icon')
+const appleTouchIcon = await request('/apple-touch-icon.png')
+expectStatus(appleTouchIcon, 200, 'apple touch icon')
 
 const manifest = await request('/manifest.webmanifest')
 expectStatus(manifest, 200, 'manifest')
