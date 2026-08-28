@@ -23,6 +23,8 @@ import {
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
   email: 'pavel@example.com',
+  username: null,
+  identityKind: 'verified',
   displayName: 'Павел',
   avatarUrl: null,
 }
@@ -43,6 +45,7 @@ function createAuth(overrides: Partial<AuthService> = {}): AuthService {
   return {
     requestMagicLink: vi.fn().mockResolvedValue(undefined),
     verifyMagicLink: vi.fn().mockResolvedValue(null),
+    loginWithPassword: vi.fn().mockResolvedValue(null),
     getUser: vi.fn().mockResolvedValue(null),
     updateProfile: vi.fn().mockResolvedValue(null),
     revokeSession: vi.fn().mockResolvedValue(undefined),
@@ -62,6 +65,7 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
     previewInvite: vi.fn(),
     previewContinuation: vi.fn(),
     acceptInvite: vi.fn(),
+    acceptInviteWithCredentials: vi.fn(),
     listPoints: vi.fn().mockResolvedValue({ points: [], nextCursor: null }),
     ...overrides,
   }
@@ -575,6 +579,24 @@ describe('API foundation', () => {
     expect(response.json()).toEqual({ returnTo: '/home' })
   })
 
+  it('sets an HttpOnly cookie after a rate-limited password login', async () => {
+    const loginWithPassword = vi.fn().mockResolvedValue({
+      rawToken: 'password-session-token',
+      returnTo: '/',
+      user: { ...user, email: null, username: 'pavel', identityKind: 'invite' },
+    })
+    const app = await createTestApp(createAuth({ loginWithPassword }))
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: testOrigin },
+      payload: { username: 'pavel', password: 'long-password' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['set-cookie']).toContain('HttpOnly')
+    expect(loginWithPassword).toHaveBeenCalledWith('pavel', 'long-password')
+  })
+
   it('allows only one winner for two concurrent exchanges', async () => {
     const verified: VerifiedSession = { rawToken: 'raw-session-token', returnTo: '/home', user }
     const verifyMagicLink = vi.fn().mockResolvedValueOnce(verified).mockResolvedValueOnce(null)
@@ -632,6 +654,28 @@ describe('API foundation', () => {
     })
     expect(response.statusCode).toBe(201)
     expect(createKabanda).toHaveBeenCalledWith(user.id, 'Ночные кабаны', '🌙', 'create-1234')
+  })
+
+  it('does not let an invite identity create another Kabanda', async () => {
+    const inviteUser: User = {
+      ...user,
+      email: null,
+      username: 'invite-user',
+      identityKind: 'invite',
+    }
+    const createKabanda = vi.fn()
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(inviteUser) }),
+      createKabandas({ createKabanda }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/kabandas',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session', 'idempotency-key': 'create-1234' },
+      payload: { name: 'Чужая Кабанда', avatar: '🐗' },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(createKabanda).not.toHaveBeenCalled()
   })
 
   it('never places a raw invite token in a redirect', async () => {
@@ -730,6 +774,38 @@ describe('API foundation', () => {
     expect(response.statusCode).toBe(200)
     expect(previewContinuation).toHaveBeenCalledWith(invite.continuation, false, user.id)
     expect(response.json().invite.kabanda.name).toBe('Ночные кабаны')
+  })
+
+  it('registers an anonymous invite member and sets the session cookie atomically', async () => {
+    const acceptInviteWithCredentials = vi.fn().mockResolvedValue({
+      kabanda: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        name: 'Ночные кабаны',
+        avatar: '🌙',
+        role: 'member',
+        memberCount: 2,
+        pointsCollectionId: null,
+      },
+      rawSessionToken: 'invite-session-token',
+    })
+    const app = await createTestApp(
+      createAuth(),
+      createKabandas({ acceptInviteWithCredentials }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/invites/accept',
+      headers: { origin: testOrigin, 'idempotency-key': 'invite-register-1' },
+      payload: { continuation: 'c'.repeat(32), username: 'new-kaban', password: 'long-password' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(String(response.headers['set-cookie'])).toContain('kabanda_session=invite-session-token')
+    expect(String(response.headers['set-cookie'])).toContain('HttpOnly')
+    expect(acceptInviteWithCredentials).toHaveBeenCalledWith(
+      'c'.repeat(32),
+      'invite-register-1',
+      expect.objectContaining({ username: 'new-kaban', passwordHash: expect.stringMatching(/^scrypt\$v1\$/) }),
+    )
   })
 
   it('passes expectedVersion and Idempotency-Key to a named raid command', async () => {

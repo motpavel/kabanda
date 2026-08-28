@@ -2718,7 +2718,7 @@ export class DatabaseRaidService implements RaidService {
                AND captured_at <= w.closed_at)
        )
        SELECT p.user_id,
-         coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
+         coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS display_name,
          (SELECT floor(coalesce(sum(greatest(0, extract(epoch FROM (
             least(w.closed_at, coalesce(p.left_at, $2)) -
             greatest(w.opened_at, p.active_from)
@@ -3174,7 +3174,7 @@ export class DatabaseRaidService implements RaidService {
       avatar_url: string | null
       state: RaidParticipantState
     }>(
-      `SELECT u.id, coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
+      `SELECT u.id, coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS display_name,
          u.avatar_url, p.state
        FROM raid_participants p JOIN users u ON u.id = p.user_id
        WHERE p.raid_id = $1 ORDER BY p.invited_at, p.user_id`,

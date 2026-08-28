@@ -22,7 +22,11 @@ const mailer = new SmtpMagicLinkMailer({
   from: config.SMTP_FROM,
 })
 const auth = new DatabaseAuthService(database, mailer, config)
-const kabandas = new DatabaseKabandaService(database)
+const kabandas = new DatabaseKabandaService(database, {
+  alphaAccessMode: config.ALPHA_ACCESS_MODE,
+  ...(config.ALPHA_ACCESS_SECRET ? { alphaAccessSecret: config.ALPHA_ACCESS_SECRET } : {}),
+  sessionTtlDays: config.SESSION_TTL_DAYS,
+})
 const raids = new DatabaseRaidService(database, config.MEDIA_CAPABILITY_SECRET)
 const app = await buildApp({
   auth,

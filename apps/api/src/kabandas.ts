@@ -1,7 +1,12 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import type { GeographicBounds } from '@kabanda/domain'
 import { isBoundedIzhevskQuery } from '@kabanda/domain'
 import type { Pool, PoolClient } from 'pg'
+import {
+  acquireAlphaQuotaLock,
+  activeAlphaAccessCount,
+  CLOSED_ALPHA_USER_CAP,
+} from './alpha-access.js'
 
 export class KabandaError extends Error {
   constructor(
@@ -29,6 +34,12 @@ export type InvitePreview = {
   expiresAt: string
   requiresAuth: boolean
   accepted: boolean
+}
+
+export type InviteAccessOptions = {
+  alphaAccessMode: 'disabled' | 'enforced'
+  alphaAccessSecret?: string
+  sessionTtlDays: number
 }
 
 export type ManifestPoint = {
@@ -132,6 +143,11 @@ export interface KabandaService {
     continuation: string,
     idempotencyKey: string,
   ): Promise<KabandaSummary>
+  acceptInviteWithCredentials(
+    continuation: string,
+    idempotencyKey: string,
+    credentials: { username: string; passwordHash: string },
+  ): Promise<{ kabanda: KabandaSummary; rawSessionToken: string }>
   listPoints(
     userId: string,
     collectionId: string,
@@ -141,7 +157,13 @@ export interface KabandaService {
 }
 
 export class DatabaseKabandaService implements KabandaService {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly inviteAccess: InviteAccessOptions = {
+      alphaAccessMode: 'disabled',
+      sessionTtlDays: 30,
+    },
+  ) {}
 
   async listKabandas(userId: string): Promise<KabandaSummary[]> {
     const result = await this.pool.query<SummaryRow>(`${summarySelect} ORDER BY k.created_at, k.id`, [
@@ -157,6 +179,13 @@ export class DatabaseKabandaService implements KabandaService {
     idempotencyKey: string,
   ): Promise<KabandaSummary> {
     return transaction(this.pool, async (client) => {
+      const identity = await client.query<{ identity_kind: string }>(
+        'SELECT identity_kind FROM users WHERE id = $1',
+        [userId],
+      )
+      if (identity.rows[0]?.identity_kind !== 'verified') {
+        throw new KabandaError('VERIFIED_ACCOUNT_REQUIRED', 403, 'Создавать команды может только организатор')
+      }
       const result = await client.query<{ id: string; name: string; avatar: string }>(
         `INSERT INTO kabandas (name, avatar, owner_id, create_idempotency_key)
          VALUES ($1, $2, $3, $4)
@@ -182,7 +211,7 @@ export class DatabaseKabandaService implements KabandaService {
 
   async listMembers(userId: string, kabandaId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query<MemberRow>(
-      `SELECT u.id, coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS display_name,
+      `SELECT u.id, coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS display_name,
          u.avatar_url, target.role
        FROM kabanda_memberships viewer
        JOIN kabandas k ON k.id = viewer.kabanda_id AND k.archived_at IS NULL
@@ -279,7 +308,7 @@ export class DatabaseKabandaService implements KabandaService {
         inviter_name: string
       }>(
         `SELECT i.id, i.kabanda_id, i.expires_at,
-           coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS inviter_name
+           coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS inviter_name
          FROM kabanda_invites i
          JOIN kabandas k ON k.id = i.kabanda_id AND k.archived_at IS NULL
          JOIN users u ON u.id = i.created_by
@@ -321,7 +350,7 @@ export class DatabaseKabandaService implements KabandaService {
         inviter_name: string
       }>(
         `SELECT i.kabanda_id, LEAST(c.expires_at, i.expires_at) AS expires_at,
-           coalesce(u.display_name, split_part(u.email::text, '@', 1)) AS inviter_name
+           coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS inviter_name
          FROM invite_continuations c
          JOIN kabanda_invites i ON i.id = c.invite_id
          JOIN kabandas k ON k.id = i.kabanda_id AND k.archived_at IS NULL
@@ -338,7 +367,7 @@ export class DatabaseKabandaService implements KabandaService {
           inviter_name: string
         }>(
           `SELECT i.kabanda_id, i.expires_at,
-             coalesce(inviter.display_name, split_part(inviter.email::text, '@', 1)) AS inviter_name
+             coalesce(inviter.display_name, inviter.username::text, split_part(inviter.email::text, '@', 1)) AS inviter_name
            FROM invite_continuations c
            JOIN kabanda_invites i ON i.id = c.invite_id
            JOIN invite_acceptances a ON a.continuation_id = c.id AND a.user_id = $2
@@ -445,6 +474,107 @@ export class DatabaseKabandaService implements KabandaService {
       )
       return this.getSummary(client, userId, pending.kabanda_id)
     })
+  }
+
+  async acceptInviteWithCredentials(
+    continuation: string,
+    idempotencyKey: string,
+    credentials: { username: string; passwordHash: string },
+  ): Promise<{ kabanda: KabandaSummary; rawSessionToken: string }> {
+    try {
+      return await transaction(this.pool, async (client) => {
+        if (this.inviteAccess.alphaAccessMode === 'enforced') {
+          await acquireAlphaQuotaLock(client)
+          if ((await activeAlphaAccessCount(client)) >= CLOSED_ALPHA_USER_CAP) {
+            throw new KabandaError(
+              'ALPHA_ACCESS_CAP_REACHED',
+              409,
+              'Все места закрытой альфы уже заняты',
+            )
+          }
+        }
+        const continuationResult = await client.query<{
+          continuation_id: string
+          invite_id: string
+          kabanda_id: string
+        }>(
+          `SELECT c.id AS continuation_id, c.invite_id, i.kabanda_id
+           FROM invite_continuations c
+           JOIN kabanda_invites i ON i.id = c.invite_id
+           JOIN kabandas k ON k.id = i.kabanda_id
+           WHERE c.token_hash = $1 AND c.consumed_at IS NULL AND c.expires_at > now()
+             AND i.revoked_at IS NULL AND i.consumed_at IS NULL AND i.expires_at > now()
+             AND k.archived_at IS NULL
+           FOR UPDATE OF c, i`,
+          [hashToken(continuation)],
+        )
+        const pending = continuationResult.rows[0]
+        if (!pending) throw this.invalidInvite()
+
+        const userResult = await client.query<{ id: string }>(
+          `INSERT INTO users (email, username, password_hash, identity_kind, display_name)
+           VALUES (NULL, $1, $2, 'invite', $3)
+           RETURNING id`,
+          [credentials.username, credentials.passwordHash, credentials.username],
+        )
+        const userId = userResult.rows[0]?.id
+        if (!userId) throw new Error('Invite registration did not return a user')
+
+        if (this.inviteAccess.alphaAccessMode === 'enforced') {
+          const secret = this.inviteAccess.alphaAccessSecret
+          if (!secret) throw new Error('Closed-alpha invite secret is missing')
+          const fingerprint = createHmac('sha256', secret)
+            .update(`kabanda-invite-user-v1:${userId}`)
+            .digest('hex')
+          await client.query(
+            `INSERT INTO alpha_access_grants (email_fingerprint, user_id, status)
+             VALUES ($1, $2, 'active')`,
+            [fingerprint, userId],
+          )
+        }
+
+        const membershipResult = await client.query<{ id: string }>(
+          `INSERT INTO kabanda_memberships (kabanda_id, user_id, role)
+           VALUES ($1, $2, 'member')
+           RETURNING id`,
+          [pending.kabanda_id, userId],
+        )
+        const membershipId = membershipResult.rows[0]?.id
+        if (!membershipId) throw new Error('Invite registration did not return a membership')
+
+        await client.query('UPDATE invite_continuations SET consumed_at = now() WHERE id = $1', [
+          pending.continuation_id,
+        ])
+        await client.query('UPDATE kabanda_invites SET consumed_at = now() WHERE id = $1', [
+          pending.invite_id,
+        ])
+        await client.query(
+          `INSERT INTO invite_acceptances
+            (invite_id, continuation_id, user_id, membership_id, idempotency_key)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [pending.invite_id, pending.continuation_id, userId, membershipId, idempotencyKey],
+        )
+        const rawSessionToken = randomBytes(32).toString('base64url')
+        await client.query(
+          `INSERT INTO auth_sessions (token_hash, user_id, expires_at)
+           VALUES ($1, $2, now() + ($3 * interval '1 day'))`,
+          [hashToken(rawSessionToken), userId, this.inviteAccess.sessionTtlDays],
+        )
+        return {
+          kabanda: await this.getSummary(client, userId, pending.kabanda_id),
+          rawSessionToken,
+        }
+      })
+    } catch (error) {
+      if ((error as { constraint?: string }).constraint === 'users_username_unique_idx') {
+        throw new KabandaError(
+          'REGISTRATION_UNAVAILABLE',
+          409,
+          'Не удалось использовать выбранный логин',
+        )
+      }
+      throw error
+    }
   }
 
   async listPoints(

@@ -212,6 +212,88 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     ).rejects.toMatchObject({ code: 'INVITE_INVALID' })
   })
 
+  it('registers exactly one credential identity for concurrent acceptance of one invite', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('credential-invite')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    const attempts = await Promise.allSettled([
+      service!.acceptInviteWithCredentials(preview.continuation, 'credential-accept-1', {
+        username: 'night-boar',
+        passwordHash: 'scrypt$test-hash',
+      }),
+      service!.acceptInviteWithCredentials(preview.continuation, 'credential-accept-1', {
+        username: 'night-boar',
+        passwordHash: 'scrypt$test-hash',
+      }),
+    ])
+    expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+    expect(Number((await pool!.query("SELECT count(*) FROM users WHERE identity_kind = 'invite'")).rows[0]?.count)).toBe(1)
+    expect(Number((await pool!.query("SELECT count(*) FROM kabanda_memberships WHERE role = 'member'")).rows[0]?.count)).toBe(1)
+    expect(Number((await pool!.query('SELECT count(*) FROM auth_sessions')).rows[0]?.count)).toBe(1)
+    expect(Number((await pool!.query('SELECT count(*) FROM invite_acceptances')).rows[0]?.count)).toBe(1)
+  })
+
+  it('keeps an invite unconsumed when the requested username is already taken', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('credential-conflict')
+    await pool!.query(
+      `INSERT INTO users (email, username, password_hash, identity_kind, display_name)
+       VALUES (NULL, 'taken-name', 'scrypt$existing', 'invite', 'taken-name')`,
+    )
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await expect(service!.acceptInviteWithCredentials(preview.continuation, 'credential-conflict-1', {
+      username: 'TAKEN-NAME',
+      passwordHash: 'scrypt$new',
+    })).rejects.toMatchObject({ code: 'REGISTRATION_UNAVAILABLE' })
+    await expect(service!.previewContinuation(preview.continuation, true)).resolves.toMatchObject({
+      accepted: false,
+    })
+  })
+
+  it('serializes credential invites at the closed-alpha 20-user cap', async () => {
+    const secret = 'invite-cap-secret-at-least-32-characters'
+    const enforced = new DatabaseKabandaService(pool!, {
+      alphaAccessMode: 'enforced',
+      alphaAccessSecret: secret,
+      sessionTtlDays: 30,
+    })
+    const ownerId = await user('owner-invite-cap@example.com')
+    await pool!.query(
+      `INSERT INTO alpha_access_grants (email_fingerprint, user_id, status)
+       VALUES ($1, $2, 'active')`,
+      ['0'.repeat(64), ownerId],
+    )
+    for (let index = 1; index < 19; index += 1) {
+      await pool!.query(
+        `INSERT INTO alpha_access_grants (email_fingerprint, status)
+         VALUES ($1, 'active')`,
+        [index.toString(16).padStart(64, '0')],
+      )
+    }
+    const firstKabanda = await enforced.createKabanda(ownerId, 'Лимит один', '🐗', 'cap-create-1')
+    const secondKabanda = await enforced.createKabanda(ownerId, 'Лимит два', '🐗', 'cap-create-2')
+    const first = await enforced.previewInvite(
+      (await enforced.createInvite(ownerId, firstKabanda.id, 1)).token,
+      true,
+    )
+    const second = await enforced.previewInvite(
+      (await enforced.createInvite(ownerId, secondKabanda.id, 1)).token,
+      true,
+    )
+    const attempts = await Promise.allSettled([
+      enforced.acceptInviteWithCredentials(first.continuation, 'cap-accept-1', {
+        username: 'cap-boar-one', passwordHash: 'scrypt$one',
+      }),
+      enforced.acceptInviteWithCredentials(second.continuation, 'cap-accept-2', {
+        username: 'cap-boar-two', passwordHash: 'scrypt$two',
+      }),
+    ])
+    expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+    expect(attempts.filter(({ status }) => status === 'rejected')).toHaveLength(1)
+    expect(Number((await pool!.query("SELECT count(*) FROM alpha_access_grants WHERE status = 'active'")).rows[0]?.count)).toBe(20)
+    expect(Number((await pool!.query("SELECT count(*) FROM users WHERE identity_kind = 'invite'")).rows[0]?.count)).toBe(1)
+  })
+
   it('isolates cross-Kabanda direct IDs and removes access immediately', async () => {
     const first = await ownerAndKabanda('first')
     const second = await ownerAndKabanda('second')

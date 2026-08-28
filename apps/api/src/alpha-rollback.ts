@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { normalizeEmail } from '@kabanda/domain'
 import type { Pool, PoolClient } from 'pg'
-import { acquireAlphaIdentityLock, alphaEmailFingerprint } from './alpha-access.js'
+import { acquireAlphaIdentityLock } from './alpha-access.js'
 
 export class AlphaRollbackError extends Error {
   constructor(
@@ -18,7 +18,7 @@ export class AlphaRollbackError extends Error {
   }
 }
 
-type MemberRow = { user_id: string; email: string }
+type MemberRow = { user_id: string; email: string | null; email_fingerprint: string | null }
 
 export type AlphaRollbackResult = {
   reportId: string | null
@@ -88,8 +88,10 @@ async function targetMembers(
     throw new AlphaRollbackError('ALPHA_ROLLBACK_TARGET_MISMATCH', 'Alpha rollback target does not match')
   }
   const result = await client.query<MemberRow>(
-    `SELECT m.user_id, u.email
-     FROM kabanda_memberships m JOIN users u ON u.id = m.user_id
+    `SELECT m.user_id, u.email, g.email_fingerprint
+     FROM kabanda_memberships m
+     JOIN users u ON u.id = m.user_id
+     LEFT JOIN alpha_access_grants g ON g.user_id = m.user_id AND g.status = 'active'
      WHERE m.kabanda_id = $1 AND m.removed_at IS NULL
      ORDER BY m.user_id`,
     [kabandaId],
@@ -137,7 +139,13 @@ export async function inspectAlphaRollback(
 ): Promise<AlphaRollbackResult> {
   const members = await targetMembers(pool, input.kabandaId, input.ownerEmail)
   await assertNoExternalMembership(pool, input.kabandaId, members.map(({ user_id }) => user_id))
-  const fingerprints = members.map(({ email }) => alphaEmailFingerprint(email, input.secret))
+  const fingerprints = members.map(({ email_fingerprint }) => email_fingerprint).filter(Boolean) as string[]
+  if (fingerprints.length !== members.length) {
+    throw new AlphaRollbackError(
+      'ALPHA_ROLLBACK_GRANT_MISMATCH',
+      'Every active member must have an active closed-alpha grant',
+    )
+  }
   const active = await pool.query<{ count: string }>(
     `SELECT count(*)::text AS count FROM alpha_access_grants
      WHERE email_fingerprint = ANY($1::bpchar[]) AND status = 'active'`,
@@ -202,7 +210,10 @@ export async function applyAlphaRollback(
     const memberIds = members.map(({ user_id }) => user_id)
     await assertNoExternalMembership(client, input.kabandaId, memberIds)
     const identities = members
-      .map(({ email }) => ({ email: normalizeEmail(email), fingerprint: alphaEmailFingerprint(email, input.secret) }))
+      .map(({ email, email_fingerprint }) => ({
+        email: email ? normalizeEmail(email) : null,
+        fingerprint: email_fingerprint!,
+      }))
       .sort((left, right) => left.fingerprint.localeCompare(right.fingerprint))
     for (const identity of identities) await acquireAlphaIdentityLock(client, identity.fingerprint)
     await assertNoExternalMembership(client, input.kabandaId, memberIds)
@@ -238,7 +249,7 @@ export async function applyAlphaRollback(
     const links = await client.query(
       `UPDATE auth_magic_links SET consumed_at = now()
        WHERE email = ANY($1::citext[]) AND consumed_at IS NULL AND expires_at > now()`,
-      [identities.map(({ email }) => email)],
+      [identities.flatMap(({ email }) => email ? [email] : [])],
     )
     await client.query(
       `UPDATE kabandas SET archived_at = COALESCE(archived_at, now()), updated_at = now()

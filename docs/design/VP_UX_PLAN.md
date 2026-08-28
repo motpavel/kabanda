@@ -54,7 +54,7 @@ first value -> auth -> home -> create Kabanda -> create raid -> lobby
 ### Participant
 
 ```text
-invite deep link -> auth -> return to invite -> browser/install explanation -> join
+invite deep link -> choose login/password -> join -> browser/install explanation
 -> lobby -> active ride -> confirm check-in -> add photo -> canonical result -> history
 -> home / Kabanda / map / profile
 ```
@@ -68,8 +68,8 @@ can contribute check-ins and photos and inspect the canonical result.
 | Screen | Product question answered | Primary action |
 | --- | --- | --- |
 | Entry / role | Which usability path is being tested? | Start chosen path |
-| Invite / value | Why should the participant continue? | Continue with email |
-| Authentication | Can either role enter without losing its intended destination? | Send sign-in link |
+| Invite / value | Why should the participant continue? | Choose login/password and join |
+| Authentication | Can the participant return from another device? | Sign in with login/password |
 | Magic-link return | Did auth preserve the invite? | Join Kabanda |
 | Install guidance | Why and when does the navigator install? | Open installed PWA / continue in browser |
 | Home | What is the one relevant next action? | Create or continue raid |

@@ -7,6 +7,7 @@ import { basename } from 'node:path'
 import {
   alphaDiagnosticSignalSchema,
   buildIdentifierSchema,
+  passwordLoginSchema,
   requestMagicLinkSchema,
   updateProfileSchema,
   verifyMagicLinkSchema,
@@ -281,6 +282,24 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     })
     return { returnTo: session.returnTo }
   })
+
+  app.post(
+    '/api/auth/login',
+    { config: { rateLimit: { max: 5, timeWindow: '15 minutes' } } },
+    async (request, reply) => {
+      const input = passwordLoginSchema.parse(request.body)
+      const session = await dependencies.auth.loginWithPassword(input.username, input.password)
+      if (!session) return reply.status(401).send(unauthorized())
+      reply.setCookie(dependencies.config.cookieName, session.rawToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: dependencies.config.secureCookies,
+        path: '/',
+        maxAge: dependencies.config.SESSION_TTL_DAYS * 24 * 60 * 60,
+      })
+      return { user: session.user }
+    },
+  )
 
   app.get('/api/me', async (request, reply) => {
     const token = request.cookies[dependencies.config.cookieName]

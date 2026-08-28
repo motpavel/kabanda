@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
-import { getCurrentUser, requestMagicLink } from '../auth/api'
+import { getCurrentUser, loginWithPassword, requestMagicLink } from '../auth/api'
 import { listKabandas } from '../kabandas/api'
 import type { KabandaSummary } from '../kabandas/types'
 import { getActiveIdentityId } from '../offline/ledger'
@@ -145,15 +145,23 @@ export function RaidApp({ route }: { route: Exclude<RaidRoute, { kind: 'home' }>
 }
 
 function RaidSignIn() {
+  const [mode, setMode] = useState<'password' | 'email'>('password')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!email || status === 'sending') return
+    if (status === 'sending') return
     setStatus('sending')
     try {
-      await requestMagicLink(email, `${window.location.pathname}${window.location.search}`)
-      setStatus('sent')
+      if (mode === 'password') {
+        await loginWithPassword(username, password)
+        window.location.reload()
+      } else {
+        await requestMagicLink(email, `${window.location.pathname}${window.location.search}`)
+        setStatus('sent')
+      }
     } catch {
       setStatus('error')
     }
@@ -163,15 +171,15 @@ function RaidSignIn() {
       <section className="kb-card raid-auth">
         <p className="kb-kicker">Продолжим с того же места</p>
         <h1>Войдите в КАБАНДУ</h1>
-        <p className="kb-muted">После magic-link вернём вас в этот рейд — UUID в ссылке только указывает место, но не даёт доступ.</p>
+        <p className="kb-muted">Войдите по логину и паролю. Ссылка на рейд указывает место, но сама по себе не даёт доступ.</p>
         {status === 'sent' ? <p className="kb-notice">Ссылка отправлена. Откройте письмо на этом устройстве.</p> : (
           <form onSubmit={submit}>
-            <label htmlFor="raid-email">Электронная почта</label>
-            <input id="raid-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-            <button className="kb-primary raid-primary" type="submit" disabled={status === 'sending'}>{status === 'sending' ? 'Отправляем…' : 'Получить ссылку'}</button>
+            {mode === 'password' ? <><label htmlFor="raid-username">Логин</label><input id="raid-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} /><label htmlFor="raid-password">Пароль</label><input id="raid-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} /></> : <><label htmlFor="raid-email">Электронная почта</label><input id="raid-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></>}
+            <button className="kb-primary raid-primary" type="submit" disabled={status === 'sending'}>{status === 'sending' ? 'Входим…' : mode === 'password' ? 'Войти' : 'Получить ссылку'}</button>
           </form>
         )}
-        {status === 'error' && <p className="kb-error" role="alert">Не удалось отправить ссылку.</p>}
+        {status === 'error' && <p className="kb-error" role="alert">Не удалось войти. Проверьте данные.</p>}
+        {status !== 'sent' && <button className="kb-text-action" type="button" onClick={() => { setMode((value) => value === 'password' ? 'email' : 'password'); setStatus('idle') }}>{mode === 'password' ? 'Войти через почту' : 'Войти по логину и паролю'}</button>}
       </section>
     </RaidShell>
   )

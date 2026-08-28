@@ -2,10 +2,26 @@ import { z } from 'zod'
 
 export const userSchema = z.object({
   id: z.uuid(),
-  email: z.email(),
+  email: z.email().nullable(),
+  username: z.string().min(3).max(32).nullable(),
+  identityKind: z.enum(['verified', 'invite']),
   displayName: z.string().min(1).max(80).nullable(),
   avatarUrl: z.url().nullable(),
 })
+
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(/^[\p{L}\p{N}._-]+$/u)
+
+export const passwordSchema = z.string().min(8).max(128)
+
+export const passwordLoginSchema = z.object({
+  username: usernameSchema,
+  password: passwordSchema,
+}).strict()
 
 export const requestMagicLinkSchema = z.object({
   email: z.email().max(254),
@@ -113,9 +129,16 @@ export const previewInviteSchema = z.union([
   z.object({ pending: z.literal(true) }),
 ])
 
-export const acceptInviteContinuationSchema = z.object({
-  continuation: z.string().min(32).max(256),
-})
+export const acceptInviteContinuationSchema = z.union([
+  z.object({
+    continuation: z.string().min(32).max(256),
+  }).strict(),
+  z.object({
+    continuation: z.string().min(32).max(256),
+    username: usernameSchema,
+    password: passwordSchema,
+  }).strict(),
+])
 
 export const createPointCollectionSchema = z.object({
   name: z.string().trim().min(1).max(100),

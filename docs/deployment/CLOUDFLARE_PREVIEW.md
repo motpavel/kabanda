@@ -129,14 +129,15 @@ rollback: оно является ключом HMAC, а не обычной rota
 4. Из нового immutable release, ещё до переключения symlink, выполнить
    `node /opt/kabanda/releases/<sha>/apps/api/dist/migrate.js`. Он завершится ошибкой, если migration set не
    заканчивается exact `EXPECTED_MIGRATION`.
-5. До запуска нового API записать grant для каждого согласованного alpha email через exact-built
+5. До запуска нового API записать grant для каждого согласованного verified owner email через exact-built
    `alpha-access.js`. Сначала выполнить dry-run, затем apply с буквальным подтверждением. Общий active cap
-   сериализован в PostgreSQL и равен 20; обход таблицы или ручной `INSERT` запрещён.
+   сериализован в PostgreSQL и равен 20. Успешный credential invite атомарно занимает следующий seat;
+   обход таблицы или ручной `INSERT` запрещён.
 6. Только после успешной миграции и enroll атомарно переключить `current`, установить units из этого release,
    запустить `kabanda-api.service` и выполнить публичный
    `node infra/stand/smoke.mjs <origin> <sha>`.
-7. Отдельно проверить login: запросить ссылку enrolled тестовому email, забрать одноразовый URL из loopback Mailpit,
-   войти, создать Кабанду и открыть основной `/app` flow.
+7. Отдельно проверить оба login path: verified owner через enrolled email/loopback Mailpit; новый participant
+   через одноразовый invite, уникальный логин и пароль. После logout participant должен снова войти по логину.
 8. После создания конкретной alpha Кабанды выполнить идемпотентный import manifest exact release. Без этого
    карта новой database пуста. `source_checked` точки разрешают проверить карту и pre-start UX, но не
    разрешают canonical start. Статус `field_verified` выставляется только после реальной проверки точки и

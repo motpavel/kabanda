@@ -49,11 +49,11 @@ export async function acquireAlphaIdentityLock(client: Queryable, emailFingerpri
   ])
 }
 
-async function acquireAlphaQuotaLock(client: Queryable): Promise<void> {
+export async function acquireAlphaQuotaLock(client: Queryable): Promise<void> {
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended('kabanda-alpha-quota-v1', 0))")
 }
 
-async function activeCount(client: Queryable): Promise<number> {
+export async function activeAlphaAccessCount(client: Queryable): Promise<number> {
   const result = await client.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM alpha_access_grants WHERE status = 'active'",
   )
@@ -81,12 +81,23 @@ export async function isAlphaAccessGranted(
   return Boolean(result.rowCount)
 }
 
+export async function isAlphaUserAccessGranted(
+  client: Queryable,
+  userId: string,
+): Promise<boolean> {
+  const result = await client.query(
+    "SELECT 1 FROM alpha_access_grants WHERE user_id = $1 AND status = 'active'",
+    [userId],
+  )
+  return Boolean(result.rowCount)
+}
+
 export async function inspectAlphaAccess(
   pool: Pool,
   secret: string,
   emailInput?: string,
 ): Promise<AlphaAccessStatus> {
-  const count = await activeCount(pool)
+  const count = await activeAlphaAccessCount(pool)
   if (!emailInput) {
     return { activeCount: count, cap: CLOSED_ALPHA_USER_CAP, grantId: null, status: 'missing' }
   }
@@ -112,7 +123,7 @@ async function enrollAlphaAccessAttempt(
     await acquireAlphaIdentityLock(client, fingerprint)
     const existing = await grantByFingerprint(client, fingerprint)
     if (existing?.status === 'active') {
-      const count = await activeCount(client)
+      const count = await activeAlphaAccessCount(client)
       await client.query('COMMIT')
       return {
         activeCount: count,
@@ -125,7 +136,7 @@ async function enrollAlphaAccessAttempt(
         sessionsRevoked: 0,
       }
     }
-    const count = await activeCount(client)
+    const count = await activeAlphaAccessCount(client)
     if (count >= CLOSED_ALPHA_USER_CAP) {
       throw new AlphaAccessError('ALPHA_ACCESS_CAP_REACHED', 'Closed-alpha access cap reached')
     }
@@ -207,7 +218,7 @@ export async function revokeAlphaAccess(
        WHERE s.user_id = u.id AND u.email = $1`,
       [email],
     )
-    const count = await activeCount(client)
+    const count = await activeAlphaAccessCount(client)
     await client.query('COMMIT')
     return {
       activeCount: count,

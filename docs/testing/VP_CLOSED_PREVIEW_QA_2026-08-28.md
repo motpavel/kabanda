@@ -32,7 +32,7 @@
 - Start не прошёл без `field_verified` точек; сервер вернул понятный canonical conflict, не false green.
 - Organizer создал одноразовое приглашение.
 - Guest увидел preview и не вступил автоматически.
-- После magic-link пользователь вернулся к приглашению, явно принял его и стал участником.
+- Guest выбрал логин и пароль на invite preview, явно вступил и после logout повторно вошёл без email.
 - Повторное использование invite token отклонено.
 - Participant UI не показывает organizer actions; прямой create-raid запрос с валидными safety headers завершился fail-closed без создания объекта.
 - На `390x844` горизонтального overflow нет: `scrollWidth === clientWidth === 390`.
@@ -129,4 +129,3 @@ Suggested fix:
 
 Desktop closed-preview и invite/auth/join/pre-start flow готовы к показу. Переход к реальному рейду — только после
 физической проверки 5–8 точек, записи evidence в manifest и повторного exact import без ручного DB repair.
-

@@ -16,7 +16,7 @@ const environmentSchema = z.object({
   APP_BASE_PATH: z.string().regex(/^\/([^?#]*\/)?$/).default('/'),
   PWA_DIST_DIR: z.string().min(1).optional(),
   TRUST_PROXY_ADDRESS: z.string().min(1).optional(),
-  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0008_closed_alpha_access.sql'),
+  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0009_invite_credentials.sql'),
   DATABASE_URL: z
     .string()
     .min(1)

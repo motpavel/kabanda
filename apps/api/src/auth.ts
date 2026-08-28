@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import type { User } from '@kabanda/contracts'
 import { normalizeEmail, sanitizeReturnTo } from '@kabanda/domain'
 import type { Pool } from 'pg'
@@ -8,6 +8,7 @@ import {
   acquireAlphaIdentityLock,
   alphaEmailFingerprint,
   isAlphaAccessGranted,
+  isAlphaUserAccessGranted,
 } from './alpha-access.js'
 
 export interface VerifiedSession {
@@ -19,6 +20,7 @@ export interface VerifiedSession {
 export interface AuthService {
   requestMagicLink(email: string, returnTo: string): Promise<void>
   verifyMagicLink(rawToken: string): Promise<VerifiedSession | null>
+  loginWithPassword(username: string, password: string): Promise<VerifiedSession | null>
   getUser(rawSessionToken: string): Promise<User | null>
   updateProfile(
     rawSessionToken: string,
@@ -29,9 +31,12 @@ export interface AuthService {
 
 type UserRow = {
   id: string
-  email: string
+  email: string | null
+  username: string | null
+  identity_kind: 'verified' | 'invite'
   display_name: string | null
   avatar_url: string | null
+  password_hash?: string | null
 }
 
 function hashToken(rawToken: string): string {
@@ -42,9 +47,54 @@ function toUser(row: UserRow): User {
   return {
     id: row.id,
     email: row.email,
+    username: row.username,
+    identityKind: row.identity_kind,
     displayName: row.display_name,
     avatarUrl: row.avatar_url,
   }
+}
+
+const passwordKeyLength = 32
+const passwordCost = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const
+
+function derivePasswordKey(
+  password: string,
+  salt: Buffer,
+  cost: { N: number; r: number; p: number; maxmem: number } = passwordCost,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, passwordKeyLength, cost, (error, key) => {
+      if (error) reject(error)
+      else resolve(key)
+    })
+  })
+}
+
+export async function createPasswordHash(password: string): Promise<string> {
+  const salt = randomBytes(16)
+  const key = await derivePasswordKey(password, salt)
+  return `scrypt$v1$${passwordCost.N}$${passwordCost.r}$${passwordCost.p}$${salt.toString('base64url')}$${key.toString('base64url')}`
+}
+
+export async function verifyPassword(password: string, encoded: string | null): Promise<boolean> {
+  const parts = encoded?.split('$') ?? []
+  const N = Number(parts[2])
+  const r = Number(parts[3])
+  const p = Number(parts[4])
+  const candidateSalt = parts[5] ? Buffer.from(parts[5], 'base64url') : Buffer.alloc(0)
+  const candidateKey = parts[6] ? Buffer.from(parts[6], 'base64url') : Buffer.alloc(0)
+  const validFormat = parts.length === 7 && parts[0] === 'scrypt' && parts[1] === 'v1'
+    && (N === 16_384 || N === 32_768) && r === 8 && p === 1
+    && candidateSalt.length === 16 && candidateKey.length === passwordKeyLength
+  const salt = validFormat ? candidateSalt : Buffer.from('kabanda-invalid-login')
+  const expected = validFormat ? candidateKey : Buffer.alloc(passwordKeyLength)
+  const actual = await derivePasswordKey(password, salt, {
+    N: validFormat ? N : passwordCost.N,
+    r: validFormat ? r : passwordCost.r,
+    p: validFormat ? p : passwordCost.p,
+    maxmem: passwordCost.maxmem,
+  })
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
 export function buildMagicLinkVerificationUrl(
@@ -147,7 +197,7 @@ export class DatabaseAuthService implements AuthService {
       const userResult = await client.query<UserRow>(
         `INSERT INTO users (email) VALUES ($1)
          ON CONFLICT (email) DO UPDATE SET updated_at = now()
-         RETURNING id, email, display_name, avatar_url`,
+         RETURNING id, email, username, identity_kind, display_name, avatar_url`,
         [link.email],
       )
       const userRow = userResult.rows[0]
@@ -159,7 +209,7 @@ export class DatabaseAuthService implements AuthService {
            SET user_id = $1, updated_at = now()
            WHERE email_fingerprint = $2 AND status = 'active'
              AND (user_id IS NULL OR user_id = $1)`,
-          [userRow.id, alphaEmailFingerprint(userRow.email, this.config.ALPHA_ACCESS_SECRET!)],
+          [userRow.id, alphaEmailFingerprint(link.email, this.config.ALPHA_ACCESS_SECRET!)],
         )
         if (linkedGrant.rowCount !== 1) throw new Error('Closed-alpha grant identity mismatch')
       }
@@ -180,9 +230,32 @@ export class DatabaseAuthService implements AuthService {
     }
   }
 
+  async loginWithPassword(username: string, password: string): Promise<VerifiedSession | null> {
+    const result = await this.pool.query<UserRow>(
+      `SELECT id, email, username, identity_kind, display_name, avatar_url, password_hash
+       FROM users
+       WHERE username = $1 AND identity_kind = 'invite'`,
+      [username],
+    )
+    const row = result.rows[0]
+    if (!(await verifyPassword(password, row?.password_hash ?? null)) || !row) return null
+    if (
+      this.config.ALPHA_ACCESS_MODE === 'enforced' &&
+      !(await isAlphaUserAccessGranted(this.pool, row.id))
+    ) return null
+    const rawSessionToken = randomBytes(32).toString('base64url')
+    await this.pool.query(
+      `INSERT INTO auth_sessions (token_hash, user_id, expires_at)
+       VALUES ($1, $2, now() + ($3 * interval '1 day'))`,
+      [hashToken(rawSessionToken), row.id, this.config.SESSION_TTL_DAYS],
+    )
+    return { rawToken: rawSessionToken, returnTo: '/', user: toUser(row) }
+  }
+
   async getUser(rawSessionToken: string): Promise<User | null> {
     const result = await this.pool.query<UserRow>(
-      `SELECT users.id, users.email, users.display_name, users.avatar_url
+      `SELECT users.id, users.email, users.username, users.identity_kind,
+         users.display_name, users.avatar_url
        FROM auth_sessions
        JOIN users ON users.id = auth_sessions.user_id
        WHERE auth_sessions.token_hash = $1 AND auth_sessions.expires_at > now()`,
@@ -192,7 +265,7 @@ export class DatabaseAuthService implements AuthService {
     if (!row) return null
     if (
       this.config.ALPHA_ACCESS_MODE === 'enforced' &&
-      !(await isAlphaAccessGranted(this.pool, row.email, this.config.ALPHA_ACCESS_SECRET!))
+      !(await isAlphaUserAccessGranted(this.pool, row.id))
     ) return null
     return toUser(row)
   }
@@ -209,7 +282,8 @@ export class DatabaseAuthService implements AuthService {
        WHERE auth_sessions.user_id = users.id
          AND auth_sessions.token_hash = $1
          AND auth_sessions.expires_at > now()
-       RETURNING users.id, users.email, users.display_name, users.avatar_url`,
+       RETURNING users.id, users.email, users.username, users.identity_kind,
+         users.display_name, users.avatar_url`,
       [hashToken(rawSessionToken), profile.displayName, profile.avatarUrl ?? null],
     )
     return result.rows[0] ? toUser(result.rows[0]) : null
