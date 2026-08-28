@@ -1207,6 +1207,52 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       reason: 'location_expired',
       credits: [],
     })
+
+    const invalidAttestations = [
+      {
+        operationId: 'checkin-attestation-expired',
+        reason: 'location_expired',
+        evidence: {
+          ...input.evidence,
+          capturedAt: new Date(Date.now() - 61_000).toISOString(),
+        },
+      },
+      {
+        operationId: 'checkin-attestation-inaccurate',
+        reason: 'accuracy_insufficient',
+        evidence: {
+          ...input.evidence,
+          capturedAt: new Date().toISOString(),
+          accuracyMeters: 51,
+        },
+      },
+      {
+        operationId: 'checkin-attestation-too-far',
+        reason: 'too_far',
+        evidence: {
+          ...input.evidence,
+          latitude: 56.87,
+          capturedAt: new Date().toISOString(),
+        },
+      },
+    ] as const
+    for (const invalid of invalidAttestations) {
+      const result = await raidService!.createCheckin(
+        ownerId,
+        acquired.raid.id,
+        {
+          ...input,
+          evidence: invalid.evidence,
+          organizerAttestation: true,
+        },
+        invalid.operationId,
+      )
+      expect(result).toMatchObject({
+        outcome: 'needs_manual_verification',
+        reason: invalid.reason,
+        credits: [],
+      })
+    }
   })
 
   it('confirms private claims and a same-raid sanitized media fallback', async () => {

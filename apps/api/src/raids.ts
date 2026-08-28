@@ -892,7 +892,7 @@ export class DatabaseRaidService implements RaidService {
       if (ageMs > 60_000 || ageMs < -30_000) reason = 'location_expired'
       else if (input.evidence.accuracyMeters > 50) reason = 'accuracy_insufficient'
       else if (distanceMeters > 75) reason = 'too_far'
-      const accepted = reason === null || input.organizerAttestation
+      const accepted = reason === null
       const attemptResult = await client.query<{ id: string }>(
         `INSERT INTO raid_checkin_attempts
           (raid_id, point_snapshot_id, actor_user_id, evidence_location,
