@@ -1,0 +1,383 @@
+:root {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #17251d;
+  background: #f3f0e8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+  background: #f3f0e8;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+.file-button {
+  min-height: 48px;
+  border: 1px solid #8d958f;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  color: #17251d;
+  background: #fffdf7;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+.file-button:focus-within {
+  outline: 3px solid #e35d36;
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button.primary {
+  border-color: #17251d;
+  color: #fffdf7;
+  background: #17251d;
+}
+
+button.danger {
+  border-color: #9f2d22;
+  color: #fff;
+  background: #9f2d22;
+}
+
+button.danger-secondary {
+  border-color: #9f2d22;
+  color: #9f2d22;
+  background: transparent;
+}
+
+main {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
+}
+
+.loading {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+}
+
+.hero {
+  padding: 2.5rem 0 1.5rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 9vw, 5rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.hero > p:not(.eyebrow) {
+  max-width: 62ch;
+  margin: 1rem 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: #5a635c;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.status-row,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.status {
+  border: 1px solid #c7cbc7;
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  background: #fffdf7;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.status.ok {
+  border-color: #35764d;
+  color: #215d39;
+}
+
+.status.warn {
+  border-color: #b55d27;
+  color: #7b3517;
+}
+
+.notice,
+.message {
+  margin: 0 0 1rem;
+  border: 1px solid #b55d27;
+  border-radius: 16px;
+  padding: 1rem;
+  background: #fff0da;
+}
+
+.notice p {
+  margin-top: 0;
+}
+
+.message {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.text-button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+}
+
+.panel {
+  margin: 0 0 1rem;
+  border: 1px solid #d1d2cc;
+  border-radius: 20px;
+  padding: 1rem;
+  background: #fffdf7;
+  box-shadow: 0 10px 32px rgba(23, 37, 29, 0.06);
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: clamp(1.35rem, 5vw, 2rem);
+}
+
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  font-weight: 700;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #8d958f;
+  border-radius: 12px;
+  padding: 0.8rem;
+  color: #17251d;
+  background: #fff;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.mono,
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.recorder-dot {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 3px solid #8d958f;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.recorder-dot.recording {
+  border-color: #215d39;
+  background: #3e9b61;
+}
+
+.recorder-dot.starting,
+.recorder-dot.stale {
+  border-color: #b55d27;
+  background: #f3a74e;
+}
+
+.recorder-dot.error {
+  border-color: #9f2d22;
+  background: #d6493d;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.metrics div {
+  border-radius: 14px;
+  padding: 0.8rem;
+  background: #f3f0e8;
+}
+
+.metrics dt {
+  color: #5a635c;
+  font-size: 0.78rem;
+}
+
+.metrics dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.primary-actions button {
+  flex: 1 1 180px;
+}
+
+.helper {
+  color: #5a635c;
+  line-height: 1.5;
+}
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.capability-grid li {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  border-bottom: 1px solid #e0e0d9;
+  padding: 0.6rem 0;
+}
+
+.capability-grid span {
+  color: #5a635c;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.capability-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.file-button {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.preview {
+  display: block;
+  width: min(100%, 440px);
+  max-height: 320px;
+  margin-top: 1rem;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.event-list {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0;
+  list-style: none;
+}
+
+.event-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.7rem;
+  border-bottom: 1px solid #e0e0d9;
+  padding-bottom: 0.6rem;
+}
+
+.event-list time {
+  color: #5a635c;
+  font-variant-numeric: tabular-nums;
+}
+
+.event-list code {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  color: #5a635c;
+  font-size: 0.75rem;
+}
+
+footer {
+  padding: 1rem 0;
+  color: #5a635c;
+  line-height: 1.5;
+}
+
+@media (min-width: 680px) {
+  main {
+    padding-inline: 1.5rem;
+  }
+
+  .panel {
+    padding: 1.5rem;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .capability-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
