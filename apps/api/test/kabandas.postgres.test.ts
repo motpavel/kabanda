@@ -214,6 +214,47 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     expect((await service!.listPoints(ownerId, first.collectionId, bounds, 100)).points).toHaveLength(1)
   })
 
+  it('keeps equal stable point keys isolated between Kabandas', async () => {
+    const first = await ownerAndKabanda('tenant-a')
+    const second = await ownerAndKabanda('tenant-b')
+    const firstImport = await service!.importManifest(
+      first.ownerId,
+      first.kabanda.id,
+      'manifest-v1',
+      'c'.repeat(64),
+      'Ижевск A',
+      manifest,
+    )
+    const secondManifest = manifest.map((point, index) =>
+      index === 0 ? { ...point, name: 'Чужое новое имя', longitude: 53.24 } : point,
+    )
+    const secondImport = await service!.importManifest(
+      second.ownerId,
+      second.kabanda.id,
+      'manifest-v1',
+      'd'.repeat(64),
+      'Ижевск B',
+      secondManifest,
+    )
+
+    const firstPoints = await service!.listPoints(first.ownerId, firstImport.collectionId, bounds, 100)
+    const secondPoints = await service!.listPoints(second.ownerId, secondImport.collectionId, bounds, 100)
+    expect(firstPoints.points[0]).toMatchObject({ name: 'Точка один', longitude: 53.2 })
+    expect(secondPoints.points[0]).toMatchObject({ name: 'Чужое новое имя', longitude: 53.24 })
+    expect(firstPoints.points[0]!.id).not.toBe(secondPoints.points[0]!.id)
+
+    await service!.updatePoint(
+      second.ownerId,
+      second.kabanda.id,
+      secondPoints.points[0]!.id as string,
+      'Архив B',
+      true,
+    )
+    await expect(
+      service!.listPoints(first.ownerId, firstImport.collectionId, bounds, 100),
+    ).resolves.toMatchObject({ points: [{ name: 'Точка один' }, { name: 'Точка два' }] })
+  })
+
   it('rejects an oversized bbox before querying points', async () => {
     const ownerId = await user('bbox@example.com')
     await expect(

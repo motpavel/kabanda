@@ -80,7 +80,8 @@ CREATE UNIQUE INDEX point_collections_stable_key_idx
 
 CREATE TABLE points (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  stable_key text NOT NULL UNIQUE,
+  kabanda_id uuid NOT NULL REFERENCES kabandas(id) ON DELETE CASCADE,
+  stable_key text NOT NULL,
   name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 160),
   location geometry(Point, 4326) NOT NULL,
   source text NOT NULL,
@@ -94,9 +95,11 @@ CREATE TABLE points (
   archived_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (source, source_id)
+  UNIQUE (kabanda_id, stable_key),
+  UNIQUE (kabanda_id, source, source_id)
 );
 
+CREATE INDEX points_kabanda_idx ON points (kabanda_id, id);
 CREATE INDEX points_location_gist_idx ON points USING gist (location);
 
 CREATE TABLE collection_points (

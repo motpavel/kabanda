@@ -582,10 +582,10 @@ export class DatabaseKabandaService implements KabandaService {
       for (const [position, row] of rows.entries()) {
         const pointResult = await client.query<{ id: string }>(
           `INSERT INTO points
-            (stable_key, name, location, source, source_id, source_url, license,
+            (kabanda_id, stable_key, name, location, source, source_id, source_url, license,
              verification_status, verified_at, notes)
-           VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, $10, $11)
-           ON CONFLICT (stable_key) DO UPDATE SET
+           VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, $7, $8, $9, $10, $11, $12)
+           ON CONFLICT (kabanda_id, stable_key) DO UPDATE SET
              name = EXCLUDED.name, location = EXCLUDED.location, source = EXCLUDED.source,
              source_id = EXCLUDED.source_id, source_url = EXCLUDED.source_url,
              license = EXCLUDED.license, verification_status = EXCLUDED.verification_status,
@@ -593,6 +593,7 @@ export class DatabaseKabandaService implements KabandaService {
              archived_at = NULL, updated_at = now()
            RETURNING id`,
           [
+            kabandaId,
             row.stableKey,
             row.name,
             row.longitude,
