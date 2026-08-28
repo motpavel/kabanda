@@ -29,6 +29,32 @@ packages/domain    — чистые правила без React/Fastify/PostgreS
 
 Микросервисы, Redis, Kubernetes, отдельную очередь, event sourcing, multi-region, универсальный repository framework и большой observability stack.
 
+## Граница #33: Кабанды и первая коллекция точек
+
+- Только роли `owner` и `member`. Передача ownership и универсальный RBAC не входят в alpha.
+- Создание Кабанды и принятие приглашения требуют idempotency key и выполняются транзакционно.
+- Сырой invite приходит во fragment `/invite#invite=…`, немедленно удаляется клиентом и обменивается
+  на короткоживущий opaque continuation в `HttpOnly; SameSite=Lax` cookie. Magic-link возвращает на
+  base-aware `/invite` без bearer-секрета в URL; standalone получает тот же cookie jar.
+- Idempotency key принятия детерминированно выводится из continuation через SHA-256. После потерянного
+  ответа reload восстанавливает pending cookie, а сервер возвращает уже принятое membership только тому
+  же авторизованному пользователю.
+- `APP_ORIGIN` хранит только origin для CSRF-проверки, а `APP_BASE_PATH` (`/` локально,
+  `/kabanda/` для Pages) применяется к verification URL в письме и совпадает с Vite `BASE_URL`.
+- Авторизация приватных данных всегда строится как `session user -> active membership -> Kabanda`;
+  `kabandaId`, `userId` или collection ID из запроса сами по себе не дают доступа.
+- API точек требует конкретную коллекцию, ограниченный bbox Ижевска и жёсткий limit. Full dump отсутствует.
+- Stable point ID переживает rename/archive. Новые действия для archived point запрещаются, история сохраняет
+  snapshot имени и координат.
+- Последняя point-проекция IndexedDB ключуется `identity + Kabanda + collection` и при offline всегда
+  показывается как stale. Приватный ответ не кладётся в общий Cache Storage.
+- Для 27 alpha-кандидатов используется bounded MapLibre-карта с raster OSM и обязательной атрибуцией,
+  загружаемая отдельным chunk, плюс полноценный список. Ошибка WebGL/provider
+  переключает presentation в список, а не блокирует сценарий.
+
+Пока #30 не даст field verification, manifest остаётся `source_checked`: его можно импортировать и
+показывать для разработки, но нельзя объявлять проверенной полевой коллекцией или разрешать обычный чекин.
+
 ## Локальная среда
 
 `infra/compose.yaml` поднимает PostGIS, S3-compatible MinIO и Mailpit. Приложения запускаются обычным pnpm workspace. Managed-провайдеры выбираются перед staging без изменения доменных контрактов.

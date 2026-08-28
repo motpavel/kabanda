@@ -42,8 +42,12 @@ function toUser(row: UserRow): User {
   }
 }
 
-export function buildMagicLinkVerificationUrl(appOrigin: string, rawToken: string): string {
-  const verifyUrl = new URL('/auth/verify', appOrigin)
+export function buildMagicLinkVerificationUrl(
+  appOrigin: string,
+  rawToken: string,
+  appBasePath = '/',
+): string {
+  const verifyUrl = new URL(`${appBasePath.replace(/^\/+/, '')}auth/verify`, `${appOrigin}/`)
   verifyUrl.hash = new URLSearchParams({ token: rawToken }).toString()
   return verifyUrl.toString()
 }
@@ -69,7 +73,7 @@ export class DatabaseAuthService implements AuthService {
 
     await this.mailer.sendMagicLink(
       email,
-      buildMagicLinkVerificationUrl(this.config.APP_ORIGIN, rawToken),
+      buildMagicLinkVerificationUrl(this.config.APP_ORIGIN, rawToken, this.config.APP_BASE_PATH),
     )
   }
 

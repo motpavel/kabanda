@@ -8,7 +8,7 @@
 - `packages/domain` — чистые продуктовые правила;
 - `infra` — локальные PostGIS, private object storage и тестовая почта.
 
-Capability-spike для [VP 1/9, issue #30](https://github.com/motpavel/kabanda/issues/30) измеряет фактическое поведение устанавливаемой PWA. В [issue #32](https://github.com/motpavel/kabanda/issues/32) поверх него собирается минимальный рабочий фундамент закрытой альфы.
+Capability-spike для [VP 1/9, issue #30](https://github.com/motpavel/kabanda/issues/30) доступен на `/lab` и измеряет фактическое поведение устанавливаемой PWA. В [issue #32](https://github.com/motpavel/kabanda/issues/32) поверх него собирается минимальный рабочий фундамент закрытой альфы; production shell Кабанды открывается на `/app` и является `start_url` установки.
 
 HTTPS-стенд для физических тестов: [motpavel.github.io/kabanda](https://motpavel.github.io/kabanda/).
 

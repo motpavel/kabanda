@@ -10,9 +10,12 @@ import Fastify, { LogController, type FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import type { AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
+import { registerKabandaRoutes } from './kabanda-routes.js'
+import { KabandaError, type KabandaService } from './kabandas.js'
 
 export interface AppDependencies {
   auth: AuthService
+  kabandas: KabandaService
   config: ApiConfig
   readiness: () => Promise<void>
 }
@@ -63,6 +66,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: { code: 'INVALID_INPUT', message: 'Проверьте введённые данные' },
+      })
+    }
+    if (error instanceof KabandaError) {
+      return reply.status(error.statusCode).send({
+        error: { code: error.code, message: error.message },
       })
     }
     app.log.error(error)
@@ -135,6 +143,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     })
     return reply.status(204).send()
   })
+
+  await registerKabandaRoutes(app, dependencies)
 
   return app
 }

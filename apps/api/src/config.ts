@@ -5,6 +5,7 @@ const environmentSchema = z.object({
   API_HOST: z.string().default('127.0.0.1'),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   APP_ORIGIN: z.url().default('http://localhost:5173'),
+  APP_BASE_PATH: z.string().regex(/^\/([^?#]*\/)?$/).default('/'),
   DATABASE_URL: z
     .string()
     .min(1)
