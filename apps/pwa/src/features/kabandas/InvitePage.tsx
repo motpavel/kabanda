@@ -1,4 +1,4 @@
-import '@fontsource-variable/geist'
+import '@fontsource-variable/manrope'
 import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError } from '../../lib/http'
 import { acceptInvite, previewInvite } from './api'
@@ -73,12 +73,20 @@ export function InvitePage() {
   }
 
   return (
-    <main className="kb-shell kb-center">
-      <section className="kb-card kb-invite-card" aria-live="polite">
-        <a className="kb-brand" href={appPath('app')}><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>
-        {state === 'loading' && <><p className="kb-kicker">Приглашение</p><h1>Проверяем ссылку…</h1></>}
-        {state === 'invalid' && <><p className="kb-kicker">Ссылка не сработала</p><h1>Приглашение недействительно</h1><p className="kb-muted">Оно могло устареть или уже быть использовано. Попросите организатора отправить новое.</p><a className="kb-link-button" href={appPath('app')}>Перейти в приложение</a></>}
-        {invite && (state === 'ready' || state === 'accepting' || state === 'done') && <><p className="kb-kicker">Вас зовёт {invite.inviterName}</p><h1>{invite.kabanda.name}</h1><p className="kb-muted">{invite.kabanda.memberCount} участников. После принятия вы увидите точки и историю команды.</p><dl className="kb-invite-meta"><div><dt>Роль</dt><dd>Участник</dd></div><div><dt>Ссылка действует до</dt><dd>{new Date(invite.expiresAt).toLocaleString('ru-RU')}</dd></div></dl>{needsAuth ? <InviteRegistration busy={state === 'accepting'} error={acceptError} onAccept={accept} /> : <button className="kb-primary kb-full" type="button" disabled={state === 'accepting' || state === 'done'} onClick={() => void accept()}>{state === 'accepting' ? 'Присоединяем…' : state === 'done' ? 'Готово' : 'Принять приглашение'}</button>}</>}
+    <main className="kb-shell kb-center kb-auth-shell">
+      <section className="kb-auth-layout kb-invite-layout" aria-live="polite">
+        <aside className="kb-auth-story" aria-label="Приглашение в Кабанду">
+          <a className="kb-brand" href={appPath('app')}><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>
+          <div>
+            <h1>{invite ? `Вас ждут в «${invite.kabanda.name}»` : 'Проверяем приглашение'}</h1>
+          </div>
+          <p className="kb-auth-footnote">Приглашение одноразовое и не раскрывает данные команды до подтверждения.</p>
+        </aside>
+        <div className="kb-auth-form kb-invite-card">
+          {state === 'loading' && <><h2>Проверяем ссылку…</h2><p className="kb-muted">Это займёт несколько секунд.</p></>}
+          {state === 'invalid' && <><h2>Приглашение недействительно</h2><p className="kb-muted">Оно могло устареть или уже быть использовано. Попросите организатора отправить новое.</p><a className="kb-link-button" href={appPath('app')}>Перейти в приложение</a></>}
+          {invite && (state === 'ready' || state === 'accepting' || state === 'done') && <><div className="kb-auth-heading"><span className="kb-inline-mark" aria-hidden="true">{invite.kabanda.avatar}</span><h2>{invite.kabanda.name}</h2><p>Вас приглашает {invite.inviterName}. После входа откроются точки и история команды.</p></div><dl className="kb-invite-meta"><div><dt>В команде</dt><dd>{invite.kabanda.memberCount} участников</dd></div><div><dt>Ссылка действует до</dt><dd>{new Date(invite.expiresAt).toLocaleString('ru-RU')}</dd></div></dl>{needsAuth ? <InviteRegistration busy={state === 'accepting'} error={acceptError} onAccept={accept} /> : <button className="kb-primary kb-full" type="button" disabled={state === 'accepting' || state === 'done'} onClick={() => void accept()}>{state === 'accepting' ? 'Присоединяем…' : state === 'done' ? 'Готово' : 'Принять приглашение'}</button>}</>}
+        </div>
       </section>
     </main>
   )

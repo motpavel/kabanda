@@ -1,6 +1,6 @@
-import '@fontsource-variable/geist'
+import '@fontsource-variable/manrope'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
@@ -19,6 +19,7 @@ import {
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
 import { loadMapLibre } from './maplibre'
+import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
 import { RaidHistory } from '../results/RaidHistory'
 import type {
@@ -80,32 +81,42 @@ function SignInPanel() {
   }
 
   return (
-    <main className="kb-shell kb-center">
-      <section className="kb-card kb-auth-card">
-        <Brand />
-        <p className="kb-kicker">Вход в Кабанду</p>
-        <h1>Ваши места — только вашей команде</h1>
-        <p className="kb-muted">Введите логин и пароль, которые придумали при вступлении по приглашению.</p>
-        {state === 'sent' ? (
-          <p className="kb-notice" role="status">Ссылка отправлена. Откройте письмо на этом устройстве.</p>
-        ) : (
-          <form onSubmit={submit}>
-            {mode === 'password' ? <>
-              <label htmlFor="kb-username">Логин</label>
-              <input id="kb-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} />
-              <label htmlFor="kb-password">Пароль</label>
-              <input id="kb-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} />
-            </> : <>
-              <label htmlFor="kb-email">Электронная почта</label>
-              <input id="kb-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-            </>}
-            <button className="kb-primary" type="submit" disabled={state === 'sending'}>
-              {state === 'sending' ? 'Входим…' : mode === 'password' ? 'Войти' : 'Получить ссылку'}
-            </button>
-          </form>
-        )}
-        {state === 'error' && <p className="kb-error" role="alert">Не удалось войти. Проверьте данные и повторите.</p>}
-        {state !== 'sent' && <button className="kb-text-action" type="button" onClick={() => { setMode((value) => value === 'password' ? 'email' : 'password'); setState('idle') }}>{mode === 'password' ? 'Войти через почту' : 'Войти по логину и паролю'}</button>}
+    <main className="kb-shell kb-center kb-auth-shell">
+      <section className="kb-auth-layout">
+        <aside className="kb-auth-story" aria-label="О приложении">
+          <Brand />
+          <div>
+            <h1>Город — ваш общий маршрут.</h1>
+          </div>
+          <p className="kb-auth-footnote">Закрытые маршруты и фотографии остаются внутри вашей Кабанды.</p>
+        </aside>
+        <div className="kb-auth-form">
+          <div className="kb-auth-heading">
+            <span className="kb-inline-mark" aria-hidden="true"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /></span>
+            <h2>Войти в Кабанду</h2>
+            <p>Используйте данные, которые придумали при вступлении по приглашению.</p>
+          </div>
+          {state === 'sent' ? (
+            <p className="kb-notice" role="status">Ссылка отправлена. Откройте письмо на этом устройстве.</p>
+          ) : (
+            <form onSubmit={submit}>
+              {mode === 'password' ? <>
+                <label htmlFor="kb-username">Логин</label>
+                <input id="kb-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} />
+                <label htmlFor="kb-password">Пароль</label>
+                <input id="kb-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} />
+              </> : <>
+                <label htmlFor="kb-email">Электронная почта</label>
+                <input id="kb-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+              </>}
+              <button className="kb-primary" type="submit" disabled={state === 'sending'}>
+                {state === 'sending' ? 'Входим…' : mode === 'password' ? 'Войти' : 'Получить ссылку'}
+              </button>
+            </form>
+          )}
+          {state === 'error' && <p className="kb-error" role="alert">Не удалось войти. Проверьте данные и повторите.</p>}
+          {state !== 'sent' && <button className="kb-text-action" type="button" onClick={() => { setMode((value) => value === 'password' ? 'email' : 'password'); setState('idle') }}>{mode === 'password' ? 'Войти через почту' : 'Войти по логину и паролю'}</button>}
+        </div>
       </section>
     </main>
   )
@@ -209,7 +220,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
       )}
 
       <section className="kb-heading-row">
-        <div><p className="kb-kicker">Команды</p><h1>Мои Кабанды</h1></div>
+        <div><h1>Мои Кабанды</h1><p>Рейды, точки и люди — в одном месте.</p></div>
         {user.identityKind === 'verified' && <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>}
       </section>
 
@@ -265,6 +276,7 @@ function CreateKabandaForm({ onCreated, onCancel }: { onCreated: (kabanda: Kaban
 }
 
 function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: KabandaSummary; onLeft: () => void }) {
+  const workspaceRef = useRef<HTMLElement>(null)
   const [members, setMembers] = useState<KabandaMember[]>([])
   const [points, setPoints] = useState<KabandaPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
@@ -275,6 +287,7 @@ function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: Kaba
   const [membershipAction, setMembershipAction] = useState<string | null>(null)
   const webglAvailable = useMemo(detectWebgl, [])
   const presentation = choosePointPresentation(requestedView, providerState, webglAvailable)
+  useKabandaMotion(workspaceRef)
 
   useEffect(() => {
     let active = true
@@ -336,22 +349,30 @@ function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: Kaba
     }
   }
   return (
-    <section className="kb-workspace">
-      <div className="kb-summary">
-        <div><p className="kb-kicker">{kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'}</p><h2>{kabanda.name}</h2></div>
-        <p><strong>{points.filter(({ visitedByMe }) => visitedByMe).length}</strong><span>посещено лично</span></p>
-        <p><strong>{points.filter(({ visitedByTeam }) => visitedByTeam).length}</strong><span>посетила команда</span></p>
-      </div>
+    <section className="kb-workspace" ref={workspaceRef}>
+      <aside className="kb-journey-rail" data-journey-rail>
+        <div className="kb-summary">
+          <div><h2>{kabanda.name}</h2><p>{kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'}</p></div>
+          <p><strong>{points.filter(({ visitedByMe }) => visitedByMe).length}</strong><span>посещено лично</span></p>
+          <p><strong>{points.filter(({ visitedByTeam }) => visitedByTeam).length}</strong><span>посетила команда</span></p>
+        </div>
+        <p className="kb-route-statement" data-route-statement aria-label="Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.">
+          {'Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.'.split(' ').map((word, index) => <span key={`${word}-${index}`}>{word} </span>)}
+        </p>
+      </aside>
 
-      {staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
-      {message && <p className="kb-notice" role="status">{message}</p>}
+      <div className="kb-workspace-main">
+        {staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
+        {message && <p className="kb-notice" role="status">{message}</p>}
 
-      <RaidHomeCard identityId={user.id} kabanda={kabanda} />
-      <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
+        <div className="kb-command-grid">
+          <RaidHomeCard identityId={user.id} kabanda={kabanda} />
+          <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
+        </div>
 
-      <div className="kb-grid">
+        <div className="kb-grid">
         <section className="kb-card kb-points">
-          <div className="kb-section-head"><div><p className="kb-kicker">Маршрут</p><h2>Точки</h2></div><div className="kb-view-switch" aria-label="Вид точек"><button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || providerState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button></div></div>
+          <div className="kb-section-head"><div><h2>Точки маршрута</h2><p>Выберите следующее место на карте или в списке.</p></div><div className="kb-view-switch" aria-label="Вид точек"><button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || providerState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button></div></div>
           {providerState === 'checking' ? <p className="kb-muted" aria-busy="true">Получаем точки…</p> : null}
           {presentation === 'map' && points.length > 0 ? <PointsMap points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
           {(presentation === 'list' || points.length === 0) && <PointList points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} />}
@@ -359,17 +380,17 @@ function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: Kaba
         </section>
 
         <aside className="kb-card kb-detail">
-          <p className="kb-kicker">Точка</p>
           {selectedPoint ? <PointDetail point={selectedPoint} /> : <><h2>Выберите место</h2><p className="kb-muted">Откройте точку на карте или в списке, чтобы увидеть личный и командный статус.</p></>}
         </aside>
-      </div>
+        </div>
 
-      <section className="kb-card">
-        <div className="kb-section-head"><div><p className="kb-kicker">Состав</p><h2>Участники</h2></div><span className="kb-count">{members.length || kabanda.memberCount}</span></div>
-        {kabanda.role === 'owner' && <InviteCreator kabandaId={kabanda.id} />}
-        {members.length ? <ul className="kb-members">{members.map((member) => <li key={member.id}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Организатор' : 'Участник'}</small></div>{kabanda.role === 'owner' && member.role !== 'owner' && member.id !== user.id ? <button className="kb-member-action" type="button" disabled={membershipAction === member.id} onClick={() => remove(member)}>{membershipAction === member.id ? 'Удаляем…' : 'Удалить'}</button> : null}</li>)}</ul> : <p className="kb-muted">Состав пока не загрузился.</p>}
-        {kabanda.role === 'member' && <button className="kb-danger-action" type="button" disabled={membershipAction === 'me'} onClick={leave}>{membershipAction === 'me' ? 'Выходим…' : 'Выйти из Кабанды'}</button>}
-      </section>
+        <section className="kb-card kb-members-card">
+          <div className="kb-section-head"><div><h2>Состав Кабанды</h2><p>Те, с кем вы делите маршрут и общую историю.</p></div><span className="kb-count">{members.length || kabanda.memberCount}</span></div>
+          {kabanda.role === 'owner' && <InviteCreator kabandaId={kabanda.id} />}
+          {members.length ? <ul className="kb-members">{members.map((member) => <li key={member.id}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Организатор' : 'Участник'}</small></div>{kabanda.role === 'owner' && member.role !== 'owner' && member.id !== user.id ? <button className="kb-member-action" type="button" disabled={membershipAction === member.id} onClick={() => remove(member)}>{membershipAction === member.id ? 'Удаляем…' : 'Удалить'}</button> : null}</li>)}</ul> : <p className="kb-muted">Состав пока не загрузился.</p>}
+          {kabanda.role === 'member' && <button className="kb-danger-action" type="button" disabled={membershipAction === 'me'} onClick={leave}>{membershipAction === 'me' ? 'Выходим…' : 'Выйти из Кабанды'}</button>}
+        </section>
+      </div>
     </section>
   )
 }

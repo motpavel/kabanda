@@ -1,8 +1,8 @@
 :root {
   font-family:
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #17251d;
-  background: #f3f0e8;
+    "Manrope Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202923;
+  background: #f3efe6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -13,13 +13,16 @@
 
 html {
   color-scheme: light;
-  background: #f3f0e8;
+  background: #f3efe6;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100dvh;
+  background:
+    linear-gradient(115deg, transparent 0 48%, rgb(32 41 35 / 3%) 48% 48.25%, transparent 48.25% 100%),
+    #f3efe6;
 }
 
 .alpha-diagnostics-consent {
@@ -72,14 +75,21 @@ textarea {
 button,
 .file-button {
   min-height: 48px;
-  border: 1px solid #8d958f;
-  border-radius: 12px;
+  border: 1px solid #8b938d;
+  border-radius: 10px;
   padding: 0.75rem 1rem;
-  color: #17251d;
-  background: #fffdf7;
+  color: #202923;
+  background: #fffdf8;
   font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+button:not(:disabled):hover,
+.file-button:hover {
+  border-color: #202923;
+  transform: translateY(-1px);
 }
 
 button:focus-visible,
@@ -96,9 +106,9 @@ button:disabled {
 }
 
 button.primary {
-  border-color: #17251d;
-  color: #fffdf7;
-  background: #17251d;
+  border-color: #f2553d;
+  color: #fffdf8;
+  background: #f2553d;
 }
 
 button.danger {
@@ -114,7 +124,7 @@ button.danger-secondary {
 }
 
 main {
-  width: min(100%, 860px);
+  width: min(100%, 1040px);
   margin: 0 auto;
   padding: max(1rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
 }
@@ -126,30 +136,57 @@ main {
 }
 
 .hero {
-  padding: 2.5rem 0 1.5rem;
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 1rem;
+  border-radius: 16px;
+  padding: clamp(2rem, 6vw, 4.5rem);
+  color: #fffdf8;
+  background: #202923;
+  isolation: isolate;
+}
+
+.hero::after {
+  position: absolute;
+  z-index: -1;
+  width: 19rem;
+  height: 19rem;
+  right: -5rem;
+  bottom: -8rem;
+  border: 1px solid rgb(223 240 90 / 45%);
+  border-radius: 47% 53% 62% 38%;
+  box-shadow: 0 0 0 42px rgb(223 240 90 / 7%), 0 0 0 84px rgb(223 240 90 / 4%);
+  content: "";
+  transform: rotate(-18deg);
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(2.5rem, 9vw, 5rem);
+  font-family: "Manrope Variable", sans-serif;
+  font-size: clamp(3rem, 8vw, 6.4rem);
+  font-weight: 650;
   line-height: 0.95;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.035em;
 }
 
 .hero > p:not(.eyebrow) {
   max-width: 62ch;
-  margin: 1rem 0;
+  margin: 1.25rem 0;
+  color: #d5dbd5;
   font-size: 1.05rem;
   line-height: 1.55;
 }
 
 .eyebrow {
   margin: 0 0 0.5rem;
-  color: #5a635c;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: #697169;
+  font-size: 0.82rem;
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+.hero .eyebrow {
+  color: #dff05a;
 }
 
 .status-row,
@@ -161,22 +198,23 @@ main {
 }
 
 .status {
-  border: 1px solid #c7cbc7;
+  border: 1px solid rgb(255 253 248 / 28%);
   border-radius: 999px;
   padding: 0.45rem 0.75rem;
-  background: #fffdf7;
+  color: #fffdf8;
+  background: rgb(255 253 248 / 8%);
   font-size: 0.86rem;
   font-weight: 700;
 }
 
 .status.ok {
-  border-color: #35764d;
-  color: #215d39;
+  border-color: #dff05a;
+  color: #dff05a;
 }
 
 .status.warn {
-  border-color: #b55d27;
-  color: #7b3517;
+  border-color: #f7aa87;
+  color: #f7aa87;
 }
 
 .notice,
@@ -207,16 +245,18 @@ main {
 
 .panel {
   margin: 0 0 1rem;
-  border: 1px solid #d1d2cc;
-  border-radius: 20px;
+  border: 1px solid #d7d4ca;
+  border-radius: 16px;
   padding: 1rem;
-  background: #fffdf7;
-  box-shadow: 0 10px 32px rgba(23, 37, 29, 0.06);
+  background: #fffdf8;
 }
 
 .panel h2 {
   margin: 0;
+  font-family: "Manrope Variable", sans-serif;
   font-size: clamp(1.35rem, 5vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .panel-heading {
@@ -237,10 +277,10 @@ label {
 input,
 textarea {
   width: 100%;
-  border: 1px solid #8d958f;
-  border-radius: 12px;
+  border: 1px solid #8b938d;
+  border-radius: 10px;
   padding: 0.8rem;
-  color: #17251d;
+  color: #202923;
   background: #fff;
 }
 
@@ -286,9 +326,9 @@ code {
 }
 
 .metrics div {
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 0.8rem;
-  background: #f3f0e8;
+  background: #edf2bf;
 }
 
 .metrics dt {
@@ -298,6 +338,7 @@ code {
 
 .metrics dd {
   margin: 0.25rem 0 0;
+  font-family: "Manrope Variable", sans-serif;
   font-size: 1.15rem;
   font-weight: 800;
 }
@@ -323,7 +364,7 @@ code {
   display: grid;
   gap: 0.25rem;
   min-width: 0;
-  border-bottom: 1px solid #e0e0d9;
+  border-bottom: 1px solid #dedbd1;
   padding: 0.6rem 0;
 }
 
@@ -373,7 +414,7 @@ code {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.3rem 0.7rem;
-  border-bottom: 1px solid #e0e0d9;
+  border-bottom: 1px solid #dedbd1;
   padding-bottom: 0.6rem;
 }
 

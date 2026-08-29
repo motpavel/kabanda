@@ -97,8 +97,8 @@ export function RaidHomeCard({
     <section className="kb-card raid-home-card" aria-busy={loading}>
       <div className="kb-section-head">
         <div>
-          <p className="kb-kicker">Сегодня катим</p>
           <h2>{current ? 'Рейд уже идёт' : actionable.length ? 'Ближайшие рейды' : 'Новый рейд'}</h2>
+          <p>Главное действие команды прямо сейчас.</p>
         </div>
         {selected && <span className={`raid-state raid-state--${selected.state}`}>{stateLabel(selected.state)}</span>}
       </div>
