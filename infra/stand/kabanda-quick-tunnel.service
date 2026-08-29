@@ -1,0 +1,25 @@
+[Unit]
+Description=Kabanda demo-only Cloudflare Quick Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kabanda
+Group=kabanda
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:3098
+# A Quick Tunnel restart changes the public URL and therefore requires an operator to update APP_ORIGIN.
+Restart=no
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

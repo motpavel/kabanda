@@ -1,0 +1,27 @@
+name: kabanda-local
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: kabanda
+      POSTGRES_USER: kabanda
+      POSTGRES_PASSWORD: kabanda
+    ports:
+      - "127.0.0.1:54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kabanda -d kabanda"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - kabanda_postgres:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  kabanda_postgres:

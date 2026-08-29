@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">КАБАНДА Capability Lab</title>
+  <rect width="512" height="512" rx="112" fill="#17251d"/>
+  <path d="M104 296c0-84 68-152 152-152s152 68 152 152" fill="none" stroke="#f3f0e8" stroke-width="42" stroke-linecap="round"/>
+  <circle cx="184" cy="282" r="30" fill="#e35d36"/>
+  <circle cx="328" cy="282" r="30" fill="#e35d36"/>
+  <path d="M196 362c32 26 88 26 120 0" fill="none" stroke="#f3f0e8" stroke-width="34" stroke-linecap="round"/>
+</svg>
+

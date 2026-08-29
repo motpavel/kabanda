@@ -1,0 +1,10 @@
+node_modules/
+dist/
+apps/pwa/dev-dist/
+.DS_Store
+*.local
+.env
+coverage/
+playwright-report/
+test-results/
+.playwright-cli/
