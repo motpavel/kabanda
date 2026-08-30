@@ -45,6 +45,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Начать рейд' }).click()
 
   await expect(page.getByText('fresh', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { acceptedSampleCount: number } } }>(
       page,
