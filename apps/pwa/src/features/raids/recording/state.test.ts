@@ -31,13 +31,18 @@ describe('route recorder truth', () => {
     })).toBe('stale')
   })
 
-  it('keeps exactly one primary action and defers updates while recording is unsafe', () => {
+  it('keeps exactly one primary action and defers updates only while recording is unsafe', () => {
     expect(selectActivePrimaryAction('stale', true)).toBe('recover')
     expect(selectActivePrimaryAction('fresh', true)).toBe('server')
     expect(selectActivePrimaryAction('fresh', false)).toBeNull()
     expect(shouldDeferServiceWorkerUpdate('fresh')).toBe(true)
     expect(shouldDeferServiceWorkerUpdate('stale')).toBe(true)
+    expect(shouldDeferServiceWorkerUpdate('standby')).toBe(true)
+    expect(shouldDeferServiceWorkerUpdate('recovering')).toBe(true)
+    expect(shouldDeferServiceWorkerUpdate('waiting')).toBe(true)
     expect(shouldDeferServiceWorkerUpdate('paused')).toBe(false)
-    expect(shouldDeferServiceWorkerUpdate('paused', 1)).toBe(true)
+    expect(shouldDeferServiceWorkerUpdate('ineligible')).toBe(false)
+    expect(shouldDeferServiceWorkerUpdate('blocked')).toBe(false)
+    expect(shouldDeferServiceWorkerUpdate('error')).toBe(false)
   })
 })

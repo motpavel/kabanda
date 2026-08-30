@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, ty
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
-import { getCurrentUser, loginWithPassword, logout, requestMagicLink } from '../auth/api'
+import { getCurrentUser, loginWithPassword, logout } from '../auth/api'
 import { InstallGuidance } from '../install/InstallGuidance'
 import { getIdentityLocalInventory, type IdentityLocalInventory } from '../offline/inventory'
 import {
@@ -57,24 +57,17 @@ export function KabandasPage() {
 }
 
 function SignInPanel() {
-  const [mode, setMode] = useState<'password' | 'email'>('password')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [email, setEmail] = useState('')
-  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [state, setState] = useState<'idle' | 'sending' | 'error'>('idle')
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (state === 'sending') return
     setState('sending')
     try {
-      if (mode === 'password') {
-        await loginWithPassword(username, password)
-        window.location.reload()
-      } else {
-        await requestMagicLink(email, appPath('app'))
-        setState('sent')
-      }
+      await loginWithPassword(username, password)
+      window.location.reload()
     } catch {
       setState('error')
     }
@@ -97,29 +90,17 @@ function SignInPanel() {
           <div className="kb-auth-heading">
             <span className="kb-inline-mark" aria-hidden="true"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /></span>
             <h2>Войти в Кабанду</h2>
-            <p>Используйте данные, которые придумали при вступлении по приглашению.</p>
           </div>
-          {state === 'sent' ? (
-            <p className="kb-notice" role="status">Ссылка отправлена. Откройте письмо на этом устройстве.</p>
-          ) : (
-            <form onSubmit={submit}>
-              {mode === 'password' ? <>
-                <label htmlFor="kb-username">Логин</label>
-                <input id="kb-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} />
-                <label htmlFor="kb-password">Пароль</label>
-                <input id="kb-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} />
-                <p className="kb-auth-help">Забыли пароль? Попросите администратора задать новый временный пароль.</p>
-              </> : <>
-                <label htmlFor="kb-email">Электронная почта</label>
-                <input id="kb-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-              </>}
-              <button className="kb-primary" type="submit" disabled={state === 'sending'}>
-                {state === 'sending' ? 'Входим…' : mode === 'password' ? 'Войти' : 'Получить ссылку'}
-              </button>
-            </form>
-          )}
+          <form onSubmit={submit}>
+            <label htmlFor="kb-username">Логин</label>
+            <input id="kb-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} />
+            <label htmlFor="kb-password">Пароль</label>
+            <input id="kb-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} />
+            <button className="kb-primary" type="submit" disabled={state === 'sending'}>
+              {state === 'sending' ? 'Входим…' : 'Войти'}
+            </button>
+          </form>
           {state === 'error' && <p className="kb-error" role="alert">Не удалось войти. Проверьте данные и повторите.</p>}
-          {state !== 'sent' && <button className="kb-text-action" type="button" onClick={() => { setMode((value) => value === 'password' ? 'email' : 'password'); setState('idle') }}>{mode === 'password' ? 'Войти через почту' : 'Войти по логину и паролю'}</button>}
         </div>
       </section>
     </main>

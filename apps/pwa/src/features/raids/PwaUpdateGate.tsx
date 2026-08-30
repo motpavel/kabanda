@@ -35,7 +35,12 @@ export function PwaUpdateGate() {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({ immediate: true })
-  const deferred = shouldDeferServiceWorkerUpdate(phase, Math.max(unsyncedCheckInWork, durableUnsyncedWork))
+  const deferred = shouldDeferServiceWorkerUpdate(phase)
+
+  useEffect(() => {
+    if (!needRefresh || deferred) return
+    void updateServiceWorker(true)
+  }, [deferred, needRefresh, updateServiceWorker])
 
   useEffect(() => {
     if (!alphaDiagnosticsEnabled()) return
@@ -119,8 +124,7 @@ export function PwaUpdateGate() {
   return (
     <aside className="pwa-update-gate" role="status" aria-live="polite">
       <strong>Доступна новая версия</strong>
-      <span>{deferred ? 'Обновление отложено, пока маршрут или локальные материалы не синхронизированы.' : 'Можно безопасно обновить приложение.'}</span>
-      {!deferred && <button type="button" onClick={() => void updateServiceWorker(true)}>Обновить</button>}
+      <span>{deferred ? 'Обновим автоматически после остановки активной записи маршрута.' : 'Безопасно обновляем приложение…'}</span>
     </aside>
   )
 }
