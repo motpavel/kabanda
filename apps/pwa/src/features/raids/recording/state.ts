@@ -51,6 +51,13 @@ export function shouldDeferServiceWorkerUpdate(
   return phase === 'standby' || phase === 'recovering' || phase === 'waiting' || phase === 'fresh' || phase === 'stale'
 }
 
+export function shouldShowServiceWorkerUpdateNotice(
+  needRefresh: boolean,
+  phase: RecorderPhase,
+): boolean {
+  return needRefresh && shouldDeferServiceWorkerUpdate(phase)
+}
+
 export function routeStatusLabel(phase: RecorderPhase): string {
   return {
     ineligible: 'Маршрут пишет выбранный навигатор',

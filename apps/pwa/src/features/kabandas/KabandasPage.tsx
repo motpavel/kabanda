@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, ty
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
+import { AppTabBar } from '../../app/AppTabBar'
+import { appSectionSearch, parseAppSection, type AppSection } from '../../app/navigation'
 import { getCurrentUser, loginWithPassword, logout } from '../auth/api'
 import { InstallGuidance } from '../install/InstallGuidance'
 import { getIdentityLocalInventory, type IdentityLocalInventory } from '../offline/inventory'
@@ -114,10 +116,17 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [showAccount, setShowAccount] = useState(false)
+  const [routeSearch, setRouteSearch] = useState(window.location.search)
   const [inventory, setInventory] = useState<IdentityLocalInventory | null>(null)
   const [accountState, setAccountState] = useState<'idle' | 'loading' | 'leaving' | 'error'>('idle')
-  const requestedKabandaId = new URLSearchParams(window.location.search).get('kabanda')
+  const activeSection = parseAppSection(routeSearch)
+  const requestedKabandaId = new URLSearchParams(routeSearch).get('kabanda')
+
+  useEffect(() => {
+    const restoreRoute = () => setRouteSearch(window.location.search)
+    window.addEventListener('popstate', restoreRoute)
+    return () => window.removeEventListener('popstate', restoreRoute)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -147,10 +156,21 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
       return next
     })
   }
-  const toggleAccount = () => {
-    const next = !showAccount
-    setShowAccount(next)
-    if (!next) return
+  const selectSection = (section: AppSection) => {
+    const search = appSectionSearch(window.location.search, section, selectedId)
+    window.history.pushState(null, '', `${appPath('app')}${search}`)
+    setRouteSearch(search)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const selectKabanda = (kabandaId: string) => {
+    setSelectedId(kabandaId)
+    const search = appSectionSearch(window.location.search, activeSection, kabandaId)
+    window.history.replaceState(null, '', `${appPath('app')}${search}`)
+    setRouteSearch(search)
+  }
+
+  useEffect(() => {
+    if (activeSection !== 'kabanda') return
     setAccountState('loading')
     void getIdentityLocalInventory(user.id)
       .then((value) => {
@@ -158,7 +178,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         setAccountState('idle')
       })
       .catch(() => setAccountState('error'))
-  }
+  }, [activeSection, user.id])
   const leaveAccount = async () => {
     if (accountState === 'leaving') return
     setAccountState('leaving')
@@ -178,17 +198,22 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
   }
 
   return (
-    <main className="kb-shell">
+    <main className="kb-shell kb-shell--tabs">
       <header className="kb-topbar">
         <Brand />
-        <button className="kb-identity kb-account-trigger" type="button" aria-expanded={showAccount} aria-controls="kb-account-panel" onClick={toggleAccount} aria-label={`Аккаунт: ${user.displayName ?? user.username ?? user.email ?? 'Участник'}`}>
+        <button className="kb-identity kb-account-trigger" type="button" aria-current={activeSection === 'kabanda' ? 'page' : undefined} onClick={() => selectSection('kabanda')} aria-label={`Открыть раздел «Кабанда». Аккаунт: ${user.displayName ?? user.username ?? user.email ?? 'Участник'}`}>
           <span>{(user.displayName ?? user.username ?? user.email ?? 'У').slice(0, 1).toUpperCase()}</span>
           <div><strong>{user.displayName ?? user.username ?? 'Участник'}</strong><small>{user.username ? `@${user.username}` : user.email}</small></div>
         </button>
       </header>
 
-      {showAccount && (
-        <section className="kb-card kb-account-panel" id="kb-account-panel" aria-label="Аккаунт">
+      <section className="kb-heading-row">
+        <div><h1>{sectionHeading(activeSection).title}</h1><p>{sectionHeading(activeSection).description}</p></div>
+        {activeSection === 'kabanda' && user.identityKind === 'verified' && <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>}
+      </section>
+
+      {activeSection === 'kabanda' && (
+        <section className="kb-card kb-account-panel kb-account-panel--inline" id="kb-account-panel" aria-label="Личный кабинет">
           <div><p className="kb-kicker">Аккаунт</p><h2>{user.displayName ?? user.username ?? 'Участник'}</h2><p className="kb-muted">{user.username ? `@${user.username}` : user.email}</p></div>
           {accountState === 'loading' ? <p className="kb-muted" aria-busy="true">Проверяем локальные данные…</p> : null}
           {inventory && inventory.activeRecordings > 0 ? (
@@ -205,21 +230,16 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         </section>
       )}
 
-      <section className="kb-heading-row">
-        <div><h1>Мои Кабанды</h1><p>Рейды, точки и люди — в одном месте.</p></div>
-        {user.identityKind === 'verified' && <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>}
-      </section>
+      {activeSection === 'home' && <InstallGuidance />}
 
-      <InstallGuidance />
-
-      {user.identityKind === 'verified' && showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
+      {activeSection === 'kabanda' && user.identityKind === 'verified' && showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
       {error && <p className="kb-error" role="alert">{error}</p>}
       {loading ? <p className="kb-muted" aria-busy="true">Загружаем команды…</p> : null}
 
-      {kabandas.length > 0 && (
+      {activeSection === 'kabanda' && kabandas.length > 0 && (
         <nav className="kb-tabs" aria-label="Кабанды">
           {kabandas.map((kabanda) => (
-            <button key={kabanda.id} type="button" aria-current={kabanda.id === selectedId ? 'page' : undefined} onClick={() => setSelectedId(kabanda.id)}>
+            <button key={kabanda.id} type="button" aria-current={kabanda.id === selectedId ? 'page' : undefined} onClick={() => selectKabanda(kabanda.id)}>
               <span>{kabanda.avatar} {kabanda.name}</span><small>{kabanda.memberCount} участников</small>
             </button>
           ))}
@@ -227,12 +247,22 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
       )}
 
       {!loading && kabandas.length === 0 && !showCreate && (
-        <section className="kb-card kb-empty"><h2>Пока без Кабанды</h2><p>Создайте первую команду или откройте приглашение, которое вам прислали.</p><button className="kb-primary" type="button" onClick={() => setShowCreate(true)}>Создать Кабанду</button></section>
+        <section className="kb-card kb-empty"><h2>Пока без Кабанды</h2><p>Создайте первую команду или откройте приглашение, которое вам прислали.</p>{user.identityKind === 'verified' ? <button className="kb-primary" type="button" onClick={() => { selectSection('kabanda'); setShowCreate(true) }}>Создать Кабанду</button> : null}</section>
       )}
 
-      {selected && !showCreate && <KabandaWorkspace key={selected.id} user={user} kabanda={selected} onLeft={() => removeKabandaLocally(selected.id)} />}
+      {selected && !showCreate && <KabandaWorkspace key={selected.id} user={user} kabanda={selected} section={activeSection} onLeft={() => removeKabandaLocally(selected.id)} />}
+      <AppTabBar active={activeSection} kabandaId={selectedId} onSelect={selectSection} />
     </main>
   )
+}
+
+function sectionHeading(section: AppSection): { title: string; description: string } {
+  return {
+    home: { title: 'Главная', description: 'Что важно вашей Кабанде прямо сейчас.' },
+    map: { title: 'Карта', description: 'Точки общего маршрута и ваш прогресс.' },
+    raids: { title: 'Рейды', description: 'Ближайшие поездки и завершённая история.' },
+    kabanda: { title: 'Моя Кабанда', description: 'Команда, приглашения и ваш аккаунт.' },
+  }[section]
 }
 
 function CreateKabandaForm({ onCreated, onCancel }: { onCreated: (kabanda: KabandaSummary) => void; onCancel: () => void }) {
@@ -261,7 +291,7 @@ function CreateKabandaForm({ onCreated, onCancel }: { onCreated: (kabanda: Kaban
   )
 }
 
-function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: KabandaSummary; onLeft: () => void }) {
+function KabandaWorkspace({ user, kabanda, section, onLeft }: { user: User; kabanda: KabandaSummary; section: AppSection; onLeft: () => void }) {
   const workspaceRef = useRef<HTMLElement>(null)
   const [members, setMembers] = useState<KabandaMember[]>([])
   const [points, setPoints] = useState<KabandaPoint[]>([])
@@ -334,42 +364,76 @@ function KabandaWorkspace({ user, kabanda, onLeft }: { user: User; kabanda: Kaba
       setMembershipAction(null)
     }
   }
-  return (
-    <section className="kb-workspace" ref={workspaceRef}>
-      <aside className="kb-journey-rail" data-journey-rail>
-        <div className="kb-summary">
-          <div><h2>{kabanda.name}</h2><p>{kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'}</p></div>
-          <p><strong>{points.filter(({ visitedByMe }) => visitedByMe).length}</strong><span>посещено лично</span></p>
-          <p><strong>{points.filter(({ visitedByTeam }) => visitedByTeam).length}</strong><span>посетила команда</span></p>
-        </div>
-        <p className="kb-route-statement" data-route-statement aria-label="Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.">
-          {'Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.'.split(' ').map((word, index) => <span key={`${word}-${index}`}>{word} </span>)}
-        </p>
-      </aside>
 
-      <div className="kb-workspace-main">
-        {staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
-        {message && <p className="kb-notice" role="status">{message}</p>}
+  const notices = <>
+    {staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
+    {message && <p className="kb-notice" role="status">{message}</p>}
+  </>
 
-        <div className="kb-command-grid">
-          <RaidHomeCard identityId={user.id} kabanda={kabanda} />
-          <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
-        </div>
+  const summary = <div className="kb-summary">
+    <div><h2>{kabanda.name}</h2><p>{kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'}</p></div>
+    <p><strong>{points.filter(({ visitedByMe }) => visitedByMe).length}</strong><span>посещено лично</span></p>
+    <p><strong>{points.filter(({ visitedByTeam }) => visitedByTeam).length}</strong><span>посетила команда</span></p>
+  </div>
 
-        <div className="kb-grid">
-        <section className="kb-card kb-points">
-          <div className="kb-section-head"><div><h2>Точки маршрута</h2><p>Выберите следующее место на карте или в списке.</p></div><div className="kb-view-switch" aria-label="Вид точек"><button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || providerState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button></div></div>
-          {providerState === 'checking' ? <p className="kb-muted" aria-busy="true">Получаем точки…</p> : null}
-          {presentation === 'map' && points.length > 0 ? <PointsMap points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
-          {(presentation === 'list' || points.length === 0) && <PointList points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} />}
-          {providerState === 'failed' && <p className="kb-muted">Карта недоступна — все точки показаны полноценным списком.</p>}
-        </section>
-
-        <aside className="kb-card kb-detail">
-          {selectedPoint ? <PointDetail point={selectedPoint} /> : <><h2>Выберите место</h2><p className="kb-muted">Откройте точку на карте или в списке, чтобы увидеть личный и командный статус.</p></>}
+  if (section === 'home') {
+    return (
+      <section className="kb-workspace" ref={workspaceRef}>
+        <aside className="kb-journey-rail" data-journey-rail>
+          {summary}
+          <p className="kb-route-statement" data-route-statement aria-label="Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.">
+            {'Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.'.split(' ').map((word, index) => <span key={`${word}-${index}`}>{word} </span>)}
+          </p>
         </aside>
+        <div className="kb-workspace-main">
+          {notices}
+          <RaidHomeCard identityId={user.id} kabanda={kabanda} />
         </div>
+      </section>
+    )
+  }
 
+  if (section === 'map') {
+    return (
+      <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
+        <div className="kb-workspace-main kb-workspace-main--wide">
+          {notices}
+          <div className="kb-grid">
+            <section className="kb-card kb-points">
+              <div className="kb-section-head"><div><h2>Точки маршрута</h2><p>Выберите следующее место на карте или в списке.</p></div><div className="kb-view-switch" aria-label="Вид точек"><button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || providerState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button><button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button></div></div>
+              {providerState === 'checking' ? <p className="kb-muted" aria-busy="true">Получаем точки…</p> : null}
+              {presentation === 'map' && points.length > 0 ? <PointsMap points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
+              {(presentation === 'list' || points.length === 0) && <PointList points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} />}
+              {providerState === 'failed' && <p className="kb-muted">Карта недоступна — все точки показаны полноценным списком.</p>}
+            </section>
+            <aside className="kb-card kb-detail">
+              {selectedPoint ? <PointDetail point={selectedPoint} /> : <><h2>Выберите место</h2><p className="kb-muted">Откройте точку на карте или в списке, чтобы увидеть личный и командный статус.</p></>}
+            </aside>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (section === 'raids') {
+    return (
+      <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
+        <div className="kb-workspace-main kb-workspace-main--wide">
+          {notices}
+          <div className="kb-command-grid">
+            <RaidHomeCard identityId={user.id} kabanda={kabanda} />
+            <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
+      <div className="kb-workspace-main kb-workspace-main--wide">
+        {notices}
+        <div className="kb-kabanda-overview">{summary}</div>
         <section className="kb-card kb-members-card">
           <div className="kb-section-head"><div><h2>Состав Кабанды</h2><p>Те, с кем вы делите маршрут и общую историю.</p></div><span className="kb-count">{members.length || kabanda.memberCount}</span></div>
           {kabanda.role === 'owner' && <InviteCreator kabandaId={kabanda.id} />}

@@ -4,6 +4,7 @@ import {
   isPersistedSampleFresh,
   selectActivePrimaryAction,
   shouldDeferServiceWorkerUpdate,
+  shouldShowServiceWorkerUpdateNotice,
 } from './state'
 
 describe('route recorder truth', () => {
@@ -44,5 +45,13 @@ describe('route recorder truth', () => {
     expect(shouldDeferServiceWorkerUpdate('ineligible')).toBe(false)
     expect(shouldDeferServiceWorkerUpdate('blocked')).toBe(false)
     expect(shouldDeferServiceWorkerUpdate('error')).toBe(false)
+  })
+
+  it('shows an update notice only when a real update must wait for route safety', () => {
+    expect(shouldShowServiceWorkerUpdateNotice(false, 'fresh')).toBe(false)
+    expect(shouldShowServiceWorkerUpdateNotice(true, 'ineligible')).toBe(false)
+    expect(shouldShowServiceWorkerUpdateNotice(true, 'paused')).toBe(false)
+    expect(shouldShowServiceWorkerUpdateNotice(true, 'fresh')).toBe(true)
+    expect(shouldShowServiceWorkerUpdateNotice(true, 'recovering')).toBe(true)
   })
 })

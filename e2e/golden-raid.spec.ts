@@ -11,8 +11,9 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await installSyntheticSession(context, identity)
   page.on('dialog', (dialog) => void dialog.accept())
   await page.goto('/app')
-  await expect(page.getByRole('heading', { name: 'Мои Кабанды' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
 
+  await page.getByRole('link', { name: 'Кабанда', exact: true }).click()
   await page.getByRole('button', { name: '+ Кабанда' }).click()
   await page.getByLabel('Название Кабанды').fill(`E2E Кабанда ${identity.runId.slice(0, 8)}`)
   const createKabandaResponse = page.waitForResponse((response) =>
@@ -21,8 +22,10 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const kabanda = (await (await createKabandaResponse).json()).kabanda as { id: string }
   fixture('attach-point', kabanda.id)
   await page.reload()
+  await page.getByRole('link', { name: 'Карта', exact: true }).click()
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
 
+  await page.getByRole('link', { name: 'Главная', exact: true }).click()
   await page.getByRole('button', { name: 'Создать рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
   await page.getByLabel('Название').fill('Синтетический золотой рейд')
@@ -84,6 +87,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(result.result.team).toMatchObject({ uniquePoints: 1, photos: 1 })
 
   await page.getByRole('link', { name: 'КАБАНДА — на главную' }).click()
+  await page.getByRole('link', { name: 'Рейды', exact: true }).click()
   await expect(page.getByRole('link', { name: /Синтетический золотой рейд/ })).toBeVisible()
   await page.getByRole('link', { name: /Синтетический золотой рейд/ }).click()
   await page.getByRole('link', { name: 'Запланировать следующий рейд' }).click()

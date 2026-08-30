@@ -11,7 +11,10 @@ import {
 } from '../../lib/diagnostics'
 import { reconcileAndCountUnsyncedCheckInWork } from '../checkins/store'
 import { readQueueDiagnosticSnapshots } from '../offline/diagnostics'
-import { shouldDeferServiceWorkerUpdate } from './recording/state'
+import {
+  shouldDeferServiceWorkerUpdate,
+  shouldShowServiceWorkerUpdateNotice,
+} from './recording/state'
 import { useRecordingRuntime } from './recording/runtime'
 import { reconcileAndCountUnsyncedRouteWork } from './recording/store'
 
@@ -120,11 +123,11 @@ export function PwaUpdateGate() {
     return () => navigator.serviceWorker.removeEventListener('controllerchange', changed)
   }, [durableUnsyncedWork, phase, unsyncedCheckInWork])
 
-  if (!needRefresh) return null
+  if (!shouldShowServiceWorkerUpdateNotice(needRefresh, phase)) return null
   return (
     <aside className="pwa-update-gate" role="status" aria-live="polite">
-      <strong>Доступна новая версия</strong>
-      <span>{deferred ? 'Обновим автоматически после остановки активной записи маршрута.' : 'Безопасно обновляем приложение…'}</span>
+      <strong>Обновление подождёт</strong>
+      <span>Установим новую версию автоматически после остановки активной записи маршрута.</span>
     </aside>
   )
 }

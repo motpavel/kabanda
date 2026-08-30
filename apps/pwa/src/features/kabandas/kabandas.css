@@ -188,7 +188,7 @@
 
 .kb-identity { display: flex; min-width: 0; gap: 10px; align-items: center; }
 .kb-shell .kb-account-trigger { min-height: 48px; border-color: transparent; padding: 4px 7px; text-align: left; background: transparent; }
-.kb-shell .kb-account-trigger[aria-expanded="true"] { border-color: var(--kb-line); background: var(--kb-surface-subtle); }
+.kb-shell .kb-account-trigger[aria-current="page"] { border-color: var(--kb-line); background: var(--kb-surface-subtle); }
 
 .kb-identity > span,
 .kb-members > li > span {
@@ -205,6 +205,49 @@
 
 .kb-identity div { display: grid; min-width: 0; }
 .kb-identity small { max-width: 230px; overflow: hidden; color: var(--kb-muted); text-overflow: ellipsis; }
+
+.kb-shell--tabs { padding-bottom: calc(128px + env(safe-area-inset-bottom)); }
+
+.kb-app-tabbar {
+  position: fixed;
+  z-index: 80;
+  right: 0;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: 0;
+  display: grid;
+  width: min(calc(100% - 32px), 680px);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 auto;
+  border: 1px solid rgb(73 78 72 / 14%);
+  border-radius: 18px;
+  padding: 6px;
+  background: rgb(255 253 248 / 94%);
+  box-shadow: 0 16px 42px rgb(32 41 35 / 20%);
+  backdrop-filter: blur(18px);
+}
+
+.kb-app-tabbar a {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  color: var(--kb-muted);
+  font-size: .82rem;
+  font-weight: 720;
+  text-decoration: none;
+  touch-action: manipulation;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.kb-app-tabbar a:active { transform: scale(.98); }
+.kb-app-tabbar a:focus-visible { outline: 3px solid #245fc4; outline-offset: 1px; }
+.kb-app-tabbar a[aria-current="page"] { color: var(--kb-ink); background: var(--kb-surface-subtle); }
+.kb-app-tabbar a[aria-current="page"] svg { color: var(--kb-brand); }
+.kb-app-tabbar svg { width: 24px; height: 24px; flex: 0 0 auto; }
 
 .kb-auth-shell { width: min(100%, 1400px); padding-block: max(18px, env(safe-area-inset-top)); overflow-x: hidden; }
 
@@ -332,6 +375,7 @@
 .kb-full { width: 100%; margin-top: 14px; }
 
 .kb-account-panel { display: grid; width: min(100%, 480px); gap: 10px; margin: -52px 0 28px auto; }
+.kb-account-panel--inline { margin: 0 0 24px auto; }
 .kb-account-panel h2,
 .kb-account-panel p { margin-bottom: 0; }
 
@@ -360,6 +404,8 @@
 .kb-workspace { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-flow: dense; gap: 20px; align-items: start; }
 .kb-journey-rail { display: grid; grid-column: span 4; gap: 26px; align-content: start; width: 100%; }
 .kb-workspace-main { display: grid; grid-column: span 8; gap: 20px; min-width: 0; }
+.kb-workspace-main--wide { grid-column: 1 / -1; }
+.kb-kabanda-overview { width: min(100%, 640px); }
 
 .kb-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; overflow: hidden; border-radius: 16px; padding: 24px; color: #fff; background: var(--kb-ink); }
 .kb-summary > div { grid-column: 1 / -1; }
@@ -440,6 +486,14 @@
 
 @media (max-width: 860px) {
   .kb-shell { padding-inline: 18px; }
+  .kb-app-tabbar {
+    bottom: 0;
+    width: 100%;
+    border-width: 1px 0 0;
+    border-radius: 18px 18px 0 0;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+  }
+  .kb-app-tabbar a { min-height: 58px; flex-direction: column; gap: 2px; font-size: .7rem; }
   .kb-auth-layout { min-height: auto; grid-template-columns: 1fr; }
   .kb-login-visual { min-height: 520px; height: min(68svh, 720px); }
   .kb-login-visual::after { border-right: 0; border-bottom: 1px solid rgb(32 41 35 / 16%); }
@@ -458,6 +512,7 @@
   .kb-topbar { top: max(6px, env(safe-area-inset-top)); margin-bottom: 46px; }
   .kb-identity div { display: none; }
   .kb-account-panel { margin-top: -34px; }
+  .kb-account-panel--inline { width: 100%; margin-top: 0; }
   .kb-heading-row { align-items: stretch; flex-direction: column; }
   .kb-heading-row > button { width: 100%; }
   .kb-heading-row h1 { font-size: 2.65rem; }
