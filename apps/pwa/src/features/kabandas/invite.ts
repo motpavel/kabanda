@@ -1,3 +1,5 @@
+import { ApiError } from '../../lib/http'
+
 export interface InviteLocation {
   hash: string
   pathname: string
@@ -31,4 +33,18 @@ export async function inviteAcceptanceKey(continuation: string): Promise<string>
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   const hex = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('')
   return `invite-${hex}`
+}
+
+export type InviteAcceptanceFailure =
+  | 'registration-unavailable'
+  | 'auth-required'
+  | 'invite-invalid'
+  | 'retryable'
+
+export function classifyInviteAcceptanceFailure(error: unknown): InviteAcceptanceFailure {
+  if (!(error instanceof ApiError)) return 'retryable'
+  if (error.code === 'REGISTRATION_UNAVAILABLE') return 'registration-unavailable'
+  if (error.code === 'INVITE_INVALID') return 'invite-invalid'
+  if (error.status === 401) return 'auth-required'
+  return 'retryable'
 }

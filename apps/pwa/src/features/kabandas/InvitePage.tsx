@@ -3,7 +3,11 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError } from '../../lib/http'
 import { acceptInvite, previewInvite } from './api'
 import { appPath } from '../../lib/paths'
-import { consumeInviteFragment, inviteAcceptanceKey } from './invite'
+import {
+  classifyInviteAcceptanceFailure,
+  consumeInviteFragment,
+  inviteAcceptanceKey,
+} from './invite'
 import type { InvitePreview } from './types'
 import './kabandas.css'
 
@@ -60,14 +64,26 @@ export function InvitePage() {
       window.history.replaceState(null, '', appPath('invite'))
       window.location.assign(appPath(`app?kabanda=${encodeURIComponent(kabanda.id)}`))
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'REGISTRATION_UNAVAILABLE') {
-        setAcceptError('Не удалось использовать этот логин. Выберите другой.')
-        setState('ready')
-      } else if (error instanceof ApiError && error.status === 401) {
-        setNeedsAuth(true)
-        setState('ready')
-      } else {
-        setState('invalid')
+      switch (classifyInviteAcceptanceFailure(error)) {
+        case 'registration-unavailable':
+          setAcceptError('Не удалось использовать этот логин. Выберите другой.')
+          setState('ready')
+          break
+        case 'auth-required':
+          setNeedsAuth(true)
+          setState('ready')
+          break
+        case 'invite-invalid':
+          setState('invalid')
+          break
+        case 'retryable':
+          setAcceptError(
+            error instanceof ApiError && error.code === 'ALPHA_ACCESS_CAP_REACHED'
+              ? 'Все места тестовой версии заняты. Обратитесь к администратору.'
+              : 'Не удалось завершить регистрацию. Ссылка сохранена — проверьте связь и попробуйте ещё раз.',
+          )
+          setState('ready')
+          break
       }
     }
   }
