@@ -486,6 +486,16 @@
     border-radius: 0;
     box-shadow: none;
   }
+  .kb-invite-layout {
+    height: auto;
+    min-height: 100svh;
+    grid-template-rows: auto auto;
+  }
+  .kb-invite-layout .kb-auth-story { min-height: 285px; }
+  .kb-invite-layout .kb-auth-form {
+    align-content: start;
+    padding-block: 24px max(20px, env(safe-area-inset-bottom));
+  }
   .kb-login-visual { min-height: 0; height: auto; }
   .kb-login-visual::after {
     inset: auto 0 0;
