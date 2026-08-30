@@ -283,6 +283,7 @@
 
 .kb-inline-mark img { width: 100%; height: 100%; object-fit: cover; }
 .kb-auth-form form { display: grid; }
+.kb-auth-help { margin: 8px 0 0; color: var(--kb-muted); font-size: .82rem; line-height: 1.45; }
 .kb-auth-form .kb-primary,
 .kb-full { width: 100%; margin-top: 18px; }
 

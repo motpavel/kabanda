@@ -189,6 +189,32 @@ restricted operator evidence без email, invite/session tokens и коорди
 `ALPHA_ACCESS_CONFIRMATION='REVOKE:<exact-email>'`. Публичное evidence хранит только bounded counts и grant
 UUID, без email и токенов.
 
+Для invite identity пароль не читается из базы и не восстанавливается: оператор задаёт новый пароль.
+`credential-reset.js` принимает точный логин, exact database/build/migration context и по умолчанию только
+показывает bounded dry-run. Apply требует буквального `RESET:<exact-login>`, читает новый пароль только из
+stdin, записывает новый salted scrypt hash и удаляет все серверные sessions этой identity. Пароль, логин и
+hash не попадают в JSON-отчёт.
+
+```bash
+CREDENTIAL_COMMAND=reset \
+CREDENTIAL_USERNAME='<exact-login>' \
+ALPHA_EXPECTED_DATABASE='kabanda_preview' \
+ALPHA_EXPECTED_API_BUILD="${API_BUILD_ID}" \
+node "${release}/apps/api/dist/credential-reset.js"
+
+read -rsp 'Новый временный пароль: ' credential_password
+printf '\n'
+printf '%s' "${credential_password}" | \
+  CREDENTIAL_COMMAND=reset \
+  CREDENTIAL_USERNAME='<exact-login>' \
+  CREDENTIAL_APPLY=true \
+  CREDENTIAL_CONFIRMATION='RESET:<exact-login>' \
+  ALPHA_EXPECTED_DATABASE='kabanda_preview' \
+  ALPHA_EXPECTED_API_BUILD="${API_BUILD_ID}" \
+  node "${release}/apps/api/dist/credential-reset.js"
+unset credential_password
+```
+
 Readiness проверяет PostgreSQL, PostGIS и exact последнюю миграцию. Production запросы с чужим host,
 не-HTTPS proxy context или чужим `Origin` отклоняются fail-closed.
 

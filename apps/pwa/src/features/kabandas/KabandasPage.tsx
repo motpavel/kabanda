@@ -105,6 +105,7 @@ function SignInPanel() {
                 <input id="kb-username" autoComplete="username" required minLength={3} maxLength={32} value={username} onChange={(event) => setUsername(event.target.value)} />
                 <label htmlFor="kb-password">Пароль</label>
                 <input id="kb-password" type="password" autoComplete="current-password" required minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} />
+                <p className="kb-auth-help">Забыли пароль? Попросите администратора задать новый временный пароль.</p>
               </> : <>
                 <label htmlFor="kb-email">Электронная почта</label>
                 <input id="kb-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />

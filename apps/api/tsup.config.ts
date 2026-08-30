@@ -7,6 +7,7 @@ export default defineConfig({
     'import-alpha': 'src/import-alpha.ts',
     'alpha-access': 'src/alpha-access-cli.ts',
     'alpha-rollback': 'src/alpha-rollback-cli.ts',
+    'credential-reset': 'src/credential-reset-cli.ts',
   },
   format: ['esm'],
   platform: 'node',

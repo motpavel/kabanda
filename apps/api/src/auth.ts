@@ -231,25 +231,42 @@ export class DatabaseAuthService implements AuthService {
   }
 
   async loginWithPassword(username: string, password: string): Promise<VerifiedSession | null> {
-    const result = await this.pool.query<UserRow>(
-      `SELECT id, email, username, identity_kind, display_name, avatar_url, password_hash
-       FROM users
-       WHERE username = $1 AND identity_kind = 'invite'`,
-      [username],
-    )
-    const row = result.rows[0]
-    if (!(await verifyPassword(password, row?.password_hash ?? null)) || !row) return null
-    if (
-      this.config.ALPHA_ACCESS_MODE === 'enforced' &&
-      !(await isAlphaUserAccessGranted(this.pool, row.id))
-    ) return null
-    const rawSessionToken = randomBytes(32).toString('base64url')
-    await this.pool.query(
-      `INSERT INTO auth_sessions (token_hash, user_id, expires_at)
-       VALUES ($1, $2, now() + ($3 * interval '1 day'))`,
-      [hashToken(rawSessionToken), row.id, this.config.SESSION_TTL_DAYS],
-    )
-    return { rawToken: rawSessionToken, returnTo: '/', user: toUser(row) }
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query<UserRow>(
+        `SELECT id, email, username, identity_kind, display_name, avatar_url, password_hash
+         FROM users
+         WHERE username = $1 AND identity_kind = 'invite'
+         FOR SHARE`,
+        [username],
+      )
+      const row = result.rows[0]
+      if (!(await verifyPassword(password, row?.password_hash ?? null)) || !row) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      if (
+        this.config.ALPHA_ACCESS_MODE === 'enforced' &&
+        !(await isAlphaUserAccessGranted(client, row.id))
+      ) {
+        await client.query('ROLLBACK')
+        return null
+      }
+      const rawSessionToken = randomBytes(32).toString('base64url')
+      await client.query(
+        `INSERT INTO auth_sessions (token_hash, user_id, expires_at)
+         VALUES ($1, $2, now() + ($3 * interval '1 day'))`,
+        [hashToken(rawSessionToken), row.id, this.config.SESSION_TTL_DAYS],
+      )
+      await client.query('COMMIT')
+      return { rawToken: rawSessionToken, returnTo: '/', user: toUser(row) }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async getUser(rawSessionToken: string): Promise<User | null> {
