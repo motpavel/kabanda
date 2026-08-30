@@ -14,6 +14,8 @@ const point: KabandaPoint = {
   verificationStatus: 'source_checked',
   visitedByMe: true,
   visitedByTeam: true,
+  visitedByMeCount: 2,
+  visitedByTeamCount: 5,
 }
 
 describe('identity-bound point projection', () => {

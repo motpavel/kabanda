@@ -20,7 +20,13 @@ function isPoint(value: unknown): value is KabandaPoint {
       point.verificationStatus === 'field_verified' ||
       point.verificationStatus === 'rejected') &&
     typeof point.visitedByMe === 'boolean' &&
-    typeof point.visitedByTeam === 'boolean'
+    typeof point.visitedByTeam === 'boolean' &&
+    typeof point.visitedByMeCount === 'number' &&
+    typeof point.visitedByTeamCount === 'number' &&
+    Number.isInteger(point.visitedByMeCount) &&
+    Number.isInteger(point.visitedByTeamCount) &&
+    point.visitedByMeCount >= 0 &&
+    point.visitedByTeamCount >= point.visitedByMeCount
   )
 }
 

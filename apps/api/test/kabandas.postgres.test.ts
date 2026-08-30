@@ -326,6 +326,43 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 
+  it('returns personal and team visit counts for every point', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('visit-counts')
+    const imported = await service!.importManifest(
+      ownerId,
+      kabanda.id,
+      'visit-counts-v1',
+      'f'.repeat(64),
+      'Ижевск visit counts',
+      manifest,
+    )
+    const memberId = await user('visit-counts-member@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'accept-visit-counts-member')
+
+    const pointId = (await service!.listPoints(ownerId, imported.collectionId, bounds, 100)).points[0]!
+      .id as string
+    await service!.recordVisit(ownerId, kabanda.id, pointId, 'visit-counts-owner-1')
+    await service!.recordVisit(ownerId, kabanda.id, pointId, 'visit-counts-owner-2')
+    await service!.recordVisit(memberId, kabanda.id, pointId, 'visit-counts-member-1')
+
+    const ownerPoint = (await service!.listPoints(ownerId, imported.collectionId, bounds, 100)).points[0]
+    const memberPoint = (await service!.listPoints(memberId, imported.collectionId, bounds, 100)).points[0]
+    expect(ownerPoint).toMatchObject({
+      visitedByMe: true,
+      visitedByTeam: true,
+      visitedByMeCount: 2,
+      visitedByTeamCount: 3,
+    })
+    expect(memberPoint).toMatchObject({
+      visitedByMe: true,
+      visitedByTeam: true,
+      visitedByMeCount: 1,
+      visitedByTeamCount: 3,
+    })
+  })
+
   it('replays one alpha import and keeps point IDs and visit history stable across rename/archive', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('import')
     const [first, replay] = await Promise.all([

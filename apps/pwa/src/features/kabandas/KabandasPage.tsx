@@ -565,5 +565,18 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
 }
 
 function PointDetail({ point }: { point: KabandaPoint }) {
-  return <><h2>{point.name}</h2><p className="kb-point-place">Ижевск</p></>
+  const times = (count: number) => {
+    const lastTwo = count % 100
+    if (lastTwo >= 11 && lastTwo <= 14) return 'раз'
+    const last = count % 10
+    return last >= 2 && last <= 4 ? 'раза' : 'раз'
+  }
+  return <>
+    <h2>{point.name}</h2>
+    <p className="kb-point-place">Ижевск</p>
+    <div className="kb-point-visits" aria-label="Посещения точки">
+      <p aria-label={`Вы посетили эту точку ${point.visitedByMeCount} ${times(point.visitedByMeCount)}`}><span>Вы</span><strong>{point.visitedByMeCount}</strong><small>{times(point.visitedByMeCount)}</small></p>
+      <p aria-label={`Команда посетила эту точку ${point.visitedByTeamCount} ${times(point.visitedByTeamCount)}`}><span>Команда</span><strong>{point.visitedByTeamCount}</strong><small>{times(point.visitedByTeamCount)}</small></p>
+    </div>
+  </>
 }

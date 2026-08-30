@@ -23,6 +23,8 @@ export interface KabandaPoint {
   verificationStatus: 'source_checked' | 'field_verified' | 'rejected'
   visitedByMe: boolean
   visitedByTeam: boolean
+  visitedByMeCount: number
+  visitedByTeamCount: number
 }
 
 export interface InvitePreview {

@@ -531,6 +531,12 @@
 }
 .kb-point-sheet h2 { margin: 0; font-size: 1.08rem; line-height: 1.22; letter-spacing: -.015em; }
 .kb-point-place { margin: 5px 0 0; color: var(--kb-muted); font-size: .82rem; }
+.kb-point-visits { display: flex; gap: 18px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--kb-line); }
+.kb-point-visits p { display: flex; gap: 6px; align-items: baseline; margin: 0; color: var(--kb-muted); font-size: .78rem; }
+.kb-point-visits strong { color: var(--kb-text); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.kb-point-visits span,
+.kb-point-visits small { white-space: nowrap; }
+.kb-point-visits small { font-size: inherit; }
 .kb-shell .kb-point-sheet-close {
   position: absolute;
   top: 10px;

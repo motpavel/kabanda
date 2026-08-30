@@ -79,8 +79,8 @@ type PointRow = {
   latitude: number
   longitude: number
   verification_status: ManifestPoint['verificationStatus']
-  visited_by_me: boolean
-  visited_by_team: boolean
+  visited_by_me_count: number
+  visited_by_team_count: number
 }
 
 const summarySelect = `
@@ -590,11 +590,11 @@ export class DatabaseKabandaService implements KabandaService {
       `SELECT p.id, p.stable_key, p.name,
          ST_Y(p.location)::float8 AS latitude, ST_X(p.location)::float8 AS longitude,
          p.verification_status,
-         EXISTS (SELECT 1 FROM point_visits mine
+         (SELECT COUNT(*)::int FROM point_visits mine
            WHERE mine.kabanda_id = c.kabanda_id AND mine.point_id = p.id AND mine.user_id = $1)
-           AS visited_by_me,
-         EXISTS (SELECT 1 FROM point_visits team
-           WHERE team.kabanda_id = c.kabanda_id AND team.point_id = p.id) AS visited_by_team
+           AS visited_by_me_count,
+         (SELECT COUNT(*)::int FROM point_visits team
+           WHERE team.kabanda_id = c.kabanda_id AND team.point_id = p.id) AS visited_by_team_count
        FROM point_collections c
        JOIN kabanda_memberships member
          ON member.kabanda_id = c.kabanda_id AND member.user_id = $1 AND member.removed_at IS NULL
@@ -634,8 +634,10 @@ export class DatabaseKabandaService implements KabandaService {
         latitude: row.latitude,
         longitude: row.longitude,
         verificationStatus: row.verification_status,
-        visitedByMe: row.visited_by_me,
-        visitedByTeam: row.visited_by_team,
+        visitedByMe: row.visited_by_me_count > 0,
+        visitedByTeam: row.visited_by_team_count > 0,
+        visitedByMeCount: row.visited_by_me_count,
+        visitedByTeamCount: row.visited_by_team_count,
       })),
       nextCursor: null,
     }
