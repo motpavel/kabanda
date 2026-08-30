@@ -76,7 +76,7 @@ function SignInPanel() {
   return (
     <main className="kb-shell kb-center kb-auth-shell">
       <section className="kb-auth-layout kb-login-layout">
-        <div className="kb-login-visual" aria-hidden="true">
+        <div className="kb-login-visual">
           <img
             src={appPath('brand/kabanda-login-riders.jpg')}
             alt=""
@@ -85,6 +85,7 @@ function SignInPanel() {
             decoding="async"
             fetchPriority="high"
           />
+          <p>Город — ваш общий маршрут.</p>
         </div>
         <div className="kb-auth-form">
           <div className="kb-auth-heading">
