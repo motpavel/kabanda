@@ -5,7 +5,12 @@ import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
-import { appSectionSearch, parseAppSection, type AppSection } from '../../app/navigation'
+import {
+  appSectionSearch,
+  parseAppSection,
+  resolveSelectedKabandaId,
+  type AppSection,
+} from '../../app/navigation'
 import { getCurrentUser, loginWithPassword, logout } from '../auth/api'
 import { InstallGuidance } from '../install/InstallGuidance'
 import { getIdentityLocalInventory, type IdentityLocalInventory } from '../offline/inventory'
@@ -134,7 +139,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
       .then((items) => {
         if (!active) return
         setKabandas(items)
-        setSelectedId((current) => current ?? items.find(({ id }) => id === requestedKabandaId)?.id ?? items[0]?.id ?? null)
+        setSelectedId((current) => resolveSelectedKabandaId(items.map(({ id }) => id), requestedKabandaId, current))
       })
       .catch(() => active && setError('Не удалось загрузить Кабанды.'))
       .finally(() => active && setLoading(false))

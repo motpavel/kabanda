@@ -22,3 +22,13 @@ export function appSectionSearch(
   const query = params.toString()
   return query ? `?${query}` : ''
 }
+
+export function resolveSelectedKabandaId(
+  availableIds: readonly string[],
+  requestedId: string | null,
+  currentId: string | null,
+): string | null {
+  if (requestedId && availableIds.includes(requestedId)) return requestedId
+  if (currentId && availableIds.includes(currentId)) return currentId
+  return availableIds[0] ?? null
+}
