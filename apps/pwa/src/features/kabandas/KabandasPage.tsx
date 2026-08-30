@@ -82,14 +82,17 @@ function SignInPanel() {
 
   return (
     <main className="kb-shell kb-center kb-auth-shell">
-      <section className="kb-auth-layout">
-        <aside className="kb-auth-story" aria-label="О приложении">
-          <Brand />
-          <div>
-            <h1>Город — ваш общий маршрут.</h1>
-          </div>
-          <p className="kb-auth-footnote">Закрытые маршруты и фотографии остаются внутри вашей Кабанды.</p>
-        </aside>
+      <section className="kb-auth-layout kb-login-layout">
+        <div className="kb-login-visual" aria-hidden="true">
+          <img
+            src={appPath('brand/kabanda-login-riders.jpg')}
+            alt=""
+            width="907"
+            height="1734"
+            decoding="async"
+            fetchPriority="high"
+          />
+        </div>
         <div className="kb-auth-form">
           <div className="kb-auth-heading">
             <span className="kb-inline-mark" aria-hidden="true"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /></span>
