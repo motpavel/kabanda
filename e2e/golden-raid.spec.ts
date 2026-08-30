@@ -8,6 +8,8 @@ import {
 
 test('owner completes one canonical raid and opens the next raid form', async ({ context, page }) => {
   const identity = fixture<FixtureIdentity>('prepare')
+  const pageErrors: Error[] = []
+  page.on('pageerror', (error) => pageErrors.push(error))
   await installSyntheticSession(context, identity)
   page.on('dialog', (dialog) => void dialog.accept())
   await page.goto('/app')
@@ -87,7 +89,10 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(result.result.team).toMatchObject({ uniquePoints: 1, photos: 1 })
 
   await page.getByRole('link', { name: 'КАБАНДА — на главную' }).click()
+  await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Рейды' })).toBeVisible()
+  expect(pageErrors).toEqual([])
   await expect(page.getByRole('link', { name: /Синтетический золотой рейд/ })).toBeVisible()
   await page.getByRole('link', { name: /Синтетический золотой рейд/ }).click()
   await page.getByRole('link', { name: 'Запланировать следующий рейд' }).click()

@@ -402,7 +402,13 @@
 .kb-empty { padding-block: 56px; text-align: center; }
 
 .kb-workspace { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-flow: dense; gap: 20px; align-items: start; }
-.kb-journey-rail { display: grid; grid-column: span 4; gap: 26px; align-content: start; width: 100%; }
+.kb-journey-rail {
+  display: grid;
+  grid-column: span 4;
+  gap: 26px;
+  align-content: start;
+  width: 100%;
+}
 .kb-workspace-main { display: grid; grid-column: span 8; gap: 20px; min-width: 0; }
 .kb-workspace-main--wide { grid-column: 1 / -1; }
 .kb-kabanda-overview { width: min(100%, 640px); }
@@ -482,6 +488,13 @@
   .kb-workspace-main { grid-column: auto; }
   .kb-journey-rail { grid-template-columns: minmax(0, 1fr) minmax(240px, .55fr); align-items: center; }
   .kb-route-statement { max-width: 15ch; }
+}
+
+@media (min-width: 1101px) {
+  .kb-journey-rail {
+    position: sticky;
+    top: 24px;
+  }
 }
 
 @media (max-width: 860px) {
