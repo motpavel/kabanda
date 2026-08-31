@@ -202,7 +202,7 @@ function ActiveRaid() {
       <Metric icon="clock" label="в пути" value="1 ч 40 мин" />
       <Metric icon="route" label="длина" value="24,6 км" />
       <Metric icon="flag" label="чек-поинтов" value="15 точек" />
-      <div className="rdp-active__people" aria-label="12 активных участников из 20: Павел, мотор, Аня и ещё 9"><span className="rdp-mini-avatars" aria-hidden="true"><i>П</i><i>М</i><i>А</i><i>+9</i></span><span><dt>12</dt><dd>участников</dd></span></div>
+      <div className="rdp-active__people" aria-label="12 активных участников из 20: Павел, мотор, Аня и ещё 9"><Icon name="group" /><span><dt>12 / 20</dt><dd>участников</dd></span></div>
     </dl>
     <button className="rdp-active__cta" type="button"><Icon name="send" /> Вернуться в рейд</button>
   </article>

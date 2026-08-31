@@ -39,9 +39,7 @@
 .rdp-active__metrics span { min-width: 0; }
 .rdp-active__metrics dt { overflow: hidden; font-size: 11px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
 .rdp-active__metrics dd { margin: 1px 0 0; overflow: hidden; color: #b8b8bb; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.rdp-active__people { gap: 3px !important; }
-.rdp-mini-avatars { display: flex; width: 38px; flex: 0 0 38px; }
-.rdp-mini-avatars i { display: grid; width: 15px; height: 15px; margin-right: -5px; place-items: center; border: 1px solid #111; border-radius: 50%; color: #111; background: #fff; font-size: 6px; font-style: normal; font-weight: 750; }
+.rdp-active__people { gap: 5px !important; }
 .rdp-active__cta { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 11px; color: #fff; background: linear-gradient(135deg, #d62f2a, #c92d28); font-size: 17px; font-weight: 680; }
 .rdp-idle { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--rdp-line); border-radius: 17px; padding: 14px; }
 .rdp-idle > span { display: grid; width: 46px; height: 46px; place-items: center; border-radius: 50%; color: var(--rdp-red); background: #fff0ef; }
