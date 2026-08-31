@@ -69,7 +69,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(categorySelect).toHaveValue('stores')
   await expect(page.locator('.kb-map-marker--stores')).toHaveCount(177)
   const [categoryBox, viewSwitchBox] = await Promise.all([
-    categorySelect.boundingBox(),
+    page.locator('.kb-map-category').boundingBox(),
     page.locator('.kb-map-view-switch').boundingBox(),
   ])
   expect(categoryBox).not.toBeNull()
