@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import '@fontsource-variable/geist'
+import '@fontsource-variable/manrope'
 import { appPath } from '../../lib/paths'
 import {
   parseRaidsDesignScreen,
@@ -42,6 +42,24 @@ function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
 
 type ParticipantOrigin = 'quick' | 'route' | 'schedule'
 
+const routePreviewPoints = [
+  'Набережная Ижевского пруда',
+  'Летний сад и ротонда',
+  'Монумент дружбы народов',
+  'Площадь оружейников',
+  'Михайловская колонна',
+  'Северная набережная',
+  'Парк имени Кирова',
+  'Пешеходный мост',
+  'Смотровая у пруда',
+  'Улица Песочная',
+  'Северный сквер',
+  'Парк Космонавтов',
+  'Тихая велодорожка',
+  'Городская эспланада',
+  'Финиш у набережной',
+]
+
 function parseParticipantOrigin(value: string | null): ParticipantOrigin {
   return value === 'quick' || value === 'schedule' ? value : 'route'
 }
@@ -56,6 +74,7 @@ function updatePrototypeUrl(screen: RaidsDesignScreen, variant: RaidsDesignVaria
   else url.searchParams.delete('route')
   if (origin && (screen === 'participants' || screen === 'scheduled')) url.searchParams.set('origin', origin)
   else url.searchParams.delete('origin')
+  if (screen !== 'participants') url.searchParams.delete('participant')
   window.history.pushState({}, '', url)
 }
 
@@ -144,11 +163,11 @@ function RaidHub({ newButtonRef, onNew, onPreview, variant }: { newButtonRef: Re
           <h2 id="upcoming-heading">Предстоящие</h2>
           {upcomingEmpty ? <CompactEmpty icon="calendar" text="Пока ничего не запланировано" /> : <div className="rdp-list-card">
             {variant === 'upcoming-cases' ? <>
-              <UpcomingRow places="Открыть" subtitle="Сегодня, 31 августа · 19:00 · подтверждений пока нет" title="По Ленина — очень длинное название вечернего заезда" />
-              <UpcomingRow places="Начать" subtitle="Завтра, 1 сентября · 11:00 · 4 участника · можно начинать" title="Центр Ижевска" />
+              <UpcomingRow action="Открыть" avatars={[]} id="lenina-evening" places="0 заявок" subtitle="Понедельник, 31 августа · Сегодня · 19:00" title="По Ленина — очень длинное название вечернего заезда" />
+              <UpcomingRow action="Начать" id="city-center" places="4 едут" subtitle="Вторник, 1 сентября · Завтра · 11:00" title="Центр Ижевска" />
             </> : <>
-              <UpcomingRow places="7 мест" subtitle="Сегодня, 31 августа · 19:00 · 5 участников" title="По Ленина — вечерний заезд" />
-              <UpcomingRow places="8 мест" subtitle="Завтра, 1 сентября · 11:00 · 4 участника" title="Центр Ижевска" />
+              <UpcomingRow id="lenina-evening" places="7 мест" subtitle="Понедельник, 31 августа · Сегодня · 19:00" title="По Ленина — вечерний заезд" />
+              <UpcomingRow id="city-center" places="8 мест" subtitle="Вторник, 1 сентября · Завтра · 11:00" title="Центр Ижевска" />
             </>}
           </div>}
         </section>
@@ -163,8 +182,8 @@ function RaidHub({ newButtonRef, onNew, onPreview, variant }: { newButtonRef: Re
         <section aria-labelledby="history-heading" className="rdp-section rdp-section--history">
           <h2 id="history-heading">История</h2>
           {isEmpty ? <CompactEmpty icon="flag" text="Первый рейд ещё впереди" /> : <div className="rdp-list-card">
-            <HistoryRow meta="19,4 км · 14 точек" subtitle="17 мая 2025 · 10:30 · 1 ч 32 мин · Вы участвовали · 4 человека" title="Набережная кругом" />
-            <HistoryRow meta="22,7 км · 16 точек" subtitle="10 мая 2025 · 11:00 · 1 ч 48 мин · 5 участников" title="Индустриальный маршрут" />
+            <HistoryRow id="embankment-loop" meta="19,4 км · 14 точек" subtitle="17 мая 2025 · 10:30 · 1 ч 32 мин · Вы участвовали · 4 человека" title="Набережная кругом" />
+            <HistoryRow id="industrial-route" meta="22,7 км · 16 точек" subtitle="10 мая 2025 · 11:00 · 1 ч 48 мин · 5 участников" title="Индустриальный маршрут" />
           </div>}
         </section>
       </>}
@@ -197,20 +216,20 @@ function IdleRaid({ onNew }: { onNew: () => void }) {
   return <div className="rdp-idle"><span><Icon name="bike" size={28} /></span><div><h3>Сегодня ещё не катались</h3><p>Соберите Кабанду и начните новый рейд.</p></div><button onClick={onNew} type="button">Поехали</button></div>
 }
 
-function UpcomingRow({ places, subtitle, title }: { places: string; subtitle: string; title: string }) {
-  return <button className="rdp-row" type="button"><span className="rdp-row__icon"><Icon name="calendar" /></span><span className="rdp-row__copy"><strong>{title}</strong><small>{subtitle}</small></span><span className="rdp-row__badge">{places}</span><Icon name="chevron" size={19} /></button>
+function UpcomingRow({ action = 'Открыть', avatars = ['П', 'М', '+3'], id, places, subtitle, title }: { action?: string; avatars?: string[]; id: string; places: string; subtitle: string; title: string }) {
+  return <a aria-label={`${action}: ${title}`} className="rdp-row" href={`${appPath('app')}?tab=raids&raid=${id}`}><span className="rdp-row__icon"><Icon name="calendar" /></span><span className="rdp-row__copy"><strong>{title}</strong><small><span>{subtitle}</span>{avatars.length > 0 && <span aria-label={`${avatars.length > 2 ? '5' : avatars.length} участников`} className="rdp-row__avatars">{avatars.map((avatar) => <i aria-hidden="true" key={avatar}>{avatar}</i>)}</span>}</small></span><span className="rdp-row__action"><span className="rdp-row__badge">{places}</span><small>{action}</small><Icon name="chevron" size={19} /></span></a>
 }
 
-function HistoryRow({ meta, subtitle, title }: { meta: string; subtitle: string; title: string }) {
-  return <button className="rdp-row rdp-row--history" type="button"><span className="rdp-row__icon rdp-row__icon--history"><Icon name="flag" /></span><span className="rdp-row__copy"><strong>{title}</strong><small>{subtitle}</small></span><span className="rdp-row__meta">{meta}</span><Icon name="chevron" size={19} /></button>
+function HistoryRow({ id, meta, subtitle, title }: { id: string; meta: string; subtitle: string; title: string }) {
+  return <a aria-label={`Открыть результат: ${title}`} className="rdp-row rdp-row--history" href={`${appPath('app')}?tab=raids&raid=${id}`}><span className="rdp-row__icon rdp-row__icon--history"><Icon name="flag" /></span><span className="rdp-row__copy"><strong>{title}</strong><small>{subtitle}</small></span><span className="rdp-row__meta">{meta}</span><Icon name="chevron" size={19} /></a>
 }
 
 function RouteCard({ index, noCover = false, onOpen, route }: { index: number; noCover?: boolean; onOpen: () => void; route: RouteCardData }) {
-  return <a aria-label={`Открыть маршрут: ${route.title}`} className={`rdp-route-card rdp-route-card--${index + 1}`} href="?screen=preview" onClick={(event) => { event.preventDefault(); onOpen() }}>
+  return <a aria-label={`Открыть маршрут: ${route.title}. ${route.description}. ${route.distance}, около 2 часов, ${route.points} точек`} className={`rdp-route-card rdp-route-card--${index + 1}`} href={`?screen=preview&route=${route.id}`} onClick={(event) => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); onOpen() } }}>
     <span className={`rdp-route-card__visual${noCover ? ' rdp-route-card__visual--fallback' : ''}`}>
       {noCover ? <span className="rdp-route-fallback"><Icon name="route" size={34} /><small>Фото появится позже</small></span> : <img alt="" src={appPath(index === 1 ? 'brand/kabanda-login-riders.jpg' : 'brand/kabanda-team-cover.jpg')} style={{ objectPosition: route.imagePosition }} />}
       <span className="rdp-route-card__shade" />
-      <span className="rdp-route-card__copy"><strong>{route.title}</strong><small><span><Icon name="route" size={15} /> {route.distance}</span><span><Icon name="flag" size={15} /> {route.points} точек</span></small></span>
+      <span className="rdp-route-card__copy"><strong>{route.title}</strong><small><span><Icon name="route" size={12} /> {route.distance}</span><span><Icon name="clock" size={12} /> ~2ч</span><span><Icon name="flag" size={12} /> {route.points}</span></small></span>
     </span>
     <span className="rdp-route-card__more"><span>Подробнее</span><Icon name="chevron" size={17} /></span>
   </a>
@@ -234,7 +253,7 @@ function RoutePreview({ onBack, onRide, route, variant }: { onBack: () => void; 
       {partial && <div className="rdp-inline-alert rdp-inline-alert--warning" role="status"><strong>2 точки временно недоступны</strong><span>Перед стартом покажем актуальную последовательность.</span></div>}
       <dl><div><dt>{route.distance}</dt><dd>длина</dd></div><div><dt>{route.points}</dt><dd>точек</dd></div><div><dt>~ 2 ч</dt><dd>в пути</dd></div></dl>
       <div className="rdp-mini-map" aria-label="Схема маршрута" role="img"><svg viewBox="0 0 320 150"><path d="M18 120c55-8 52-72 107-62 40 7 48 64 99 38 27-14 34-45 77-58" /></svg><i /><i /><i /></div>
-      <details className="rdp-route-points" open><summary>Точки маршрута · {route.points}</summary><ol className="rdp-points"><li><Icon name="pin" />Набережная Ижевского пруда</li><li><Icon name="pin" />Летний сад и ротонда</li><li><Icon name="pin" />Северная часть города</li></ol></details>
+      <details className="rdp-route-points"><summary>Открыть {route.points} точек маршрута</summary><ol className="rdp-points">{routePreviewPoints.slice(0, route.points).map((point) => <li key={point}><Icon name="pin" />{point}</li>)}</ol></details>
     </section>
     <div className="rdp-sticky-action"><button disabled={unavailable} onClick={onRide} type="button"><Icon name="bike" /> {unavailable ? 'Маршрут недоступен' : 'Поехать по маршруту'}</button></div>
   </div>
@@ -253,14 +272,16 @@ function ScheduleRaid({ onBack, onContinue }: { onBack: () => void; onContinue: 
 
 function ParticipantPicker({ designState, onBack, onDone, origin, route }: { designState: ParticipantDesignState; onBack: () => void; onDone: () => void; origin: 'quick' | 'route' | 'schedule'; route: RouteCardData }) {
   const people = designState === 'long' ? longParticipantList : participants
+  const permissionDenied = designState === 'permission-error'
   const [selected, setSelected] = useState(() => new Set(['pavel', 'motor', 'lesha']))
   const [hasError, setHasError] = useState(designState === 'error')
   const [submitting, setSubmitting] = useState(false)
+  useEffect(() => setHasError(designState === 'error'), [designState])
   const toggle = (id: string) => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const submit = () => {
-    if (hasError) { setHasError(false); return }
     if (submitting) return
     setSubmitting(true)
+    if (hasError) setHasError(false)
     window.setTimeout(onDone, 350)
   }
   const source = origin === 'route' ? route.title : origin === 'schedule' ? 'Вечерний рейд · завтра в 19:00' : 'Свободный рейд · прямо сейчас'
@@ -268,14 +289,20 @@ function ParticipantPicker({ designState, onBack, onDone, origin, route }: { des
     <header className="rdp-subhead"><button aria-label="Назад" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Участники</strong><span /></header>
     <section className="rdp-participants__intro"><p className="rdp-eyebrow">{source}</p><h1>Кто сегодня едет?</h1><p>Отметьте участников и подтвердите состав перед стартом.</p></section>
     {hasError && <div className="rdp-inline-alert" role="alert"><strong>Не удалось создать рейд</strong><span>Выбор сохранён. Проверьте сеть и нажмите «Повторить».</span></div>}
-    <fieldset><legend>Состав Кабанды · {people.length}</legend>{people.map((person) => <label className={person.disabled ? 'rdp-participant--disabled' : undefined} key={person.id}><span className="rdp-avatar">{person.initial}</span><span><strong>{person.name}</strong><small>{person.role}</small></span><input checked={selected.has(person.id)} disabled={person.disabled} onChange={() => toggle(person.id)} type="checkbox" /></label>)}</fieldset>
-    <div className="rdp-sticky-action"><button disabled={selected.size === 0 || submitting} onClick={submit} type="button">{submitting ? 'Создаём рейд…' : hasError ? `Повторить · ${selected.size}` : `Поехали · ${selected.size}`}</button></div>
+    {permissionDenied && <div className="rdp-inline-alert" role="alert"><strong>Недостаточно прав</strong><span>Начать этот рейд может только вожак Кабанды.</span></div>}
+    <fieldset disabled={permissionDenied}><legend>Состав Кабанды · {people.length}</legend>{people.map((person) => <label className={person.disabled ? 'rdp-participant--disabled' : undefined} key={person.id}><span className="rdp-avatar">{person.initial}</span><span><strong>{person.name}</strong><small>{person.role}</small></span><input checked={selected.has(person.id)} disabled={person.disabled} onChange={() => toggle(person.id)} type="checkbox" /></label>)}</fieldset>
+    <div className="rdp-sticky-action"><button disabled={!permissionDenied && (selected.size === 0 || submitting)} onClick={permissionDenied ? onBack : submit} type="button">{permissionDenied ? 'Вернуться' : submitting ? 'Создаём рейд…' : hasError ? `Повторить · ${selected.size}` : `Поехали · ${selected.size}`}</button></div>
   </div>
 }
 
 function ScheduledSuccess({ onBack, origin, route }: { onBack: () => void; origin: ParticipantOrigin; route: RouteCardData }) {
   const planned = origin === 'schedule'
-  return <div className="rdp-page rdp-success"><span><Icon name="flag" size={34} /></span><p className="rdp-eyebrow">{planned ? 'РЕЙД ЗАПЛАНИРОВАН' : 'ЛОББИ ОТКРЫТО'}</p><h1>{planned ? 'Рейд запланирован' : 'Кабанда собирается'}</h1><p>{planned ? 'Вечерний рейд появился в предстоящих. Участники увидят его в Кабанде.' : `${route.title}: состав подтверждён, можно переходить в лобби и начинать.`}</p><button onClick={onBack} type="button">{planned ? 'Вернуться к рейдам' : 'Перейти в лобби'}</button></div>
+  const description = planned
+    ? 'Вечерний рейд появился в предстоящих. Участники увидят его в Кабанде.'
+    : origin === 'quick'
+      ? 'Свободный рейд создан. Три участника подтвердили состав — это уже открытое лобби.'
+      : `${route.title}: три участника подтвердили состав — это уже открытое лобби.`
+  return <div className="rdp-page rdp-success"><span><Icon name="flag" size={34} /></span><p className="rdp-eyebrow">{planned ? 'РЕЙД ЗАПЛАНИРОВАН' : 'ЛОББИ ОТКРЫТО'}</p><h1>{planned ? 'Рейд запланирован' : 'Кабанда собирается'}</h1><p>{description}</p><button onClick={onBack} type="button">Вернуться к рейдам</button></div>
 }
 
 function NewRaidSheet({ onClose, onQuick, onSchedule }: { onClose: () => void; onQuick: () => void; onSchedule: () => void }) {

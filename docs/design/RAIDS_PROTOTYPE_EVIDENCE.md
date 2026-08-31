@@ -26,13 +26,16 @@
 - `docs/design/evidence/raids-participants-430x900.png` — экран выбора участников.
 - `docs/design/evidence/raids-state-active-390x844.png` — активный рейд;
 - `docs/design/evidence/raids-state-idle-390x844.png` — компактное отсутствие активного рейда;
-- `docs/design/evidence/raids-state-loading-390x844.png` и `raids-state-empty-390x844.png` — skeleton и empty;
+- `docs/design/evidence/raids-state-loading-390x844.png`, `raids-state-empty-390x844.png` и `raids-state-upcoming-empty-390x844.png` — skeleton и empty;
+- `docs/design/evidence/raids-state-catalog-error-390x844.png` — изолированная ошибка каталога;
 - `docs/design/evidence/raids-state-offline-390x844.png` и `raids-state-fallback-390x844.png` — stale и отсутствующая обложка;
 - `docs/design/evidence/raids-upcoming-cases-390x844.png` — длинное имя, отсутствие подтверждений и доступный старт;
 - `docs/design/evidence/raids-sheet-new-390x844.png` — chooser;
-- `docs/design/evidence/raids-preview-390x844.png` и `raids-preview-archived-390x844.png` — normal/archived preview;
+- `docs/design/evidence/raids-preview-390x844.png`, `raids-preview-archived-390x844.png`, `raids-preview-partial-390x844.png` и `raids-preview-fallback-390x844.png` — normal/archived/partial/fallback preview;
 - `docs/design/evidence/raids-schedule-390x844.png` — планирование;
-- `docs/design/evidence/raids-participants-long-390x844.png` и `raids-participants-error-390x844.png` — 20 человек и retry error;
+- `docs/design/evidence/raids-participants-long-390x844.png`, `raids-participants-error-390x844.png` и `raids-participants-permission-390x844.png` — 20 человек, retry и permission error;
+- `docs/design/evidence/raids-result-lobby-390x844.png` и `raids-result-scheduled-390x844.png` — результаты быстрого старта и планирования;
+- `docs/design/evidence/raids-text-120-390x844.png` — smoke увеличенного текста;
 - `docs/design/evidence/raids-desktop-1440x900.png` — адаптивный desktop.
 
 Промежуточные изображения после итераций не хранятся в репозитории; в handoff оставлены только итоговые и проверочные кадры.
@@ -65,7 +68,7 @@
 6. disabled-участник недоступен, выбор сохраняется после server error, повторная отправка защищена состоянием submitting.
 7. быстрый старт заканчивается открытым lobby, планирование — состоянием `Рейд запланирован`.
 
-Также проверены прямые query-состояния `idle`, `loading`, `catalog-error`, `partial-error`, `empty`, `upcoming-empty`, `upcoming-cases`, `offline`, `fallback`, `archived`, participant `long/error`.
+Также проверены прямые query-состояния `idle`, `loading`, `catalog-error`, `partial-error`, `empty`, `upcoming-empty`, `upcoming-cases`, `offline`, `fallback`, `archived`, participant `long/error/permission-error`.
 
 Keyboard smoke: focus trap цикличен, Escape закрывает chooser, фокус возвращается на `Новый рейд`.
 
@@ -75,7 +78,9 @@ Keyboard smoke: focus trap цикличен, Escape закрывает chooser, 
 - `pnpm --filter @kabanda/pwa test`
 - `pnpm --filter @kabanda/pwa build`
 
-Unit tests фиксируют допустимые query states, полноту карточек маршрутов, 20 участников и disabled member. Последний прогон: 31 файл, 110 тестов — passed.
+Unit tests фиксируют допустимые query states, полноту карточек маршрутов, 20 участников и disabled member. После объединения с актуальной картой последний PWA-прогон: 32 файла, 111 тестов — passed. Полный `pnpm check` также включает domain, API, stand и data-validation тесты.
+
+Все финальные `*-390x844.png` имеют фактический размер 390×844 и PNG-кодирование; desktop evidence — 1440×900 PNG.
 
 ## Остался пользовательский acceptance
 

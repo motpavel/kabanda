@@ -33,6 +33,7 @@ describe('raids design prototype model', () => {
     expect(longParticipantList).toHaveLength(20)
     expect(longParticipantList.some((participant) => participant.disabled)).toBe(true)
     expect(parseParticipantDesignState('long')).toBe('long')
+    expect(parseParticipantDesignState('permission-error')).toBe('permission-error')
     expect(parseParticipantDesignState('unknown')).toBe('default')
   })
 })

@@ -11,7 +11,7 @@ export type RaidsDesignVariant =
   | 'fallback'
   | 'archived'
   | 'partial-error'
-export type ParticipantDesignState = 'default' | 'long' | 'error'
+export type ParticipantDesignState = 'default' | 'long' | 'error' | 'permission-error'
 
 export interface ParticipantData {
   id: string
@@ -35,7 +35,7 @@ export const raidsDesignVariants: RaidsDesignVariant[] = [
   'archived',
   'partial-error',
 ]
-export const participantDesignStates: ParticipantDesignState[] = ['default', 'long', 'error']
+export const participantDesignStates: ParticipantDesignState[] = ['default', 'long', 'error', 'permission-error']
 
 export function parseRaidsDesignScreen(value: string | null): RaidsDesignScreen {
   return raidsDesignScreens.includes(value as RaidsDesignScreen) ? value as RaidsDesignScreen : 'hub'

@@ -64,7 +64,8 @@ Section gap: 14 px
 Card radius: 15–18 px
 Primary control height: 44–50 px
 Bottom navigation: 72 px + safe area
-Font: Geist Variable
+Font: Manrope Variable
+Primary action: #D62F2A (контраст белого текста 4.88:1)
 ```
 
 ## State matrix
@@ -78,7 +79,7 @@ Font: Geist Variable
 | Hub | empty / offline stale | `variant=empty`, `variant=offline` |
 | Preview | normal / archived / partial error / fallback | `screen=preview`, дополнительно соответствующий `variant` |
 | Планирование | дата и время | `screen=schedule` |
-| Участники | default / 20 человек / retry error | `screen=participants`, `participant=long`, `participant=error` |
+| Участники | default / 20 человек / retry error / permission error | `screen=participants`, `participant=long`, `participant=error`, `participant=permission-error` |
 | Результат создания | lobby / scheduled | `screen=scheduled&origin=quick`, `screen=scheduled&origin=schedule` |
 | New raid | bottom sheet | кнопка `Новый рейд` |
 
@@ -106,8 +107,9 @@ Font: Geist Variable
 - финальный каталог — плотная горизонтальная лента как в утверждаемом референсе; вертикальный список и одиночная hero-карточка отклонены, потому что вытесняют историю ниже первого экрана;
 - route preview — отдельный routable экран, а не sheet: так последовательность точек помещается без вложенного скролла;
 - route template и реальный upcoming raid визуально разведены: изображение-каталог против компактной календарной строки;
+- upcoming и history являются ссылками; календарь/флаг служат стабильным fallback при отсутствии cover;
 - один `ParticipantPicker` используется для быстрого старта, маршрута и планирования;
-- route cards сохраняют плотность референса, а описание и примерная длительность раскрываются в preview;
+- route cards сохраняют плотность референса: расстояние, длительность и количество точек видны сразу, полное описание раскрывается в preview и входит в accessible name;
 - desktop использует те же четыре блока с сеткой 2 + 3 колонки, без отдельной информационной архитектуры.
 
 ## Ограничения дизайн-задачи
