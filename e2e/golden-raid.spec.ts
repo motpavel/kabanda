@@ -3,6 +3,7 @@ import {
   api,
   fixture,
   installSyntheticSession,
+  installYandexMapsMock,
   type FixtureIdentity,
 } from './support.js'
 
@@ -10,6 +11,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const identity = fixture<FixtureIdentity>('prepare')
   const pageErrors: Error[] = []
   page.on('pageerror', (error) => pageErrors.push(error))
+  await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
   page.on('dialog', (dialog) => void dialog.accept())
   await page.goto('/app')
@@ -67,12 +69,12 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
   const categorySelect = page.getByLabel('Категория точек')
   await expect(categorySelect).toHaveValue('stores')
-  await expect(page.locator('.kb-map-marker--stores')).toHaveCount(177)
+  await expect(page.locator('.kb-yandex-marker--stores')).toHaveCount(177)
   const geolocateButton = page.getByRole('button', { name: 'Определить моё местоположение' })
   await expect(geolocateButton).toBeEnabled()
   await geolocateButton.click()
   await expect(geolocateButton).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('.maplibregl-user-location-dot')).toBeVisible()
+  await expect(page.locator('.kb-yandex-user-location')).toBeVisible()
   const [categoryBox, viewSwitchBox] = await Promise.all([
     page.locator('.kb-map-category').boundingBox(),
     page.locator('.kb-map-view-switch').boundingBox(),
@@ -83,11 +85,11 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(Math.abs((categoryBox?.height ?? 0) - (viewSwitchBox?.height ?? 0))).toBeLessThanOrEqual(1)
   expect(Math.abs((categoryBox?.y ?? 0) - (viewSwitchBox?.y ?? 0))).toBeLessThanOrEqual(1)
   await categorySelect.selectOption('attractions')
-  await expect(page.locator('.kb-map-marker--stores')).toHaveCount(0)
+  await expect(page.locator('.kb-yandex-marker--stores')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
-  await expect(page.locator('.kb-map-marker--attractions')).toHaveCount(1)
+  await expect(page.locator('.kb-yandex-marker--attractions')).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Определить моё местоположение' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('.maplibregl-user-location-dot')).toBeVisible()
+  await expect(page.locator('.kb-yandex-user-location')).toBeVisible()
   await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()

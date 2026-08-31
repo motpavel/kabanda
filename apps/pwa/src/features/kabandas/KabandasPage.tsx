@@ -851,6 +851,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   const userMarkerRef = useRef<YandexPlacemark | null>(null)
   const viewRef = useRef<MapView>(INITIAL_MAP_VIEW)
   const [mapReady, setMapReady] = useState(false)
+  const [userLocated, setUserLocated] = useState(false)
   const [zoom, setZoom] = useState(INITIAL_MAP_VIEW.zoom)
   const [geolocationError, setGeolocationError] = useState<string | null>(() =>
     'geolocation' in navigator ? null : 'Геолокация недоступна на этом устройстве.',
@@ -986,8 +987,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         zIndex: 3,
       })
       map.geoObjects.add(userMarkerRef.current)
+      setUserLocated(true)
       updateLocation({ center: location, zoom: Math.max(viewRef.current.zoom, 15) }, 360)
     }, () => {
+      setUserLocated(false)
       setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
     }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 })
   }
@@ -1000,7 +1003,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         <button type="button" aria-label="Отдалить" disabled={!mapReady || zoom <= MIN_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.max(MIN_MAP_ZOOM, viewRef.current.zoom - 1) })}>−</button>
         <button type="button" aria-label="Вернуться к центру" disabled={!mapReady} onClick={() => updateLocation(INITIAL_MAP_VIEW, 360)}>⌖</button>
       </div>
-      <button className="kb-yandex-geolocate" type="button" aria-label="Определить моё местоположение" disabled={!mapReady} onClick={locateUser}><span aria-hidden="true">◎</span></button>
+      <button className="kb-yandex-geolocate" type="button" aria-label="Определить моё местоположение" aria-pressed={userLocated} disabled={!mapReady} onClick={locateUser}><span aria-hidden="true">◎</span></button>
     </div>
     {geolocationError ? <p className="kb-map-geolocation-error" role="alert">{geolocationError}</p> : null}
   </>

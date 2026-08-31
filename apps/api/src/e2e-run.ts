@@ -13,6 +13,7 @@ const environment = {
   APP_ORIGIN: 'http://127.0.0.1:4173',
   API_HOST: '127.0.0.1',
   API_PORT: '3000',
+  VITE_YANDEX_MAPS_API_KEY: 'kabanda-e2e-yandex-mock',
 }
 
 async function run(command: string, args: string[]): Promise<void> {
