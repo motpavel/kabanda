@@ -28,11 +28,13 @@ test('raids hub wraps routes into two columns and only shows joined upcoming rai
     expect(layout.boxes[2]!.y).toBeGreaterThanOrEqual(layout.boxes[0]!.bottom)
     expect(Math.abs(layout.boxes[2]!.x - layout.boxes[0]!.x)).toBeLessThanOrEqual(1)
     expect(documentWidth(layout.boxes)).toBeLessThanOrEqual(viewport.width)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
   }
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/prototype/raids?capture=1&variant=upcoming-cases')
   await expect(page.getByRole('heading', { name: 'Предстоящие' })).toBeVisible()
+  await expect(page.locator('section[aria-labelledby="upcoming-heading"] .rdp-row')).toHaveCount(2)
   await expect(page.getByText('Вы едете', { exact: true })).toHaveCount(2)
 
   const newRaidButton = page.getByRole('button', { name: /Новый рейд/ })

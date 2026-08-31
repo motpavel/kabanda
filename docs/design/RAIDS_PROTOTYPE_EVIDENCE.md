@@ -30,7 +30,7 @@
 - `docs/design/evidence/raids-state-loading-390x844.png`, `raids-state-empty-390x844.png` и `raids-state-upcoming-empty-390x844.png` — skeleton и empty;
 - `docs/design/evidence/raids-state-catalog-error-390x844.png` — изолированная ошибка каталога;
 - `docs/design/evidence/raids-state-offline-390x844.png` и `raids-state-fallback-390x844.png` — stale и отсутствующая обложка;
-- `docs/design/evidence/raids-upcoming-cases-390x844.png` — длинное имя, отсутствие подтверждений и доступный старт;
+- `docs/design/evidence/raids-upcoming-cases-390x844.png` — две предстоящие записи, на которые пользователь уже заявил участие;
 - `docs/design/evidence/raids-sheet-new-390x844.png` — chooser;
 - `docs/design/evidence/raids-preview-390x844.png`, `raids-preview-archived-390x844.png`, `raids-preview-partial-390x844.png` и `raids-preview-fallback-390x844.png` — normal/archived/partial/fallback preview;
 - `docs/design/evidence/raids-schedule-390x844.png` — планирование;
@@ -78,9 +78,11 @@ Keyboard smoke: focus trap цикличен, Escape закрывает chooser, 
 - `pnpm --filter @kabanda/pwa typecheck`
 - `pnpm --filter @kabanda/pwa test`
 - `pnpm --filter @kabanda/pwa build`
-- `pnpm exec playwright test e2e/raids-design.spec.ts --list`
+- `pnpm exec playwright test e2e/raids-design.spec.ts`
 
-Unit tests фиксируют допустимые query states, полноту карточек маршрутов, 20 участников и disabled member. Отдельный e2e-контракт проверяет 2×N layout на 320×568 и 390×844, отсутствие `Подробнее`, условный `Предстоящие`, 44×44 close target и возврат фокуса. После объединения с актуальной картой последний PWA-прогон: 32 файла, 111 тестов — passed. Полный `pnpm check` также включает domain, API, stand и data-validation тесты.
+Unit tests фиксируют допустимые query states, полноту карточек маршрутов, 20 участников и disabled member. Отдельный e2e-контракт проверяет 2×N layout на 320×568 и 390×844, отсутствие `Подробнее`, полный горизонтальный overflow страницы, условный `Предстоящие`, точное число записей пользователя, 44×44 close target и возврат фокуса. После объединения с актуальной картой последний PWA-прогон: 32 файла, 111 тестов — passed. Полный `pnpm check` также включает domain, API, stand и data-validation тесты.
+
+Полный GitHub Actions run [33446308864](https://github.com/motpavel/kabanda/actions/runs/33446308864) для SHA `158ccde651be0b1bfa584c7d62548519aa66354f` завершён успешно: `verify`, `postgres` и `e2e` — green; job `e2e` выполнил `pnpm test:e2e`, включая новый `raids-design.spec.ts`.
 
 Все финальные `*-390x844.png` имеют фактический размер 390×844 и PNG-кодирование; desktop evidence — 1440×900 PNG.
 
