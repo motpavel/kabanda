@@ -27,7 +27,7 @@ import {
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
 import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores'
-import { loadYandexMaps, type YandexMap, type YandexMapEntity, type YandexMapsRuntime } from './yandex-maps'
+import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
 import { getKabandaProgress } from '../results/api'
@@ -847,8 +847,8 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<YandexMap | null>(null)
   const runtimeRef = useRef<YandexMapsRuntime | null>(null)
-  const markersRef = useRef(new Map<string, { entity: YandexMapEntity; element: HTMLButtonElement }>())
-  const userMarkerRef = useRef<YandexMapEntity | null>(null)
+  const markersRef = useRef(new Map<string, { placemark: YandexPlacemark; point: MapPoint }>())
+  const userMarkerRef = useRef<YandexPlacemark | null>(null)
   const viewRef = useRef<MapView>(INITIAL_MAP_VIEW)
   const [mapReady, setMapReady] = useState(false)
   const [zoom, setZoom] = useState(INITIAL_MAP_VIEW.zoom)
@@ -865,30 +865,20 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
 
     void loadYandexMaps(apiKey).then((runtime) => {
       if (!active) return
-      const map = new runtime.YMap(container, {
-        location: INITIAL_MAP_VIEW,
-        behaviors: ['drag', 'scrollZoom', 'pinchZoom', 'dblClick'],
-        mode: 'vector',
-        zoomRange: { min: MIN_MAP_ZOOM, max: MAX_MAP_ZOOM },
-        zoomRounding: 'smooth',
+      const map = new runtime.Map(container, {
+        center: [INITIAL_MAP_VIEW.center[1], INITIAL_MAP_VIEW.center[0]],
+        zoom: INITIAL_MAP_VIEW.zoom,
+        controls: [],
+        behaviors: ['default', 'scrollZoom'],
+        type: 'yandex#map',
+      }, { suppressMapOpenBlock: true })
+      map.events.add('boundschange', (event) => {
+        const nextCenter = event.get('newCenter') as readonly [number, number] | undefined
+        const nextZoom = event.get('newZoom') as number | undefined
+        if (!nextCenter || nextZoom === undefined) return
+        viewRef.current = { center: [nextCenter[1], nextCenter[0]], zoom: nextZoom }
+        setZoom((current) => current === nextZoom ? current : nextZoom)
       })
-      map.addChild(new runtime.YMapDefaultSchemeLayer({
-        customization: [{
-          tags: { any: ['poi'] },
-          elements: 'label',
-          stylers: [{ visibility: 'off' }],
-        }],
-      }))
-      map.addChild(new runtime.YMapDefaultFeaturesLayer({ zIndex: 1800 }))
-      map.addChild(new runtime.YMapListener({
-        layer: 'any',
-        onUpdate: ({ location }) => {
-          if (!location) return
-          viewRef.current = { center: location.center, zoom: location.zoom }
-          const nextZoom = Math.round(location.zoom * 100) / 100
-          setZoom((current) => current === nextZoom ? current : nextZoom)
-        },
-      }))
       runtimeRef.current = runtime
       mapRef.current = map
       setMapReady(true)
@@ -913,34 +903,42 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     const runtime = runtimeRef.current
     if (!mapReady || !map || !runtime) return
 
-    for (const { entity } of markersRef.current.values()) map.removeChild(entity)
+    for (const { placemark } of markersRef.current.values()) map.geoObjects.remove(placemark)
     markersRef.current.clear()
 
+    const markerLayout = runtime.templateLayoutFactory.createClass(
+      '<button type="button" class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}" aria-pressed="{{ properties.selected }}"></button>',
+    )
+
     for (const point of points) {
-      const marker = document.createElement('button')
-      marker.type = 'button'
-      marker.dataset.pointId = point.id
-      marker.className = `kb-yandex-marker kb-yandex-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`
-      marker.setAttribute('aria-label', point.category === 'stores'
+      const selected = selectedId === point.id
+      const markerClass = `kb-yandex-marker kb-yandex-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selected ? ' selected' : ''}`
+      const ariaLabel = point.category === 'stores'
         ? `${point.name}. ${point.address}`
-        : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`)
-      marker.setAttribute('aria-pressed', String(selectedId === point.id))
-      marker.addEventListener('click', (event) => {
-        event.stopPropagation()
+        : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`
+      const placemark = new runtime.Placemark([point.latitude, point.longitude], {
+        markerClass,
+        ariaLabel,
+        selected: String(selected),
+      }, {
+        iconLayout: markerLayout,
+        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 14 },
+        hasBalloon: false,
+        hasHint: false,
+        openBalloonOnClick: false,
+        openHintOnHover: false,
+        zIndex: selected ? 2 : 1,
+      })
+      placemark.events.add('click', (event) => {
+        event.stopPropagation?.()
         onSelect(point.id)
       })
-      const entity = new runtime.YMapMarker({
-        coordinates: [point.longitude, point.latitude],
-        zIndex: selectedId === point.id ? 2 : 1,
-        blockEvents: true,
-        blockBehaviors: true,
-      }, marker)
-      markersRef.current.set(point.id, { entity, element: marker })
-      map.addChild(entity)
+      markersRef.current.set(point.id, { placemark, point })
+      map.geoObjects.add(placemark)
     }
 
     return () => {
-      for (const { entity } of markersRef.current.values()) map.removeChild(entity)
+      for (const { placemark } of markersRef.current.values()) map.geoObjects.remove(placemark)
       markersRef.current.clear()
     }
   }, [mapReady, onSelect, points])
@@ -948,13 +946,23 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   useEffect(() => {
     for (const [id, marker] of markersRef.current) {
       const selected = id === selectedId
-      marker.element.classList.toggle('selected', selected)
-      marker.element.setAttribute('aria-pressed', String(selected))
+      marker.placemark.properties.set('markerClass', `kb-yandex-marker kb-yandex-marker--${marker.point.category}${marker.point.visitedByMe ? ' visited' : ''}${selected ? ' selected' : ''}`)
+      marker.placemark.properties.set('selected', String(selected))
+      marker.placemark.options.set('zIndex', selected ? 2 : 1)
     }
   }, [selectedId])
 
   const updateLocation = (location: { center?: readonly [number, number]; zoom?: number }, duration = 260) => {
-    mapRef.current?.update({ location: { ...location, duration, easing: 'ease-in-out' } })
+    const map = mapRef.current
+    if (!map) return
+    if (location.center) {
+      map.setCenter([location.center[1], location.center[0]], location.zoom ?? viewRef.current.zoom, {
+        duration,
+        timingFunction: 'ease-in-out',
+      })
+      return
+    }
+    if (location.zoom !== undefined) map.setZoom(location.zoom, { duration })
   }
 
   const locateUser = () => {
@@ -968,12 +976,16 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       const map = mapRef.current
       const runtime = runtimeRef.current
       if (!map || !runtime) return
-      if (userMarkerRef.current) map.removeChild(userMarkerRef.current)
-      const marker = document.createElement('span')
-      marker.className = 'kb-yandex-user-location'
-      marker.setAttribute('aria-label', 'Моё местоположение')
-      userMarkerRef.current = new runtime.YMapMarker({ coordinates: location, zIndex: 3 }, marker)
-      map.addChild(userMarkerRef.current)
+      if (userMarkerRef.current) map.geoObjects.remove(userMarkerRef.current)
+      const userLayout = runtime.templateLayoutFactory.createClass('<span class="kb-yandex-user-location" aria-label="Моё местоположение"></span>')
+      userMarkerRef.current = new runtime.Placemark([location[1], location[0]], {}, {
+        iconLayout: userLayout,
+        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 14 },
+        hasBalloon: false,
+        hasHint: false,
+        zIndex: 3,
+      })
+      map.geoObjects.add(userMarkerRef.current)
       updateLocation({ center: location, zoom: Math.max(viewRef.current.zoom, 15) }, 360)
     }, () => {
       setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')

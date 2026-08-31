@@ -70,8 +70,8 @@ if (!asset.headers.get('cache-control')?.includes('immutable')) {
   throw new Error('hashed asset is not immutable')
 }
 const assetBody = await asset.text()
-if (!assetBody.includes('https://api-maps.yandex.ru/v3/')) {
-  throw new Error('PWA bundle does not contain Yandex Maps JavaScript API v3')
+if (!assetBody.includes('https://api-maps.yandex.ru/2.1/')) {
+  throw new Error('PWA bundle does not contain Yandex Maps JavaScript API 2.1')
 }
 if (assetBody.includes('https://yandex.ru/map-widget/v1/?ll=')) {
   throw new Error('PWA bundle still contains the legacy Yandex iframe map')
