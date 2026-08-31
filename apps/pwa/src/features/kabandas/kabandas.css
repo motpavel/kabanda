@@ -599,6 +599,177 @@
 .kb-text-action { display: block; min-height: 40px !important; margin-top: 10px; border: 0 !important; padding-inline: 0 !important; color: var(--kb-brand-hover) !important; background: transparent !important; box-shadow: none !important; }
 .kb-link-button { display: inline-flex; align-items: center; justify-content: center; border-color: var(--kb-brand); color: #fff; background: var(--kb-brand); text-decoration: none; }
 
+.kb-shell--team {
+  --kb-bg: #f7f7f5;
+  --kb-surface: #fff;
+  --kb-surface-subtle: #f4f3f1;
+  --kb-ink: #232a35;
+  --kb-muted: #6f7782;
+  --kb-line: #e7e5e1;
+  --kb-brand: #f05a4a;
+  --kb-brand-hover: #df4537;
+  width: min(100%, 1040px);
+  padding-inline: 18px;
+  background: var(--kb-bg);
+}
+
+.kb-shell--team .kb-topbar {
+  margin-bottom: 18px;
+  border-color: #ece9e4;
+  border-radius: 20px;
+  padding: 10px 12px 10px 14px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 8px 28px rgb(35 42 53 / 7%);
+}
+
+.kb-shell--team .kb-brand { gap: 11px; font-size: 1.05rem; }
+.kb-shell--team .kb-brand img { width: 42px; height: 42px; border-radius: 10px; object-fit: contain; }
+.kb-shell--team .kb-account-trigger[aria-current="page"] { border-color: transparent; background: transparent; }
+.kb-shell--team .kb-identity > span { width: 44px; height: 44px; background: #17201c; font-size: 1rem; }
+
+.kb-team-page-inner {
+  display: grid;
+  width: min(100%, 920px);
+  gap: 14px;
+  margin: 0 auto;
+}
+
+.kb-team-hero,
+.kb-team-panel {
+  border: 1px solid var(--kb-line);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(35 42 53 / 6%);
+}
+
+.kb-team-hero { overflow: visible; }
+.kb-team-cover {
+  aspect-ratio: 2.05 / 1;
+  overflow: hidden;
+  border-radius: 21px 21px 0 0;
+  background: #d5c4b1;
+}
+.kb-team-cover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+
+.kb-team-identity-row {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 20px;
+  border-bottom: 1px solid var(--kb-line);
+  padding: 18px 0;
+}
+.kb-team-identity-row h1 { margin: 0 0 9px; font-size: clamp(1.55rem, 3.2vw, 2.05rem); line-height: 1.08; }
+.kb-team-meta { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.kb-role-pill {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border-radius: 10px;
+  padding: 5px 11px;
+  color: #20251e;
+  background: #eff58d;
+  font-size: .82rem;
+  font-weight: 700;
+}
+.kb-member-count { display: inline-flex; gap: 7px; align-items: center; color: var(--kb-ink-soft); font-size: .9rem; font-weight: 560; }
+.kb-member-count svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+
+.kb-team-menu-wrap { position: relative; flex: 0 0 auto; }
+.kb-shell .kb-team-menu-trigger {
+  width: 50px;
+  min-height: 50px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--kb-ink);
+  background: #fff0ed;
+  font-size: 1.1rem;
+  letter-spacing: .08em;
+}
+.kb-team-menu {
+  position: absolute;
+  z-index: 35;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: min(280px, calc(100vw - 44px));
+  gap: 4px;
+  border: 1px solid var(--kb-line);
+  border-radius: 14px;
+  padding: 6px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgb(35 42 53 / 16%);
+}
+.kb-team-menu button { display: flex; gap: 9px; align-items: center; justify-content: flex-start; border: 0; text-align: left; box-shadow: none; }
+.kb-team-menu button[aria-current="page"] { background: #fff0ed; }
+.kb-team-menu button > span:last-child { display: grid; }
+.kb-team-menu small { color: var(--kb-muted); font-size: .72rem; font-weight: 500; }
+
+.kb-team-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 16px 20px 18px; }
+.kb-team-metric { display: flex; min-width: 0; gap: 11px; align-items: center; justify-content: center; padding: 0 13px; }
+.kb-team-metric + .kb-team-metric { border-left: 1px solid var(--kb-line); }
+.kb-team-metric > span,
+.kb-team-invite-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--kb-brand);
+  background: #fff0ed;
+}
+.kb-team-metric svg,
+.kb-team-invite-icon svg,
+.kb-invite-primary svg,
+.kb-switch-account svg,
+.kb-leave-team svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.9; }
+.kb-team-metric p { display: grid; min-width: 0; margin: 0; }
+.kb-team-metric strong { color: var(--kb-ink); font-size: 1.8rem; font-weight: 620; line-height: 1; font-variant-numeric: tabular-nums; }
+.kb-team-metric small { margin-top: 4px; color: var(--kb-ink); font-size: .76rem; font-weight: 570; white-space: nowrap; }
+
+.kb-team-panel { padding: 18px 20px; }
+.kb-team-panel-head { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.kb-team-panel-head h2,
+.kb-team-invite h2,
+.kb-team-account h2 { margin: 0; font-size: 1.25rem; }
+.kb-shell .kb-team-text-button { min-height: 40px; border: 0; padding-inline: 0; color: var(--kb-brand-hover); background: transparent; box-shadow: none; }
+
+.kb-team-members { margin: 0; padding: 0; list-style: none; }
+.kb-team-members li { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 12px 0; }
+.kb-team-members li + li { border-top: 1px solid var(--kb-line); }
+.kb-team-avatar { display: grid; width: 44px; height: 44px; overflow: hidden; place-items: center; border-radius: 50%; color: #fff; background: #17201c; font-size: 1rem; font-weight: 700; }
+.kb-team-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.kb-team-member-name { display: grid; min-width: 0; }
+.kb-team-member-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-team-member-name small { margin-top: 2px; color: var(--kb-muted); font-size: .78rem; font-weight: 500; }
+.kb-member-role { border-radius: 9px; padding: 6px 10px; color: var(--kb-muted); background: #f5f4f2; font-size: .74rem; font-weight: 650; }
+.kb-member-role.is-owner { color: #383c22; background: #eff58d; }
+.kb-shell .kb-member-remove { width: 36px; min-height: 36px; border: 0; border-radius: 50%; padding: 0; color: var(--kb-danger); background: #fff0ed; font-size: 1.1rem; }
+
+.kb-team-invite { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; }
+.kb-team-invite-copy p { max-width: 34ch; margin: 4px 0 0; color: var(--kb-muted); font-size: .84rem; line-height: 1.4; }
+.kb-shell .kb-invite-primary { display: inline-flex; gap: 8px; align-items: center; border-color: var(--kb-brand); color: #fff; background: var(--kb-brand); box-shadow: 0 7px 18px rgb(240 90 74 / 18%); }
+.kb-shell .kb-invite-primary svg { width: 20px; height: 20px; }
+.kb-team-invite-arrow { color: var(--kb-muted); font-size: 2rem; font-weight: 320; line-height: 1; }
+.kb-team-invite-note { grid-column: 2 / -1; margin-top: -6px; color: var(--kb-muted); font-size: .72rem; }
+.kb-team-invite-result { display: grid; grid-column: 2 / -1; width: 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 10px; border-top: 1px solid var(--kb-line); padding-top: 10px; }
+.kb-team-invite-result label { grid-column: 1 / -1; margin: 0; }
+.kb-team-invite-result small { align-self: center; color: var(--kb-muted); font-size: .72rem; }
+.kb-team-invite-result .kb-text-action { margin: 0; }
+
+.kb-team-account { display: grid; gap: 12px; }
+.kb-team-account-row { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.kb-team-account-row p { margin: 5px 0 0; color: var(--kb-ink); font-weight: 600; }
+.kb-shell .kb-switch-account { display: inline-flex; gap: 8px; align-items: center; background: #fff; }
+.kb-shell .kb-switch-account svg { width: 21px; height: 21px; color: var(--kb-muted); }
+.kb-shell .kb-leave-team { display: inline-flex; width: fit-content; min-height: 42px; gap: 8px; align-items: center; margin-top: 2px; border: 0; border-top: 1px solid var(--kb-line); border-radius: 0; padding: 14px 0 0; color: var(--kb-brand-hover); background: transparent; box-shadow: none; }
+.kb-shell .kb-leave-team svg { width: 21px; height: 21px; }
+.kb-shell--team .kb-app-tabbar a[aria-current="page"] { background: #fff0ed; }
+
 .kb-invite-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 24px 0; }
 .kb-invite-meta div { border-radius: 12px; padding: 12px; background: var(--kb-surface-subtle); }
 .kb-invite-meta dt { color: var(--kb-muted); font-size: .76rem; }
@@ -664,6 +835,45 @@
   .kb-install-guidance { grid-template-columns: 1fr; }
   .kb-install-guidance > button { width: 100%; }
   .kb-invite-meta { grid-template-columns: 1fr; }
+  .kb-shell--team { padding: max(10px, env(safe-area-inset-top)) 12px calc(82px + env(safe-area-inset-bottom)); }
+  .kb-shell--team .kb-topbar { top: max(6px, env(safe-area-inset-top)); margin-bottom: 14px; border-radius: 17px; padding: 7px 8px 7px 10px; }
+  .kb-shell--team .kb-brand { font-size: .96rem; }
+  .kb-shell--team .kb-brand img { width: 36px; height: 36px; }
+  .kb-shell--team .kb-identity > span { width: 38px; height: 38px; }
+  .kb-team-page-inner { gap: 12px; }
+  .kb-team-hero,
+  .kb-team-panel { border-radius: 18px; }
+  .kb-team-cover { aspect-ratio: 2.05 / 1; border-radius: 17px 17px 0 0; }
+  .kb-team-identity-row { margin-inline: 15px; padding: 15px 0; }
+  .kb-team-identity-row h1 { margin-bottom: 8px; font-size: 1.45rem; }
+  .kb-team-meta { gap: 8px 12px; }
+  .kb-role-pill { min-height: 29px; border-radius: 9px; padding: 4px 9px; font-size: .75rem; }
+  .kb-member-count { gap: 5px; font-size: .78rem; }
+  .kb-member-count svg { width: 18px; height: 18px; }
+  .kb-shell .kb-team-menu-trigger { width: 44px; min-height: 44px; }
+  .kb-team-stats { padding: 14px 8px 16px; }
+  .kb-team-metric { gap: 7px; padding-inline: 6px; }
+  .kb-team-metric > span { width: 38px; height: 38px; }
+  .kb-team-metric svg { width: 20px; height: 20px; }
+  .kb-team-metric strong { font-size: 1.45rem; }
+  .kb-team-metric small { font-size: .64rem; letter-spacing: -.01em; }
+  .kb-team-panel { padding: 15px; }
+  .kb-team-panel-head h2,
+  .kb-team-invite h2,
+  .kb-team-account h2 { font-size: 1.08rem; }
+  .kb-team-members li { gap: 8px; padding: 10px 0; }
+  .kb-team-avatar { width: 40px; height: 40px; }
+  .kb-member-role { padding: 5px 7px; font-size: .66rem; }
+  .kb-team-invite { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .kb-team-invite-icon { width: 44px; height: 44px; }
+  .kb-team-invite-copy p { font-size: .76rem; }
+  .kb-shell .kb-invite-primary { grid-column: 2 / -1; width: 100%; justify-content: center; }
+  .kb-team-invite-arrow { position: absolute; opacity: 0; pointer-events: none; }
+  .kb-team-invite-note,
+  .kb-team-invite-result { grid-column: 1 / -1; }
+  .kb-team-account-row { align-items: stretch; flex-direction: column; }
+  .kb-shell .kb-switch-account { width: 100%; justify-content: center; }
+  .kb-shell .kb-leave-team { width: 100%; }
 }
 
 @media (max-width: 480px) {

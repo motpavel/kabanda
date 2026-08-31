@@ -54,6 +54,7 @@ export default defineConfig({
         'pwa-512x512.png',
         'brand/kabanda-logo-reference.png',
         'brand/kabanda-login-riders.jpg',
+        'brand/kabanda-team-cover.jpg',
       ],
       manifest: {
         name: 'КАБАНДА',

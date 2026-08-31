@@ -28,7 +28,9 @@ import { choosePointPresentation, detectWebgl } from './map-state'
 import { loadMapLibre } from './maplibre'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
+import { getKabandaProgress } from '../results/api'
 import { RaidHistory } from '../results/RaidHistory'
+import type { KabandaProgress } from '../results/types'
 import type {
   KabandaMember,
   KabandaPoint,
@@ -203,37 +205,18 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
   }
 
   return (
-    <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}`}>
+    <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}${activeSection === 'kabanda' ? ' kb-shell--team' : ''}`}>
       <header className="kb-topbar">
         <Brand />
         <button className="kb-identity kb-account-trigger" type="button" aria-current={activeSection === 'kabanda' ? 'page' : undefined} onClick={() => selectSection('kabanda')} aria-label={`Открыть раздел «Кабанда». Аккаунт: ${user.displayName ?? user.username ?? user.email ?? 'Участник'}`}>
           <span>{(user.displayName ?? user.username ?? user.email ?? 'У').slice(0, 1).toUpperCase()}</span>
-          <div><strong>{user.displayName ?? user.username ?? 'Участник'}</strong><small>{user.username ? `@${user.username}` : user.email}</small></div>
+          {activeSection !== 'kabanda' && <div><strong>{user.displayName ?? user.username ?? 'Участник'}</strong><small>{user.username ? `@${user.username}` : user.email}</small></div>}
         </button>
       </header>
 
-      <section className="kb-heading-row">
+      {activeSection !== 'kabanda' && <section className="kb-heading-row">
         <div><h1>{sectionHeading(activeSection).title}</h1><p>{sectionHeading(activeSection).description}</p></div>
-        {activeSection === 'kabanda' && user.identityKind === 'verified' && <button type="button" onClick={() => setShowCreate((value) => !value)}>+ Кабанда</button>}
-      </section>
-
-      {activeSection === 'kabanda' && (
-        <section className="kb-card kb-account-panel kb-account-panel--inline" id="kb-account-panel" aria-label="Личный кабинет">
-          <div><p className="kb-kicker">Аккаунт</p><h2>{user.displayName ?? user.username ?? 'Участник'}</h2><p className="kb-muted">{user.username ? `@${user.username}` : user.email}</p></div>
-          {accountState === 'loading' ? <p className="kb-muted" aria-busy="true">Проверяем локальные данные…</p> : null}
-          {inventory && inventory.activeRecordings > 0 ? (
-            <p className="kb-error" role="alert">Сейчас записывается маршрут. Вернитесь в рейд и остановите запись перед сменой аккаунта.</p>
-          ) : inventory && inventory.total > 0 ? (
-            <p className="kb-notice" role="status">Локально осталось операций: {inventory.total}. Они сохранятся на устройстве и останутся привязаны только к этому аккаунту.</p>
-          ) : inventory ? (
-            <p className="kb-muted">Локальных операций, ожидающих синхронизацию, нет.</p>
-          ) : null}
-          {accountState === 'error' && <p className="kb-error" role="alert">Не удалось проверить данные или завершить выход. Проверьте соединение и повторите.</p>}
-          <button className="kb-danger-action" type="button" disabled={accountState === 'loading' || accountState === 'leaving' || (inventory?.activeRecordings ?? 0) > 0} onClick={() => void leaveAccount()}>
-            {accountState === 'leaving' ? 'Выходим…' : 'Выйти и сменить аккаунт'}
-          </button>
-        </section>
-      )}
+      </section>}
 
       {activeSection === 'home' && <InstallGuidance />}
 
@@ -241,21 +224,23 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
       {error && <p className="kb-error" role="alert">{error}</p>}
       {loading ? <p className="kb-muted" aria-busy="true">Загружаем команды…</p> : null}
 
-      {activeSection === 'kabanda' && kabandas.length > 0 && (
-        <nav className="kb-tabs" aria-label="Кабанды">
-          {kabandas.map((kabanda) => (
-            <button key={kabanda.id} type="button" aria-current={kabanda.id === selectedId ? 'page' : undefined} onClick={() => selectKabanda(kabanda.id)}>
-              <span>{kabanda.avatar} {kabanda.name}</span><small>{kabanda.memberCount} участников</small>
-            </button>
-          ))}
-        </nav>
-      )}
-
       {!loading && kabandas.length === 0 && !showCreate && (
         <section className="kb-card kb-empty"><h2>Пока без Кабанды</h2><p>Создайте первую команду или откройте приглашение, которое вам прислали.</p>{user.identityKind === 'verified' ? <button className="kb-primary" type="button" onClick={() => { selectSection('kabanda'); setShowCreate(true) }}>Создать Кабанду</button> : null}</section>
       )}
 
-      {selected && !showCreate && <KabandaWorkspace key={selected.id} user={user} kabanda={selected} section={activeSection} onLeft={() => removeKabandaLocally(selected.id)} />}
+      {selected && !showCreate && <KabandaWorkspace
+        key={selected.id}
+        user={user}
+        kabanda={selected}
+        kabandas={kabandas}
+        section={activeSection}
+        inventory={inventory}
+        accountState={accountState}
+        onCreateKabanda={() => setShowCreate(true)}
+        onLeft={() => removeKabandaLocally(selected.id)}
+        onSelectKabanda={selectKabanda}
+        onSwitchAccount={() => void leaveAccount()}
+      />}
       <AppTabBar active={activeSection} kabandaId={selectedId} onSelect={selectSection} />
     </main>
   )
@@ -296,16 +281,41 @@ function CreateKabandaForm({ onCreated, onCancel }: { onCreated: (kabanda: Kaban
   )
 }
 
-function KabandaWorkspace({ user, kabanda, section, onLeft }: { user: User; kabanda: KabandaSummary; section: AppSection; onLeft: () => void }) {
+function KabandaWorkspace({
+  user,
+  kabanda,
+  kabandas,
+  section,
+  inventory,
+  accountState,
+  onCreateKabanda,
+  onLeft,
+  onSelectKabanda,
+  onSwitchAccount,
+}: {
+  user: User
+  kabanda: KabandaSummary
+  kabandas: KabandaSummary[]
+  section: AppSection
+  inventory: IdentityLocalInventory | null
+  accountState: 'idle' | 'loading' | 'leaving' | 'error'
+  onCreateKabanda: () => void
+  onLeft: () => void
+  onSelectKabanda: (kabandaId: string) => void
+  onSwitchAccount: () => void
+}) {
   const workspaceRef = useRef<HTMLElement>(null)
   const [members, setMembers] = useState<KabandaMember[]>([])
   const [points, setPoints] = useState<KabandaPoint[]>([])
+  const [progress, setProgress] = useState<KabandaProgress | null>(null)
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [requestedView, setRequestedView] = useState<PointPresentation>('map')
   const [providerState, setProviderState] = useState<ProviderState>('checking')
   const [staleAt, setStaleAt] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [membershipAction, setMembershipAction] = useState<string | null>(null)
+  const [teamMenuOpen, setTeamMenuOpen] = useState(false)
+  const [showAllMembers, setShowAllMembers] = useState(false)
   const webglAvailable = useMemo(detectWebgl, [])
   const presentation = choosePointPresentation(requestedView, providerState, webglAvailable)
   useKabandaMotion(workspaceRef)
@@ -344,6 +354,17 @@ function KabandaWorkspace({ user, kabanda, section, onLeft }: { user: User; kaba
       active = false
     }
   }, [kabanda, user.id, webglAvailable])
+
+  useEffect(() => {
+    if (section !== 'kabanda') return
+    let active = true
+    void getKabandaProgress(kabanda.id)
+      .then((value) => active && setProgress(value))
+      .catch(() => active && setProgress(null))
+    return () => {
+      active = false
+    }
+  }, [kabanda.id, section])
 
   const selectedPoint = points.find(({ id }) => id === selectedPointId) ?? null
   const remove = async (member: KabandaMember) => {
@@ -440,23 +461,126 @@ function KabandaWorkspace({ user, kabanda, section, onLeft }: { user: User; kaba
     )
   }
 
+  const personalPoints = points.filter(({ visitedByMe }) => visitedByMe).length
+  const teamPoints = points.filter(({ visitedByTeam }) => visitedByTeam).length
+  const completedRaids = progress?.team.completedRaids ?? 0
+  const memberCount = members.length || kabanda.memberCount
+  const visibleMembers = showAllMembers ? members : members.slice(0, 2)
+  const roleLabel = kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'
+
   return (
-    <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
-      <div className="kb-workspace-main kb-workspace-main--wide">
+    <section className="kb-team-page" ref={workspaceRef}>
+      <div className="kb-team-page-inner">
         {notices}
-        <div className="kb-kabanda-overview">{summary}</div>
-        <section className="kb-card kb-members-card">
-          <div className="kb-section-head"><div><h2>Состав Кабанды</h2><p>Те, с кем вы делите маршрут и общую историю.</p></div><span className="kb-count">{members.length || kabanda.memberCount}</span></div>
-          {kabanda.role === 'owner' && <InviteCreator kabandaId={kabanda.id} />}
-          {members.length ? <ul className="kb-members">{members.map((member) => <li key={member.id}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Организатор' : 'Участник'}</small></div>{kabanda.role === 'owner' && member.role !== 'owner' && member.id !== user.id ? <button className="kb-member-action" type="button" disabled={membershipAction === member.id} onClick={() => remove(member)}>{membershipAction === member.id ? 'Удаляем…' : 'Удалить'}</button> : null}</li>)}</ul> : <p className="kb-muted">Состав пока не загрузился.</p>}
-          {kabanda.role === 'member' && <button className="kb-danger-action" type="button" disabled={membershipAction === 'me'} onClick={leave}>{membershipAction === 'me' ? 'Выходим…' : 'Выйти из Кабанды'}</button>}
+
+        <article className="kb-team-hero">
+          <div className="kb-team-cover">
+            <img
+              src={appPath('brand/kabanda-team-cover.jpg')}
+              alt="Кабаны на велосипедах едут вместе по городу"
+              width="1792"
+              height="896"
+              decoding="async"
+            />
+          </div>
+          <div className="kb-team-identity-row">
+            <div>
+              <h1>{kabanda.name}</h1>
+              <div className="kb-team-meta">
+                <span className="kb-role-pill">{roleLabel}</span>
+                <span className="kb-member-count"><TeamScreenIcon name="members" />{memberCount} {pluralizeMembers(memberCount)}</span>
+              </div>
+            </div>
+            <div className="kb-team-menu-wrap">
+              <button className="kb-team-menu-trigger" type="button" aria-label="Действия с Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}>•••</button>
+              {teamMenuOpen && (
+                <div className="kb-team-menu" role="menu">
+                  {kabandas.map((item) => (
+                    <button key={item.id} type="button" role="menuitem" aria-current={item.id === kabanda.id ? 'page' : undefined} onClick={() => { onSelectKabanda(item.id); setTeamMenuOpen(false) }}>
+                      <span>{item.avatar}</span><span>{item.name}<small>{item.memberCount} {pluralizeMembers(item.memberCount)}</small></span>
+                    </button>
+                  ))}
+                  {user.identityKind === 'verified' && <button type="button" role="menuitem" onClick={onCreateKabanda}>+ Создать Кабанду</button>}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="kb-team-stats" aria-label="Статистика Кабанды">
+            <TeamMetric icon="point" value={personalPoints} label="точек лично" />
+            <TeamMetric icon="members" value={teamPoints} label="точек команды" />
+            <TeamMetric icon="bike" value={completedRaids} label="рейдов" />
+          </div>
+        </article>
+
+        <section className="kb-team-panel kb-team-members-panel">
+          <div className="kb-team-panel-head">
+            <h2>Состав Кабанды</h2>
+            <button className="kb-team-text-button" type="button" onClick={() => setShowAllMembers((value) => !value)}>
+              {showAllMembers ? 'Свернуть' : 'Показать всех'}
+            </button>
+          </div>
+          {members.length ? (
+            <ul className="kb-team-members">
+              {visibleMembers.map((member) => (
+                <li key={member.id}>
+                  <span className="kb-team-avatar">
+                    {member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="kb-team-member-name"><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Организатор' : 'Участник'}</small></span>
+                  <span className={`kb-member-role${member.role === 'owner' ? ' is-owner' : ''}`}>{member.role === 'owner' ? 'Организатор' : 'Участник'}</span>
+                  {kabanda.role === 'owner' && member.role !== 'owner' && member.id !== user.id ? (
+                    <button className="kb-member-remove" type="button" aria-label={`Удалить ${member.displayName} из Кабанды`} disabled={membershipAction === member.id} onClick={() => remove(member)}>×</button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="kb-muted">Состав пока не загрузился.</p>}
+        </section>
+
+        <InviteCreator kabandaId={kabanda.id} canInvite={kabanda.role === 'owner'} />
+
+        <section className="kb-team-panel kb-team-account" aria-label="Аккаунт">
+          <div className="kb-team-account-row">
+            <div><h2>Аккаунт</h2><p>{user.username ? `@${user.username}` : user.email}</p></div>
+            <button className="kb-switch-account" type="button" disabled={accountState === 'loading' || accountState === 'leaving' || (inventory?.activeRecordings ?? 0) > 0} onClick={onSwitchAccount}>
+              <TeamScreenIcon name="logout" />{accountState === 'leaving' ? 'Выходим…' : 'Сменить аккаунт'}
+            </button>
+          </div>
+          {inventory && inventory.activeRecordings > 0 ? <p className="kb-error" role="alert">Остановите запись текущего рейда перед сменой аккаунта.</p> : null}
+          {accountState === 'error' ? <p className="kb-error" role="alert">Не удалось завершить выход. Проверьте соединение и повторите.</p> : null}
+          {kabanda.role === 'member' && (
+            <button className="kb-leave-team" type="button" disabled={membershipAction === 'me'} onClick={leave}>
+              <TeamScreenIcon name="logout" />{membershipAction === 'me' ? 'Выходим…' : 'Выйти из Кабанды'}
+            </button>
+          )}
         </section>
       </div>
     </section>
   )
 }
 
-function InviteCreator({ kabandaId }: { kabandaId: string }) {
+function pluralizeMembers(count: number) {
+  const mod100 = count % 100
+  const mod10 = count % 10
+  if (mod100 >= 11 && mod100 <= 14) return 'участников'
+  if (mod10 === 1) return 'участник'
+  if (mod10 >= 2 && mod10 <= 4) return 'участника'
+  return 'участников'
+}
+
+function TeamMetric({ icon, value, label }: { icon: 'point' | 'members' | 'bike'; value: number; label: string }) {
+  return <div className="kb-team-metric"><span><TeamScreenIcon name={icon} /></span><p><strong>{value}</strong><small>{label}</small></p></div>
+}
+
+function TeamScreenIcon({ name }: { name: 'point' | 'members' | 'bike' | 'invite' | 'logout' }) {
+  if (name === 'point') return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="2.5" /></svg>
+  if (name === 'members') return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 19v-1.5A4.5 4.5 0 0 1 8 13h2a4.5 4.5 0 0 1 4.5 4.5V19M14.5 14a4 4 0 0 1 6 3.5V19" /></svg>
+  if (name === 'bike') return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="3.5" /><circle cx="18" cy="17" r="3.5" /><path d="m6 17 4-7h4l4 7m-8-7 3 7H6m5-10h4" /></svg>
+  if (name === 'invite') return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></svg>
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M13 8l4 4-4 4M8 12h9" /></svg>
+}
+
+function InviteCreator({ kabandaId, canInvite }: { kabandaId: string; canInvite: boolean }) {
   const [state, setState] = useState<'idle' | 'creating' | 'ready' | 'error'>('idle')
   const [link, setLink] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
@@ -485,8 +609,27 @@ function InviteCreator({ kabandaId }: { kabandaId: string }) {
       setState('error')
     }
   }
-  if (!link) return <div className="kb-invite-create"><p className="kb-muted">Одноразовая ссылка не добавляет человека сама по себе — он увидит состав и явно подтвердит вход.</p><button type="button" onClick={create} disabled={state === 'creating'}>{state === 'creating' ? 'Создаём ссылку…' : state === 'error' ? 'Повторить создание ссылки' : 'Пригласить участника'}</button></div>
-  return <div className="kb-invite-create"><label htmlFor="invite-link">Одноразовое приглашение</label><div className="kb-copy-row"><input id="invite-link" readOnly value={link} /><button type="button" onClick={copy}>Скопировать</button></div>{expiresAt && <small>Действует до {new Date(expiresAt).toLocaleString('ru-RU')}</small>}<button className="kb-text-action" type="button" onClick={reset}>Создать другую ссылку</button></div>
+  return (
+    <section className="kb-team-panel kb-team-invite">
+      <span className="kb-team-invite-icon"><TeamScreenIcon name="invite" /></span>
+      <div className="kb-team-invite-copy"><h2>Приглашения</h2><p>Приглашайте друзей в Кабанду и катайтесь вместе.</p></div>
+      {!link ? (
+        <button className="kb-invite-primary" type="button" onClick={create} disabled={!canInvite || state === 'creating'} title={!canInvite ? 'Приглашения создаёт организатор Кабанды' : undefined}>
+          <TeamScreenIcon name="members" />{state === 'creating' ? 'Создаём ссылку…' : state === 'error' ? 'Повторить' : 'Пригласить участника'}
+        </button>
+      ) : <button className="kb-invite-primary" type="button" onClick={copy}><TeamScreenIcon name="invite" />Скопировать ссылку</button>}
+      <span className="kb-team-invite-arrow" aria-hidden="true">›</span>
+      {!canInvite ? <small className="kb-team-invite-note">Ссылку может создать организатор.</small> : null}
+      {link ? (
+        <div className="kb-team-invite-result">
+          <label htmlFor="invite-link">Одноразовое приглашение</label>
+          <input id="invite-link" readOnly value={link} />
+          {expiresAt && <small>Действует до {new Date(expiresAt).toLocaleString('ru-RU')}</small>}
+          <button className="kb-text-action" type="button" onClick={reset}>Создать другую ссылку</button>
+        </div>
+      ) : null}
+    </section>
+  )
 }
 
 function Brand() {
