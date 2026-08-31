@@ -1,6 +1,5 @@
 import '@fontsource-variable/manrope'
-import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
@@ -27,8 +26,8 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
-import { loadMapLibre } from './maplibre'
 import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores'
+import { loadYandexMaps, type YandexMap, type YandexMapEntity, type YandexMapsRuntime } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
 import { getKabandaProgress } from '../results/api'
@@ -835,9 +834,24 @@ function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint
   return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${point.visitedByMe ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 
-function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: Dispatch<SetStateAction<ProviderState>> }) {
+type MapView = {
+  center: readonly [number, number]
+  zoom: number
+}
+
+const INITIAL_MAP_VIEW: MapView = { center: [53.2045, 56.8528], zoom: 12 }
+const MIN_MAP_ZOOM = 10
+const MAX_MAP_ZOOM = 17
+
+function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const trackingRequestedRef = useRef(false)
+  const mapRef = useRef<YandexMap | null>(null)
+  const runtimeRef = useRef<YandexMapsRuntime | null>(null)
+  const markersRef = useRef(new Map<string, { entity: YandexMapEntity; element: HTMLButtonElement }>())
+  const userMarkerRef = useRef<YandexMapEntity | null>(null)
+  const viewRef = useRef<MapView>(INITIAL_MAP_VIEW)
+  const [mapReady, setMapReady] = useState(false)
+  const [zoom, setZoom] = useState(INITIAL_MAP_VIEW.zoom)
   const [geolocationError, setGeolocationError] = useState<string | null>(() =>
     'geolocation' in navigator ? null : 'Геолокация недоступна на этом устройстве.',
   )
@@ -845,96 +859,137 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    let destroyed = false
-    let teardown: (() => void) | undefined
-    const shouldResumeTracking = trackingRequestedRef.current
-    void loadMapLibre().then(({ GeolocateControl, Map, Marker }) => {
-      if (destroyed) return
-      const map = new Map({
-        container,
-        center: [53.2045, 56.8528],
-        zoom: 11.3,
-        minZoom: 10,
-        maxZoom: 18,
-        maxBounds: [[53.06, 56.74], [53.34, 56.95]],
-        locale: {
-          'GeolocateControl.FindMyLocation': 'Определить моё местоположение',
-          'GeolocateControl.LocationNotAvailable': 'Геолокация недоступна',
+    let active = true
+    const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
+    setProviderState('checking')
+
+    void loadYandexMaps(apiKey).then((runtime) => {
+      if (!active) return
+      const map = new runtime.YMap(container, {
+        location: INITIAL_MAP_VIEW,
+        behaviors: ['drag', 'scrollZoom', 'pinchZoom', 'dblClick'],
+        mode: 'vector',
+        zoomRange: { min: MIN_MAP_ZOOM, max: MAX_MAP_ZOOM },
+        zoomRounding: 'smooth',
+      })
+      map.addChild(new runtime.YMapDefaultSchemeLayer({
+        customization: [{
+          tags: { any: ['poi'] },
+          elements: 'label',
+          stylers: [{ visibility: 'off' }],
+        }],
+      }))
+      map.addChild(new runtime.YMapDefaultFeaturesLayer({ zIndex: 1800 }))
+      map.addChild(new runtime.YMapListener({
+        layer: 'any',
+        onUpdate: ({ location }) => {
+          if (!location) return
+          viewRef.current = { center: location.center, zoom: location.zoom }
+          const nextZoom = Math.round(location.zoom * 100) / 100
+          setZoom((current) => current === nextZoom ? current : nextZoom)
         },
-        style: {
-          version: 8,
-          sources: {
-            osm: {
-              type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256,
-              maxzoom: 19,
-              attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            },
-          },
-          layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-        },
-      })
-      map.on('error', () => !destroyed && setProviderState('failed'))
-      const geolocate = new GeolocateControl({
-        positionOptions: { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 },
-        fitBoundsOptions: { maxZoom: 16 },
-        trackUserLocation: true,
-        showAccuracyCircle: true,
-        showUserLocation: true,
-      })
-      geolocate.on('trackuserlocationstart', () => {
-        if (destroyed) return
-        trackingRequestedRef.current = true
-        setGeolocationError(null)
-      })
-      geolocate.on('trackuserlocationend', () => {
-        if (!destroyed) trackingRequestedRef.current = false
-      })
-      geolocate.on('geolocate', () => !destroyed && setGeolocationError(null))
-      geolocate.on('error', () => {
-        if (!destroyed) setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
-      })
-      map.addControl(geolocate, 'bottom-left')
-      map.once('load', () => {
-        if (destroyed) return
-        setProviderState('ready')
-        if (shouldResumeTracking) geolocate.trigger()
-      })
-      const markers = points.map((point) => {
-        const element = document.createElement('button')
-        element.type = 'button'
-        element.dataset.pointId = point.id
-        element.className = `kb-map-marker kb-map-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`
-        element.setAttribute('aria-label', point.category === 'stores'
-          ? `${point.name}. ${point.address}`
-          : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`)
-        element.setAttribute('aria-pressed', String(selectedId === point.id))
-        element.addEventListener('click', () => onSelect(point.id))
-        return new Marker({ element }).setLngLat([point.longitude, point.latitude]).addTo(map)
-      })
-      teardown = () => {
-        markers.forEach((marker) => marker.remove())
-        map.remove()
-      }
-    }).catch(() => !destroyed && setProviderState('failed'))
+      }))
+      runtimeRef.current = runtime
+      mapRef.current = map
+      setMapReady(true)
+      setProviderState('ready')
+    }).catch(() => {
+      if (active) setProviderState('failed')
+    })
+
     return () => {
-      destroyed = true
-      teardown?.()
+      active = false
+      setMapReady(false)
+      markersRef.current.clear()
+      userMarkerRef.current = null
+      runtimeRef.current = null
+      mapRef.current?.destroy()
+      mapRef.current = null
     }
-  }, [onSelect, points, setProviderState])
+  }, [setProviderState])
 
   useEffect(() => {
-    const markers = containerRef.current?.querySelectorAll<HTMLElement>('[data-point-id]') ?? []
-    markers.forEach((marker) => {
-      const selected = marker.dataset.pointId === selectedId
-      marker.classList.toggle('selected', selected)
-      marker.setAttribute('aria-pressed', String(selected))
-    })
+    const map = mapRef.current
+    const runtime = runtimeRef.current
+    if (!mapReady || !map || !runtime) return
+
+    for (const { entity } of markersRef.current.values()) map.removeChild(entity)
+    markersRef.current.clear()
+
+    for (const point of points) {
+      const marker = document.createElement('button')
+      marker.type = 'button'
+      marker.dataset.pointId = point.id
+      marker.className = `kb-yandex-marker kb-yandex-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`
+      marker.setAttribute('aria-label', point.category === 'stores'
+        ? `${point.name}. ${point.address}`
+        : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`)
+      marker.setAttribute('aria-pressed', String(selectedId === point.id))
+      marker.addEventListener('click', (event) => {
+        event.stopPropagation()
+        onSelect(point.id)
+      })
+      const entity = new runtime.YMapMarker({
+        coordinates: [point.longitude, point.latitude],
+        zIndex: selectedId === point.id ? 2 : 1,
+        blockEvents: true,
+        blockBehaviors: true,
+      }, marker)
+      markersRef.current.set(point.id, { entity, element: marker })
+      map.addChild(entity)
+    }
+
+    return () => {
+      for (const { entity } of markersRef.current.values()) map.removeChild(entity)
+      markersRef.current.clear()
+    }
+  }, [mapReady, onSelect, points])
+
+  useEffect(() => {
+    for (const [id, marker] of markersRef.current) {
+      const selected = id === selectedId
+      marker.element.classList.toggle('selected', selected)
+      marker.element.setAttribute('aria-pressed', String(selected))
+    }
   }, [selectedId])
 
+  const updateLocation = (location: { center?: readonly [number, number]; zoom?: number }, duration = 260) => {
+    mapRef.current?.update({ location: { ...location, duration, easing: 'ease-in-out' } })
+  }
+
+  const locateUser = () => {
+    if (!('geolocation' in navigator)) {
+      setGeolocationError('Геолокация недоступна на этом устройстве.')
+      return
+    }
+    setGeolocationError(null)
+    navigator.geolocation.getCurrentPosition((position) => {
+      const location = [position.coords.longitude, position.coords.latitude] as const
+      const map = mapRef.current
+      const runtime = runtimeRef.current
+      if (!map || !runtime) return
+      if (userMarkerRef.current) map.removeChild(userMarkerRef.current)
+      const marker = document.createElement('span')
+      marker.className = 'kb-yandex-user-location'
+      marker.setAttribute('aria-label', 'Моё местоположение')
+      userMarkerRef.current = new runtime.YMapMarker({ coordinates: location, zIndex: 3 }, marker)
+      map.addChild(userMarkerRef.current)
+      updateLocation({ center: location, zoom: Math.max(viewRef.current.zoom, 15) }, 360)
+    }, () => {
+      setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
+    }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 })
+  }
+
   return <>
-    <div ref={containerRef} className="kb-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" />
+    <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска">
+      <div ref={containerRef} className="kb-yandex-map-stage" />
+      <div className="kb-yandex-zoom" aria-label="Масштаб карты">
+        <button type="button" aria-label="Приблизить" disabled={!mapReady || zoom >= MAX_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.min(MAX_MAP_ZOOM, viewRef.current.zoom + 1) })}>+</button>
+        <button type="button" aria-label="Отдалить" disabled={!mapReady || zoom <= MIN_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.max(MIN_MAP_ZOOM, viewRef.current.zoom - 1) })}>−</button>
+        <button type="button" aria-label="Вернуться к центру" disabled={!mapReady} onClick={() => updateLocation(INITIAL_MAP_VIEW, 360)}>⌖</button>
+      </div>
+      <button className="kb-yandex-geolocate" type="button" aria-label="Определить моё местоположение" disabled={!mapReady} onClick={locateUser}><span aria-hidden="true">◎</span></button>
+    </div>
     {geolocationError ? <p className="kb-map-geolocation-error" role="alert">{geolocationError}</p> : null}
   </>
 }

@@ -30,12 +30,12 @@ expectStatus(app, 200, 'PWA shell')
 const html = await app.text()
 if (!html.toLowerCase().includes('<!doctype html')) throw new Error('PWA shell is not HTML')
 if (app.headers.get('cache-control') !== 'no-store') throw new Error('PWA shell must not be cached')
-if (!html.includes('href="/icon.svg"') || !html.includes('href="/apple-touch-icon.png"')) {
+if (!html.includes('href="/pwa-192x192.png"') || !html.includes('href="/apple-touch-icon.png"')) {
   throw new Error('PWA shell must use canonical root icon paths')
 }
 
-const icon = await request('/icon.svg')
-expectStatus(icon, 200, 'icon')
+const icon = await request('/pwa-192x192.png')
+expectStatus(icon, 200, 'PWA icon')
 const appleTouchIcon = await request('/apple-touch-icon.png')
 expectStatus(appleTouchIcon, 200, 'apple touch icon')
 
@@ -56,27 +56,25 @@ const pwaBuildMarker = `sw-build-${clientBuild}.js`
 if (!serviceWorkerBody.includes(pwaBuildMarker)) {
   throw new Error(`service worker does not reference exact PWA build marker ${pwaBuildMarker}`)
 }
-const mapLibreWorkerPaths = [...new Set(
-  [...serviceWorkerBody.matchAll(/["']((?:\/)?assets\/maplibre-gl-worker-[A-Za-z0-9_-]+\.(?:js|mjs))["']/g)]
-    .map((match) => match[1]),
-)]
-if (!mapLibreWorkerPaths.length) throw new Error('service worker does not precache a bundled MapLibre worker')
-for (const workerPath of mapLibreWorkerPaths) {
-  const mapLibreWorker = await request(`/${workerPath.replace(/^\//, '')}`)
-  expectStatus(mapLibreWorker, 200, `MapLibre worker ${workerPath}`)
-}
 const buildMarker = await request(`/${pwaBuildMarker}`)
 expectStatus(buildMarker, 200, 'PWA build marker')
 if (!(await buildMarker.text()).includes(`build:${JSON.stringify(clientBuild)}`)) {
   throw new Error(`PWA build marker does not contain ${clientBuild}`)
 }
 
-const assetPath = html.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1]
-if (!assetPath) throw new Error('PWA shell contains no hashed asset')
+const assetPath = html.match(/<script[^>]+src="(\/assets\/[^"]+)"/)?.[1]
+if (!assetPath) throw new Error('PWA shell contains no hashed JavaScript asset')
 const asset = await request(assetPath)
 expectStatus(asset, 200, 'hashed asset')
 if (!asset.headers.get('cache-control')?.includes('immutable')) {
   throw new Error('hashed asset is not immutable')
+}
+const assetBody = await asset.text()
+if (!assetBody.includes('https://api-maps.yandex.ru/v3/')) {
+  throw new Error('PWA bundle does not contain Yandex Maps JavaScript API v3')
+}
+if (assetBody.includes('https://yandex.ru/map-widget/v1/?ll=')) {
+  throw new Error('PWA bundle still contains the legacy Yandex iframe map')
 }
 
 const health = await request('/api/health')
