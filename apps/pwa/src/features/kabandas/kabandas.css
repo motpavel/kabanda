@@ -680,17 +680,25 @@
 
 .kb-team-cover-menu { position: absolute; z-index: 4; top: 11px; right: 11px; }
 .kb-shell .kb-team-menu-trigger {
+  display: grid;
   width: 36px;
   min-height: 36px;
+  place-items: center;
   border: 0;
   border-radius: 50%;
   padding: 0;
   color: var(--kb-ink);
-  background: rgb(255 255 255 / 90%);
-  box-shadow: 0 5px 16px rgb(23 32 28 / 18%);
-  backdrop-filter: blur(10px);
-  font-size: .9rem;
-  letter-spacing: .08em;
+  background: rgb(255 255 255 / 68%);
+  box-shadow: 0 4px 14px rgb(23 32 28 / 14%);
+  backdrop-filter: blur(14px);
+}
+.kb-team-menu-trigger span {
+  display: block;
+  transform: translateY(-2px);
+  font-size: 1.35rem;
+  font-weight: 760;
+  letter-spacing: -.16em;
+  line-height: 1;
 }
 .kb-team-menu {
   position: absolute;
@@ -700,11 +708,12 @@
   display: grid;
   width: min(280px, calc(100vw - 44px));
   gap: 4px;
-  border: 1px solid var(--kb-line);
+  border: 1px solid rgb(31 38 34 / 14%);
   border-radius: 14px;
   padding: 6px;
-  background: #fff;
-  box-shadow: 0 16px 40px rgb(35 42 53 / 16%);
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 22px 54px rgb(27 33 30 / 28%), 0 3px 10px rgb(27 33 30 / 12%);
+  backdrop-filter: blur(18px);
 }
 .kb-team-menu button { display: flex; min-height: 42px; gap: 9px; align-items: center; justify-content: flex-start; border: 0; padding: 9px 11px; text-align: left; box-shadow: none; }
 .kb-team-menu .kb-team-menu-danger { color: var(--kb-danger); }
@@ -826,6 +835,7 @@
 .kb-shell .kb-leave-team { display: inline-flex; width: fit-content; min-height: 42px; gap: 8px; align-items: center; margin-top: 2px; border: 0; border-top: 1px solid var(--kb-line); border-radius: 0; padding: 14px 0 0; color: var(--kb-brand-hover); background: transparent; box-shadow: none; }
 .kb-shell .kb-leave-team svg { width: 21px; height: 21px; }
 .kb-shell--team .kb-app-tabbar a[aria-current="page"] { background: #fff0ed; }
+.kb-shell--team .kb-topbar { position: relative; top: auto; }
 
 .kb-invite-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 24px 0; }
 .kb-invite-meta div { border-radius: 12px; padding: 12px; background: var(--kb-surface-subtle); }
@@ -893,7 +903,7 @@
   .kb-install-guidance > button { width: 100%; }
   .kb-invite-meta { grid-template-columns: 1fr; }
   .kb-shell--team { padding: max(10px, env(safe-area-inset-top)) 12px calc(82px + env(safe-area-inset-bottom)); }
-  .kb-shell--team .kb-topbar { top: max(6px, env(safe-area-inset-top)); margin-bottom: 14px; border-radius: 17px; padding: 7px 8px 7px 10px; }
+  .kb-shell--team .kb-topbar { top: auto; margin-bottom: 14px; border-radius: 17px; padding: 7px 8px 7px 10px; }
   .kb-shell--team .kb-brand { font-size: .96rem; }
   .kb-shell--team .kb-brand img { width: 36px; height: 36px; }
   .kb-shell--team .kb-identity > span { width: 38px; height: 38px; }

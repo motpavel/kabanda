@@ -538,7 +538,7 @@ function KabandaWorkspace({
             />
             {kabanda.role === 'owner' && (
               <div className="kb-team-cover-menu">
-                <button className="kb-team-menu-trigger" type="button" aria-label="Управление Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}>•••</button>
+                <button className="kb-team-menu-trigger" type="button" aria-label="Управление Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}><span aria-hidden="true">…</span></button>
                 {teamMenuOpen && (
                   <div className="kb-team-menu" role="menu">
                     <button type="button" role="menuitem" onClick={() => { setRenameDraft(kabanda.name); setAdminDialog('rename'); setTeamMenuOpen(false) }}>Переименовать Кабанду</button>
