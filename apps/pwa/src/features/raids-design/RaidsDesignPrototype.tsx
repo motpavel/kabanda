@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import '@fontsource-variable/geist'
 import { appPath } from '../../lib/paths'
 import {
   parseRaidsDesignScreen,
   parseRaidsDesignVariant,
+  parseParticipantDesignState,
+  longParticipantList,
+  participantDesignStates,
   participants,
   raidsDesignScreens,
   raidsDesignVariants,
   routeCards,
   type RaidsDesignScreen,
   type RaidsDesignVariant,
+  type ParticipantDesignState,
   type RouteCardData,
 } from './model'
 import './raids-design.css'
@@ -36,12 +40,22 @@ function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
   return <svg aria-hidden="true" fill="none" height={size} viewBox="0 0 24 24" width={size}><g stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">{iconPaths[name]}</g></svg>
 }
 
-function updatePrototypeUrl(screen: RaidsDesignScreen, variant: RaidsDesignVariant) {
+type ParticipantOrigin = 'quick' | 'route' | 'schedule'
+
+function parseParticipantOrigin(value: string | null): ParticipantOrigin {
+  return value === 'quick' || value === 'schedule' ? value : 'route'
+}
+
+function updatePrototypeUrl(screen: RaidsDesignScreen, variant: RaidsDesignVariant, routeId?: string, origin?: ParticipantOrigin) {
   const url = new URL(window.location.href)
   if (screen === 'hub') url.searchParams.delete('screen')
   else url.searchParams.set('screen', screen)
   if (variant === 'active') url.searchParams.delete('variant')
   else url.searchParams.set('variant', variant)
+  if (routeId && (screen === 'preview' || screen === 'participants' || screen === 'scheduled')) url.searchParams.set('route', routeId)
+  else url.searchParams.delete('route')
+  if (origin && (screen === 'participants' || screen === 'scheduled')) url.searchParams.set('origin', origin)
+  else url.searchParams.delete('origin')
   window.history.pushState({}, '', url)
 }
 
@@ -49,56 +63,76 @@ export function RaidsDesignPrototype() {
   const initial = useMemo(() => new URLSearchParams(window.location.search), [])
   const [screen, setScreenState] = useState(() => parseRaidsDesignScreen(initial.get('screen')))
   const [variant, setVariantState] = useState(() => parseRaidsDesignVariant(initial.get('variant')))
+  const [participantState, setParticipantState] = useState(() => parseParticipantDesignState(initial.get('participant')))
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [route, setRoute] = useState(routeCards[0]!)
+  const [route, setRoute] = useState(() => routeCards.find((item) => item.id === initial.get('route')) ?? routeCards[0]!)
+  const [participantOrigin, setParticipantOrigin] = useState<ParticipantOrigin>(() => parseParticipantOrigin(initial.get('origin')))
+  const newRaidButtonRef = useRef<HTMLButtonElement>(null)
   const captureMode = initial.get('capture') === '1'
+  const textScaleMode = initial.get('text') === '120'
 
   useEffect(() => {
     const onPopState = () => {
       const query = new URLSearchParams(window.location.search)
       setScreenState(parseRaidsDesignScreen(query.get('screen')))
       setVariantState(parseRaidsDesignVariant(query.get('variant')))
+      setParticipantState(parseParticipantDesignState(query.get('participant')))
+      setRoute(routeCards.find((item) => item.id === query.get('route')) ?? routeCards[0]!)
+      setParticipantOrigin(parseParticipantOrigin(query.get('origin')))
       setSheetOpen(false)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  const setScreen = (next: RaidsDesignScreen) => {
-    updatePrototypeUrl(next, variant)
+  const setScreen = (next: RaidsDesignScreen, options?: { origin?: ParticipantOrigin; route?: RouteCardData }) => {
+    const nextRoute = options?.route ?? route
+    const nextOrigin = options?.origin ?? participantOrigin
+    if (options?.route) setRoute(options.route)
+    if (options?.origin) setParticipantOrigin(options.origin)
+    updatePrototypeUrl(next, variant, nextRoute.id, nextOrigin)
     setScreenState(next)
     setSheetOpen(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const setVariant = (next: RaidsDesignVariant) => {
-    updatePrototypeUrl(screen, next)
+    updatePrototypeUrl(screen, next, route.id, participantOrigin)
     setVariantState(next)
   }
 
+  const closeSheet = () => {
+    setSheetOpen(false)
+    requestAnimationFrame(() => newRaidButtonRef.current?.focus())
+  }
+
   return (
-    <div className={`rdp-root${captureMode ? ' rdp-root--capture' : ''}`}>
+    <div className={`rdp-root${captureMode ? ' rdp-root--capture' : ''}${textScaleMode ? ' rdp-root--text-120' : ''}${screen === 'participants' || screen === 'schedule' || screen === 'scheduled' ? ' rdp-root--flow' : ''}`}>
       <main className="rdp-app">
-        {screen === 'hub' && <RaidHub onNew={() => setSheetOpen(true)} onPreview={(next) => { setRoute(next); setScreen('preview') }} variant={variant} />}
-        {screen === 'preview' && <RoutePreview onBack={() => setScreen('hub')} onRide={() => setScreen('participants')} route={route} />}
-        {screen === 'participants' && <ParticipantPicker onBack={() => setScreen('preview')} onDone={() => setScreen('scheduled')} route={route} />}
-        {screen === 'scheduled' && <ScheduledSuccess onBack={() => setScreen('hub')} route={route} />}
-        <BottomNav onRaids={() => setScreen('hub')} />
+        {screen === 'hub' && <RaidHub newButtonRef={newRaidButtonRef} onNew={() => setSheetOpen(true)} onPreview={(next) => setScreen('preview', { origin: 'route', route: next })} variant={variant} />}
+        {screen === 'preview' && <RoutePreview onBack={() => setScreen('hub')} onRide={() => setScreen('participants', { origin: 'route' })} route={route} variant={variant} />}
+        {screen === 'schedule' && <ScheduleRaid onBack={() => setScreen('hub')} onContinue={() => setScreen('participants', { origin: 'schedule' })} />}
+        {screen === 'participants' && <ParticipantPicker designState={participantState} onBack={() => setScreen(participantOrigin === 'route' ? 'preview' : participantOrigin === 'schedule' ? 'schedule' : 'hub')} onDone={() => setScreen('scheduled')} origin={participantOrigin} route={route} />}
+        {screen === 'scheduled' && <ScheduledSuccess onBack={() => setScreen('hub')} origin={participantOrigin} route={route} />}
+        {(screen === 'hub' || screen === 'preview') && <BottomNav onRaids={() => setScreen('hub')} />}
       </main>
-      {sheetOpen && <NewRaidSheet onClose={() => setSheetOpen(false)} onQuick={() => setScreen('participants')} onTemplate={() => setScreen('preview')} />}
-      {initial.get('review') === '1' && <ReviewControls screen={screen} setScreen={setScreen} setVariant={setVariant} variant={variant} />}
+      {sheetOpen && <NewRaidSheet onClose={closeSheet} onQuick={() => setScreen('participants', { origin: 'quick' })} onSchedule={() => setScreen('schedule')} />}
+      {initial.get('review') === '1' && <ReviewControls participantState={participantState} screen={screen} setParticipantState={setParticipantState} setScreen={setScreen} setVariant={setVariant} variant={variant} />}
     </div>
   )
 }
 
-function RaidHub({ onNew, onPreview, variant }: { onNew: () => void; onPreview: (route: RouteCardData) => void; variant: RaidsDesignVariant }) {
+function RaidHub({ newButtonRef, onNew, onPreview, variant }: { newButtonRef: RefObject<HTMLButtonElement | null>; onNew: () => void; onPreview: (route: RouteCardData) => void; variant: RaidsDesignVariant }) {
   const isEmpty = variant === 'empty'
+  const upcomingEmpty = isEmpty || variant === 'upcoming-empty'
   return (
     <div className="rdp-page rdp-page--hub">
       <header className="rdp-heading">
         <h1>Рейды</h1>
-        <button className="rdp-new" onClick={onNew} type="button"><span aria-hidden="true">＋</span> Новый рейд</button>
+        <button className="rdp-new" onClick={onNew} ref={newButtonRef} type="button"><span aria-hidden="true">＋</span> Новый рейд</button>
       </header>
+
+      {variant === 'offline' && <div className="rdp-stale" role="status"><Icon name="clock" /><span><strong>Данные сохранены на телефоне</strong><small>Показана версия на 18:42. Обновим, когда появится сеть.</small></span></div>}
 
       {variant === 'loading' ? <LoadingHub /> : <>
         {!isEmpty && <section aria-labelledby="now-heading" className="rdp-section">
@@ -106,28 +140,33 @@ function RaidHub({ onNew, onPreview, variant }: { onNew: () => void; onPreview: 
           {variant === 'idle' ? <IdleRaid onNew={onNew} /> : <ActiveRaid />}
         </section>}
 
-        {!isEmpty && <section aria-labelledby="upcoming-heading" className="rdp-section">
+        <section aria-labelledby="upcoming-heading" className="rdp-section">
           <h2 id="upcoming-heading">Предстоящие</h2>
-          <div className="rdp-list-card">
-            <UpcomingRow places="7 мест" subtitle="Сегодня в 19:00" title="По Ленина — вечерний заезд" />
-            <UpcomingRow places="8 мест" subtitle="Завтра в 11:00" title="Центр Ижевска" />
-          </div>
-        </section>}
-
-        <section aria-labelledby="routes-heading" className="rdp-section">
-          <h2 id="routes-heading">Доступные маршруты</h2>
-          {variant === 'catalog-error' ? <ErrorState /> : isEmpty ? <EmptyState onNew={onNew} /> : <div aria-label="Маршруты" className="rdp-routes">
-            {routeCards.map((item, index) => <RouteCard index={index} key={item.id} onOpen={() => onPreview(item)} route={item} />)}
+          {upcomingEmpty ? <CompactEmpty icon="calendar" text="Пока ничего не запланировано" /> : <div className="rdp-list-card">
+            {variant === 'upcoming-cases' ? <>
+              <UpcomingRow places="Открыть" subtitle="Сегодня, 31 августа · 19:00 · подтверждений пока нет" title="По Ленина — очень длинное название вечернего заезда" />
+              <UpcomingRow places="Начать" subtitle="Завтра, 1 сентября · 11:00 · 4 участника · можно начинать" title="Центр Ижевска" />
+            </> : <>
+              <UpcomingRow places="7 мест" subtitle="Сегодня, 31 августа · 19:00 · 5 участников" title="По Ленина — вечерний заезд" />
+              <UpcomingRow places="8 мест" subtitle="Завтра, 1 сентября · 11:00 · 4 участника" title="Центр Ижевска" />
+            </>}
           </div>}
         </section>
 
-        {!isEmpty && <section aria-labelledby="history-heading" className="rdp-section rdp-section--history">
+        <section aria-labelledby="routes-heading" className="rdp-section">
+          <h2 id="routes-heading">Доступные маршруты</h2>
+          {variant === 'catalog-error' || variant === 'partial-error' ? <ErrorState /> : isEmpty ? <EmptyState onNew={onNew} /> : <div aria-label="Маршруты" className="rdp-routes">
+            {routeCards.map((item, index) => <RouteCard index={index} key={item.id} noCover={variant === 'fallback' && index === 2} onOpen={() => onPreview(item)} route={item} />)}
+          </div>}
+        </section>
+
+        <section aria-labelledby="history-heading" className="rdp-section rdp-section--history">
           <h2 id="history-heading">История</h2>
-          <div className="rdp-list-card">
-            <HistoryRow meta="19,4 км · 14 точек" subtitle="17 мая 2025 · 10:30" title="Набережная кругом" />
-            <HistoryRow meta="22,7 км · 16 точек" subtitle="10 мая 2025 · 11:00" title="Индустриальный маршрут" />
-          </div>
-        </section>}
+          {isEmpty ? <CompactEmpty icon="flag" text="Первый рейд ещё впереди" /> : <div className="rdp-list-card">
+            <HistoryRow meta="19,4 км · 14 точек" subtitle="17 мая 2025 · 10:30 · 1 ч 32 мин · Вы участвовали · 4 человека" title="Набережная кругом" />
+            <HistoryRow meta="22,7 км · 16 точек" subtitle="10 мая 2025 · 11:00 · 1 ч 48 мин · 5 участников" title="Индустриальный маршрут" />
+          </div>}
+        </section>
       </>}
     </div>
   )
@@ -144,7 +183,7 @@ function ActiveRaid() {
       <Metric icon="clock" label="в пути" value="1 ч 40 мин" />
       <Metric icon="route" label="длина" value="24,6 км" />
       <Metric icon="flag" label="чек-поинтов" value="15 точек" />
-      <Metric icon="group" label="участников" value="12 / 20" />
+      <div className="rdp-active__people" aria-label="12 активных участников из 20: Павел, мотор, Аня и ещё 9"><span className="rdp-mini-avatars" aria-hidden="true"><i>П</i><i>М</i><i>А</i><i>+9</i></span><span><dt>12</dt><dd>участников</dd></span></div>
     </dl>
     <button className="rdp-active__cta" type="button"><Icon name="send" /> Вернуться в рейд</button>
   </article>
@@ -155,7 +194,7 @@ function Metric({ icon, label, value }: { icon: IconName; label: string; value: 
 }
 
 function IdleRaid({ onNew }: { onNew: () => void }) {
-  return <div className="rdp-idle"><span><Icon name="bike" size={28} /></span><div><h3>Сейчас никто не едет</h3><p>Соберите Кабанду и начните новый рейд.</p></div><button onClick={onNew} type="button">Начать</button></div>
+  return <div className="rdp-idle"><span><Icon name="bike" size={28} /></span><div><h3>Сегодня ещё не катались</h3><p>Соберите Кабанду и начните новый рейд.</p></div><button onClick={onNew} type="button">Поехали</button></div>
 }
 
 function UpcomingRow({ places, subtitle, title }: { places: string; subtitle: string; title: string }) {
@@ -166,59 +205,102 @@ function HistoryRow({ meta, subtitle, title }: { meta: string; subtitle: string;
   return <button className="rdp-row rdp-row--history" type="button"><span className="rdp-row__icon rdp-row__icon--history"><Icon name="flag" /></span><span className="rdp-row__copy"><strong>{title}</strong><small>{subtitle}</small></span><span className="rdp-row__meta">{meta}</span><Icon name="chevron" size={19} /></button>
 }
 
-function RouteCard({ index, onOpen, route }: { index: number; onOpen: () => void; route: RouteCardData }) {
-  return <article className={`rdp-route-card rdp-route-card--${index + 1}`}>
-    <button aria-label={`Подробнее: ${route.title}`} className="rdp-route-card__visual" onClick={onOpen} type="button">
-      <img alt="" src={appPath(index === 1 ? 'brand/kabanda-login-riders.jpg' : 'brand/kabanda-team-cover.jpg')} style={{ objectPosition: route.imagePosition }} />
+function RouteCard({ index, noCover = false, onOpen, route }: { index: number; noCover?: boolean; onOpen: () => void; route: RouteCardData }) {
+  return <a aria-label={`Открыть маршрут: ${route.title}`} className={`rdp-route-card rdp-route-card--${index + 1}`} href="?screen=preview" onClick={(event) => { event.preventDefault(); onOpen() }}>
+    <span className={`rdp-route-card__visual${noCover ? ' rdp-route-card__visual--fallback' : ''}`}>
+      {noCover ? <span className="rdp-route-fallback"><Icon name="route" size={34} /><small>Фото появится позже</small></span> : <img alt="" src={appPath(index === 1 ? 'brand/kabanda-login-riders.jpg' : 'brand/kabanda-team-cover.jpg')} style={{ objectPosition: route.imagePosition }} />}
       <span className="rdp-route-card__shade" />
       <span className="rdp-route-card__copy"><strong>{route.title}</strong><small><span><Icon name="route" size={15} /> {route.distance}</span><span><Icon name="flag" size={15} /> {route.points} точек</span></small></span>
-    </button>
-    <button className="rdp-route-card__more" onClick={onOpen} type="button"><span>Подробнее</span><Icon name="chevron" size={17} /></button>
-  </article>
+    </span>
+    <span className="rdp-route-card__more"><span>Подробнее</span><Icon name="chevron" size={17} /></span>
+  </a>
 }
 
-function ErrorState() { return <div className="rdp-state"><span><Icon name="route" /></span><h3>Маршруты не загрузились</h3><p>Проверьте соединение и попробуйте ещё раз.</p><button onClick={() => window.location.reload()} type="button">Повторить</button></div> }
+function CompactEmpty({ icon, text }: { icon: IconName; text: string }) { return <div className="rdp-compact-empty"><span><Icon name={icon} /></span><strong>{text}</strong></div> }
+function ErrorState() { return <div className="rdp-state" role="alert"><span><Icon name="route" /></span><h3>Каталог временно недоступен</h3><p>Другие разделы работают. Проверьте соединение и попробуйте ещё раз.</p><button onClick={() => window.location.reload()} type="button">Повторить загрузку</button></div> }
 function EmptyState({ onNew }: { onNew: () => void }) { return <div className="rdp-state"><span><Icon name="flag" /></span><h3>Пока нет маршрутов</h3><p>Можно начать свободный рейд без готового маршрута.</p><button onClick={onNew} type="button">Новый рейд</button></div> }
 
 function LoadingHub() { return <div aria-busy="true" aria-label="Загрузка рейдов" className="rdp-loading"><i /><i /><i /><i /></div> }
 
-function RoutePreview({ onBack, onRide, route }: { onBack: () => void; onRide: () => void; route: RouteCardData }) {
+function RoutePreview({ onBack, onRide, route, variant }: { onBack: () => void; onRide: () => void; route: RouteCardData; variant: RaidsDesignVariant }) {
+  const unavailable = variant === 'archived'
+  const partial = variant === 'partial-error'
+  const noCover = variant === 'fallback'
   return <div className="rdp-page rdp-detail">
     <header className="rdp-subhead"><button aria-label="Назад к рейдам" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Маршрут</strong><span /></header>
-    <div className="rdp-preview-hero"><img alt="Кабанда едет по Ижевску" src={appPath('brand/kabanda-team-cover.jpg')} /><span /></div>
-    <section className="rdp-preview-copy"><p className="rdp-eyebrow">Готовый маршрут</p><h1>{route.title}</h1><p>{route.description}. Спокойный темп и несколько удобных остановок по пути.</p>
+    <div className={`rdp-preview-hero${noCover ? ' rdp-preview-hero--fallback' : ''}`}>{noCover ? <span className="rdp-preview-fallback"><Icon name="route" size={42} />Фото маршрута пока нет</span> : <img alt="Кабанда едет по Ижевску" src={appPath('brand/kabanda-team-cover.jpg')} />}<span /></div>
+    <section className="rdp-preview-copy"><p className="rdp-eyebrow">Готовый маршрут · Ижевск, Северный район</p><h1>{route.title}</h1><p>{route.description}. Спокойный темп и несколько удобных остановок по пути.</p>
+      {unavailable && <div className="rdp-inline-alert" role="alert"><strong>Маршрут снят с публикации</strong><span>Его можно посмотреть, но нельзя использовать для нового рейда.</span></div>}
+      {partial && <div className="rdp-inline-alert rdp-inline-alert--warning" role="status"><strong>2 точки временно недоступны</strong><span>Перед стартом покажем актуальную последовательность.</span></div>}
       <dl><div><dt>{route.distance}</dt><dd>длина</dd></div><div><dt>{route.points}</dt><dd>точек</dd></div><div><dt>~ 2 ч</dt><dd>в пути</dd></div></dl>
       <div className="rdp-mini-map" aria-label="Схема маршрута" role="img"><svg viewBox="0 0 320 150"><path d="M18 120c55-8 52-72 107-62 40 7 48 64 99 38 27-14 34-45 77-58" /></svg><i /><i /><i /></div>
-      <h2>Что увидим</h2><ul className="rdp-points"><li><Icon name="pin" />Набережная Ижевского пруда</li><li><Icon name="pin" />Летний сад и ротонда</li><li><Icon name="pin" />Северная часть города</li></ul>
+      <details className="rdp-route-points" open><summary>Точки маршрута · {route.points}</summary><ol className="rdp-points"><li><Icon name="pin" />Набережная Ижевского пруда</li><li><Icon name="pin" />Летний сад и ротонда</li><li><Icon name="pin" />Северная часть города</li></ol></details>
     </section>
-    <div className="rdp-sticky-action"><button onClick={onRide} type="button"><Icon name="bike" /> Поехать по маршруту</button></div>
+    <div className="rdp-sticky-action"><button disabled={unavailable} onClick={onRide} type="button"><Icon name="bike" /> {unavailable ? 'Маршрут недоступен' : 'Поехать по маршруту'}</button></div>
   </div>
 }
 
-function ParticipantPicker({ onBack, onDone, route }: { onBack: () => void; onDone: () => void; route: RouteCardData }) {
-  const [selected, setSelected] = useState(() => new Set(['pavel', 'motor']))
+function ScheduleRaid({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
+  return <div className="rdp-page rdp-detail rdp-schedule">
+    <header className="rdp-subhead"><button aria-label="Назад к рейдам" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Запланировать</strong><span /></header>
+    <section><p className="rdp-eyebrow">Новый рейд</p><h1>Когда едем?</h1><p>Укажите время сбора. Состав подтвердим на следующем шаге.</p>
+      <label>Название<input defaultValue="Вечерний рейд" /></label>
+      <div className="rdp-schedule__grid"><label>Дата<input defaultValue="2026-09-01" type="date" /></label><label>Время<input defaultValue="19:00" type="time" /></label></div>
+    </section>
+    <div className="rdp-sticky-action"><button onClick={onContinue} type="button">Выбрать участников</button></div>
+  </div>
+}
+
+function ParticipantPicker({ designState, onBack, onDone, origin, route }: { designState: ParticipantDesignState; onBack: () => void; onDone: () => void; origin: 'quick' | 'route' | 'schedule'; route: RouteCardData }) {
+  const people = designState === 'long' ? longParticipantList : participants
+  const [selected, setSelected] = useState(() => new Set(['pavel', 'motor', 'lesha']))
+  const [hasError, setHasError] = useState(designState === 'error')
+  const [submitting, setSubmitting] = useState(false)
   const toggle = (id: string) => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  const submit = () => {
+    if (hasError) { setHasError(false); return }
+    if (submitting) return
+    setSubmitting(true)
+    window.setTimeout(onDone, 350)
+  }
+  const source = origin === 'route' ? route.title : origin === 'schedule' ? 'Вечерний рейд · завтра в 19:00' : 'Свободный рейд · прямо сейчас'
   return <div className="rdp-page rdp-detail rdp-participants">
-    <header className="rdp-subhead"><button aria-label="Назад к маршруту" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Участники</strong><span /></header>
-    <section className="rdp-participants__intro"><p className="rdp-eyebrow">Новый рейд</p><h1>Кто поедет?</h1><p>{route.title} · отметьте тех, кто уже собирается.</p></section>
-    <fieldset><legend>Состав Кабанды</legend>{participants.map((person) => <label key={person.id}><span className="rdp-avatar">{person.initial}</span><span><strong>{person.name}</strong><small>{person.role}</small></span><input checked={selected.has(person.id)} onChange={() => toggle(person.id)} type="checkbox" /></label>)}</fieldset>
-    <div className="rdp-sticky-action"><button disabled={selected.size === 0} onClick={onDone} type="button">Продолжить · {selected.size}</button></div>
+    <header className="rdp-subhead"><button aria-label="Назад" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Участники</strong><span /></header>
+    <section className="rdp-participants__intro"><p className="rdp-eyebrow">{source}</p><h1>Кто сегодня едет?</h1><p>Отметьте участников и подтвердите состав перед стартом.</p></section>
+    {hasError && <div className="rdp-inline-alert" role="alert"><strong>Не удалось создать рейд</strong><span>Выбор сохранён. Проверьте сеть и нажмите «Повторить».</span></div>}
+    <fieldset><legend>Состав Кабанды · {people.length}</legend>{people.map((person) => <label className={person.disabled ? 'rdp-participant--disabled' : undefined} key={person.id}><span className="rdp-avatar">{person.initial}</span><span><strong>{person.name}</strong><small>{person.role}</small></span><input checked={selected.has(person.id)} disabled={person.disabled} onChange={() => toggle(person.id)} type="checkbox" /></label>)}</fieldset>
+    <div className="rdp-sticky-action"><button disabled={selected.size === 0 || submitting} onClick={submit} type="button">{submitting ? 'Создаём рейд…' : hasError ? `Повторить · ${selected.size}` : `Поехали · ${selected.size}`}</button></div>
   </div>
 }
 
-function ScheduledSuccess({ onBack, route }: { onBack: () => void; route: RouteCardData }) {
-  return <div className="rdp-page rdp-success"><span><Icon name="flag" size={34} /></span><p className="rdp-eyebrow">Всё готово</p><h1>Рейд собран</h1><p>{route.title} появился в предстоящих. Участники увидят его в Кабанде.</p><button onClick={onBack} type="button">Вернуться к рейдам</button></div>
+function ScheduledSuccess({ onBack, origin, route }: { onBack: () => void; origin: ParticipantOrigin; route: RouteCardData }) {
+  const planned = origin === 'schedule'
+  return <div className="rdp-page rdp-success"><span><Icon name="flag" size={34} /></span><p className="rdp-eyebrow">{planned ? 'РЕЙД ЗАПЛАНИРОВАН' : 'ЛОББИ ОТКРЫТО'}</p><h1>{planned ? 'Рейд запланирован' : 'Кабанда собирается'}</h1><p>{planned ? 'Вечерний рейд появился в предстоящих. Участники увидят его в Кабанде.' : `${route.title}: состав подтверждён, можно переходить в лобби и начинать.`}</p><button onClick={onBack} type="button">{planned ? 'Вернуться к рейдам' : 'Перейти в лобби'}</button></div>
 }
 
-function NewRaidSheet({ onClose, onQuick, onTemplate }: { onClose: () => void; onQuick: () => void; onTemplate: () => void }) {
-  useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [onClose])
-  return <div className="rdp-sheet-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} role="presentation"><section aria-labelledby="new-raid-title" aria-modal="true" className="rdp-sheet" role="dialog"><span className="rdp-sheet__handle" /><div className="rdp-sheet__head"><div><p className="rdp-eyebrow">Новый рейд</p><h2 id="new-raid-title">Как поедем?</h2></div><button aria-label="Закрыть" onClick={onClose} type="button">×</button></div><button className="rdp-sheet-choice" onClick={onQuick} type="button"><span><Icon name="send" /></span><span><strong>Поехали сейчас</strong><small>Без маршрута и расписания</small></span><Icon name="chevron" /></button><button className="rdp-sheet-choice" onClick={onTemplate} type="button"><span><Icon name="route" /></span><span><strong>Выбрать маршрут</strong><small>Готовые точки и расстояние</small></span><Icon name="chevron" /></button></section></div>
+function NewRaidSheet({ onClose, onQuick, onSchedule }: { onClose: () => void; onQuick: () => void; onSchedule: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { onClose(); return }
+      if (event.key !== 'Tab') return
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>('button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? [])].filter((item) => !item.hasAttribute('disabled'))
+      if (!focusable.length) return
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return <div className="rdp-sheet-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} role="presentation"><section aria-labelledby="new-raid-title" aria-modal="true" className="rdp-sheet" ref={dialogRef} role="dialog"><span className="rdp-sheet__handle" /><div className="rdp-sheet__head"><div><p className="rdp-eyebrow">Новый рейд</p><h2 id="new-raid-title">Как едем?</h2></div><button aria-label="Закрыть" autoFocus onClick={onClose} type="button">×</button></div><button className="rdp-sheet-choice" onClick={onQuick} type="button"><span><Icon name="send" /></span><span><strong>Поехали сейчас</strong><small>Начать без предварительного расписания</small></span><Icon name="chevron" /></button><button className="rdp-sheet-choice" onClick={onSchedule} type="button"><span><Icon name="calendar" /></span><span><strong>Запланировать</strong><small>Выбрать дату и время</small></span><Icon name="chevron" /></button></section></div>
 }
 
 function BottomNav({ onRaids }: { onRaids: () => void }) {
   return <nav aria-label="Основные разделы" className="rdp-tabbar"><a href={appPath('app')}><Icon name="home" /><span>Главная</span></a><a href={`${appPath('app')}?tab=map`}><Icon name="map" /><span>Карта</span></a><button aria-current="page" onClick={onRaids} type="button"><Icon name="flag" /><span>Рейды</span></button><a href={`${appPath('app')}?tab=kabanda`}><Icon name="team" /><span>Кабанда</span></a></nav>
 }
 
-function ReviewControls({ screen, setScreen, setVariant, variant }: { screen: RaidsDesignScreen; setScreen: (value: RaidsDesignScreen) => void; setVariant: (value: RaidsDesignVariant) => void; variant: RaidsDesignVariant }) {
-  return <aside aria-label="Панель ревью" className="rdp-review"><label>Экран<select onChange={(event) => setScreen(event.target.value as RaidsDesignScreen)} value={screen}>{raidsDesignScreens.map((item) => <option key={item}>{item}</option>)}</select></label><label>Состояние<select onChange={(event) => setVariant(event.target.value as RaidsDesignVariant)} value={variant}>{raidsDesignVariants.map((item) => <option key={item}>{item}</option>)}</select></label></aside>
+function ReviewControls({ participantState, screen, setParticipantState, setScreen, setVariant, variant }: { participantState: ParticipantDesignState; screen: RaidsDesignScreen; setParticipantState: (value: ParticipantDesignState) => void; setScreen: (value: RaidsDesignScreen) => void; setVariant: (value: RaidsDesignVariant) => void; variant: RaidsDesignVariant }) {
+  return <aside aria-label="Панель ревью" className="rdp-review"><label>Экран<select onChange={(event) => setScreen(event.target.value as RaidsDesignScreen)} value={screen}>{raidsDesignScreens.map((item) => <option key={item}>{item}</option>)}</select></label><label>Состояние<select onChange={(event) => setVariant(event.target.value as RaidsDesignVariant)} value={variant}>{raidsDesignVariants.map((item) => <option key={item}>{item}</option>)}</select></label><label>Состав<select onChange={(event) => setParticipantState(event.target.value as ParticipantDesignState)} value={participantState}>{participantDesignStates.map((item) => <option key={item}>{item}</option>)}</select></label></aside>
 }
