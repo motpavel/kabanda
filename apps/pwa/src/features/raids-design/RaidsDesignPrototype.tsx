@@ -287,11 +287,11 @@ function ParticipantPicker({ designState, onBack, onDone, origin, route }: { des
   const source = origin === 'route' ? route.title : origin === 'schedule' ? 'Вечерний рейд · завтра в 19:00' : 'Свободный рейд · прямо сейчас'
   return <div className="rdp-page rdp-detail rdp-participants">
     <header className="rdp-subhead"><button aria-label="Назад" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Участники</strong><span /></header>
-    <section className="rdp-participants__intro"><p className="rdp-eyebrow">{source}</p><h1>Кто сегодня едет?</h1><p>Отметьте участников и подтвердите состав перед стартом.</p></section>
+    <section className="rdp-participants__intro"><p className="rdp-eyebrow">{source}</p><h1>{origin === 'schedule' ? 'Кто поедет?' : 'Кто сегодня едет?'}</h1><p>Отметьте участников и подтвердите состав перед стартом.</p></section>
     {hasError && <div className="rdp-inline-alert" role="alert"><strong>Не удалось создать рейд</strong><span>Выбор сохранён. Проверьте сеть и нажмите «Повторить».</span></div>}
     {permissionDenied && <div className="rdp-inline-alert" role="alert"><strong>Недостаточно прав</strong><span>Начать этот рейд может только вожак Кабанды.</span></div>}
     <fieldset disabled={permissionDenied}><legend>Состав Кабанды · {people.length}</legend>{people.map((person) => <label className={person.disabled ? 'rdp-participant--disabled' : undefined} key={person.id}><span className="rdp-avatar">{person.initial}</span><span><strong>{person.name}</strong><small>{person.role}</small></span><input checked={selected.has(person.id)} disabled={person.disabled} onChange={() => toggle(person.id)} type="checkbox" /></label>)}</fieldset>
-    <div className="rdp-sticky-action"><button disabled={!permissionDenied && (selected.size === 0 || submitting)} onClick={permissionDenied ? onBack : submit} type="button">{permissionDenied ? 'Вернуться' : submitting ? 'Создаём рейд…' : hasError ? `Повторить · ${selected.size}` : `Поехали · ${selected.size}`}</button></div>
+    <div className="rdp-sticky-action"><button disabled={!permissionDenied && (selected.size === 0 || submitting)} onClick={permissionDenied ? onBack : submit} type="button">{permissionDenied ? 'Вернуться' : submitting ? 'Создаём рейд…' : hasError ? `Повторить · ${selected.size}` : origin === 'schedule' ? `Запланировать · ${selected.size}` : `Поехали · ${selected.size}`}</button></div>
   </div>
 }
 
