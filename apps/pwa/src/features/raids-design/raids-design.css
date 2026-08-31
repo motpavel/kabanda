@@ -58,10 +58,10 @@
 .rdp-row__action { display: flex; align-items: center; gap: 6px; }
 .rdp-row__action > small { color: var(--rdp-red-dark); font-size: 10px; font-weight: 720; }
 .rdp-row__badge { border: 1px solid #ffc3c1; border-radius: 99px; padding: 4px 9px; color: var(--rdp-red-dark); font-size: 11px; font-weight: 680; white-space: nowrap; }
-.rdp-routes { display: grid; grid-auto-columns: 44%; grid-auto-flow: column; gap: 12px; overflow-x: auto; padding: 1px 1px 5px; scroll-snap-type: x mandatory; scrollbar-width: none; }
-.rdp-routes::-webkit-scrollbar { display: none; }
-.rdp-route-card { display: block; overflow: hidden; border: 1px solid var(--rdp-line); border-radius: 15px; color: inherit; background: #fff; scroll-snap-align: start; text-decoration: none; }
-.rdp-route-card__visual { position: relative; display: block; width: 100%; height: 134px; overflow: hidden; border: 0; padding: 0; color: #fff; background: #111; text-align: left; }
+.rdp-routes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; overflow: visible; padding: 1px; }
+.rdp-route-card { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--rdp-line); border-radius: 15px; color: inherit; background: #fff; text-decoration: none; }
+.rdp-route-card:focus-visible { outline: 3px solid rgb(210 47 42 / 34%); outline-offset: 3px; }
+.rdp-route-card__visual { position: relative; display: block; width: 100%; height: clamp(148px, 46vw, 176px); overflow: hidden; border: 0; padding: 0; color: #fff; background: #111; text-align: left; }
 .rdp-route-card__visual img { width: 100%; height: 100%; object-fit: cover; }
 .rdp-route-card__visual--fallback { background: linear-gradient(145deg, #282b30, #101114); }
 .rdp-route-fallback { position: absolute; z-index: 2; inset: 12px 10px auto; display: grid; align-content: start; justify-items: center; gap: 4px; color: #f5f5f5; text-align: center; }
@@ -71,7 +71,6 @@
 .rdp-route-card__copy strong { font-size: 17px; font-weight: 720; letter-spacing: -.025em; line-height: 1.05; }
 .rdp-route-card__copy small { display: flex; gap: 3px; align-items: center; color: #e0e0e2; font-size: 8px; white-space: nowrap; }
 .rdp-route-card__copy small span { display: inline-flex; align-items: center; gap: 1px; }
-.rdp-route-card__more { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; border: 0; padding: 0 12px; color: var(--rdp-red-dark); background: #fff; font-size: 12px; font-weight: 680; }
 .rdp-section--history { margin-bottom: 8px; }
 .rdp-row--history { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .rdp-row--history { min-height: 48px; padding-top: 5px; padding-bottom: 5px; }
@@ -108,11 +107,10 @@
 .rdp-participants fieldset:disabled label { opacity: .58; }
 .rdp-schedule > section { display: grid; gap: 12px; }.rdp-schedule h1 { margin: 0; font-size: 34px; letter-spacing: -.045em; }.rdp-schedule section > p:not(.rdp-eyebrow) { margin: -4px 0 10px; color: var(--rdp-muted); font-size: 14px; }.rdp-schedule label { display: grid; gap: 6px; color: var(--rdp-muted); font-size: 12px; font-weight: 650; }.rdp-schedule input { min-width: 0; min-height: 48px; border: 1px solid var(--rdp-line); border-radius: 12px; padding: 0 12px; color: var(--rdp-ink); background: #fff; }.rdp-schedule__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .rdp-success { display: grid; place-content: center; justify-items: center; text-align: center; }.rdp-success > span { display: grid; width: 72px; height: 72px; place-items: center; margin-bottom: 18px; border-radius: 50%; color: #fff; background: var(--rdp-action); }.rdp-success > button { min-height: 48px; margin-top: 22px; border: 0; border-radius: 12px; padding: 0 18px; color: #fff; background: var(--rdp-action); font-weight: 700; }
-.rdp-sheet-layer { position: fixed; z-index: 100; inset: 0; display: flex; align-items: end; justify-content: center; padding: 16px; background: rgb(10 11 12 / 48%); backdrop-filter: blur(3px); }.rdp-sheet { width: min(100%, 430px); border-radius: 24px; padding: 8px 18px max(18px, env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -20px 60px rgb(0 0 0 / 22%); }.rdp-sheet__handle { display: block; width: 38px; height: 4px; margin: 0 auto 14px; border-radius: 99px; background: #d7d7da; }.rdp-sheet__head { display: flex; align-items: start; justify-content: space-between; margin-bottom: 12px; }.rdp-sheet__head h2 { margin: 0; font-size: 26px; letter-spacing: -.035em; }.rdp-sheet__head > button { display: grid; width: 44px; min-height: 44px; place-items: center; border: 0; border-radius: 50%; color: var(--rdp-muted); background: #f2f2f3; font-size: 25px; }.rdp-sheet-choice { display: grid; width: 100%; min-height: 72px; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; border: 0; border-top: 1px solid var(--rdp-line); padding: 10px 0; color: var(--rdp-ink); background: #fff; text-align: left; }.rdp-sheet-choice > span:first-child { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 50%; color: var(--rdp-red); background: #fff0ef; }.rdp-sheet-choice > span:nth-child(2) { display: grid; gap: 3px; }.rdp-sheet-choice strong { font-size: 16px; }.rdp-sheet-choice small { color: var(--rdp-muted); font-size: 12px; }
+.rdp-sheet-layer { position: fixed; z-index: 100; inset: 0; display: flex; align-items: end; justify-content: center; padding: 16px; background: rgb(10 11 12 / 48%); backdrop-filter: blur(3px); }.rdp-sheet { width: min(100%, 430px); border-radius: 24px; padding: 8px 18px max(18px, env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -20px 60px rgb(0 0 0 / 22%); }.rdp-sheet__handle { display: block; width: 38px; height: 4px; margin: 0 auto 14px; border-radius: 99px; background: #d7d7da; }.rdp-sheet__head { display: flex; align-items: start; justify-content: space-between; margin-bottom: 12px; }.rdp-sheet__head h2 { margin: 0; font-size: 26px; letter-spacing: -.035em; }.rdp-sheet__head > button { display: grid; width: 44px; height: 44px; min-height: 44px; place-items: center; border: 0; border-radius: 50%; padding: 0; color: #61656d; background: #f2f2f3; line-height: 0; }.rdp-sheet__head > button svg { display: block; }.rdp-sheet-choice { display: grid; width: 100%; min-height: 72px; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; border: 0; border-top: 1px solid var(--rdp-line); padding: 10px 0; color: var(--rdp-ink); background: #fff; text-align: left; }.rdp-sheet-choice > span:first-child { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 50%; color: var(--rdp-red); background: #fff0ef; }.rdp-sheet-choice > span:nth-child(2) { display: grid; gap: 3px; }.rdp-sheet-choice strong { font-size: 16px; }.rdp-sheet-choice small { color: var(--rdp-muted); font-size: 12px; }
 .rdp-review { position: fixed; z-index: 150; top: 16px; left: 16px; display: grid; width: 210px; gap: 8px; border: 1px solid var(--rdp-line); border-radius: 14px; padding: 12px; background: rgb(255 255 255 / 94%); box-shadow: 0 12px 30px rgb(0 0 0 / 12%); backdrop-filter: blur(10px); }.rdp-review label { display: grid; grid-template-columns: 70px 1fr; align-items: center; font-size: 12px; }.rdp-review select { min-width: 0; min-height: 34px; border: 1px solid var(--rdp-line); border-radius: 8px; background: #fff; }
 @media (max-width: 430px) { .rdp-active__metrics { gap: 3px; }.rdp-active__metrics > div { gap: 3px; }.rdp-active__metrics svg { width: 20px; height: 20px; }.rdp-active__metrics dt { font-size: 10px; }.rdp-active__metrics dd { font-size: 8px; } }
-@media (max-width: 350px) { .rdp-page { padding-right: 12px; padding-left: 12px; }.rdp-heading h1 { font-size: 36px; }.rdp-new { min-height: 44px; padding: 0 11px; font-size: 14px; }.rdp-active__intro { grid-template-columns: 82px 1fr; }.rdp-active__intro img { width: 82px; }.rdp-active__intro h3 { font-size: 19px; }.rdp-active__metrics svg { display: none; }.rdp-row__meta, .rdp-row__action > small { display: none; }.rdp-routes { grid-auto-columns: 47%; } }
-@media (min-width: 390px) and (max-width: 699px) { .rdp-routes { grid-auto-columns: calc((100% - 24px) / 3); } }
+@media (max-width: 350px) { .rdp-page { padding-right: 12px; padding-left: 12px; }.rdp-heading h1 { font-size: 36px; }.rdp-new { min-height: 44px; padding: 0 11px; font-size: 14px; }.rdp-active__intro { grid-template-columns: 82px 1fr; }.rdp-active__intro img { width: 82px; }.rdp-active__intro h3 { font-size: 19px; }.rdp-active__metrics svg { display: none; }.rdp-row__meta, .rdp-row__action > small { display: none; }.rdp-routes { gap: 10px; } }
 @media (min-width: 700px) { .rdp-root { padding: 32px 0; }.rdp-app { min-height: calc(100dvh - 64px); border-radius: 34px; overflow: hidden; }.rdp-page { min-height: calc(100dvh - 64px); }.rdp-tabbar { bottom: 32px; border-radius: 0 0 34px 34px; }.rdp-sticky-action { bottom: 104px; } }
 @media (min-width: 700px) { .rdp-root--flow .rdp-sticky-action { bottom: 32px; } }
 @media (min-width: 900px) {
@@ -122,14 +120,14 @@
   .rdp-page--hub > .rdp-heading, .rdp-page--hub > .rdp-stale, .rdp-page--hub > .rdp-loading { grid-column: 1 / -1; }
   .rdp-page--hub > .rdp-section { align-content: start; margin-top: 0; }
   .rdp-page--hub > .rdp-section[aria-labelledby="routes-heading"], .rdp-page--hub > .rdp-section[aria-labelledby="history-heading"] { grid-column: 1 / -1; }
-  .rdp-routes { grid-auto-columns: calc((100% - 28px) / 3); gap: 14px; overflow: visible; }
+  .rdp-routes { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   .rdp-route-card__visual { height: 188px; }
   .rdp-tabbar, .rdp-sticky-action { width: min(calc(100% - 64px), 960px); }
 }
 .rdp-root--capture { padding: 0; }
 .rdp-root--capture .rdp-app { min-height: 100dvh; border-radius: 0; }
 .rdp-root--capture .rdp-page { min-height: 100dvh; }
-.rdp-root--capture .rdp-routes { grid-auto-columns: calc((100% - 24px) / 3); }
+.rdp-root--capture .rdp-routes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rdp-root--capture .rdp-tabbar { bottom: 0; border-radius: 0; }
 .rdp-root--capture .rdp-sticky-action { bottom: 72px; }
 .rdp-root--text-120 .rdp-heading h1 { font-size: 48px; }
@@ -141,4 +139,5 @@
 .rdp-root--text-120 .rdp-row__copy small { font-size: 14px; }
 .rdp-root--text-120 .rdp-route-card__copy strong { font-size: 19px; }
 .rdp-root--text-120 .rdp-tabbar a, .rdp-root--text-120 .rdp-tabbar button { font-size: 13px; }
+@media (max-width: 350px) { .rdp-root--text-120 .rdp-heading { flex-wrap: wrap; gap: 10px; }.rdp-root--text-120 .rdp-heading h1 { flex: 1 1 120px; }.rdp-root--text-120 .rdp-new { flex: 0 0 auto; } }
 @media (prefers-reduced-motion: reduce) { .rdp-loading i { animation: none; } .rdp-root * { scroll-behavior: auto !important; } }

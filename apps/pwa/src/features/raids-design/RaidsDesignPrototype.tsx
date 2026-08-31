@@ -18,14 +18,15 @@ import {
 } from './model'
 import './raids-design.css'
 
-type IconName = 'arrow' | 'bike' | 'calendar' | 'chevron' | 'clock' | 'flag' | 'group' | 'home' | 'map' | 'pin' | 'route' | 'send' | 'team'
+type IconName = 'arrow' | 'bike' | 'calendar' | 'chevron' | 'clock' | 'close' | 'flag' | 'group' | 'home' | 'map' | 'pin' | 'route' | 'send' | 'team'
 
 const iconPaths: Record<IconName, ReactNode> = {
   arrow: <path d="m15 18-6-6 6-6" />,
-  bike: <><circle cx="6" cy="17" r="3" /><circle cx="18" cy="17" r="3" /><path d="m6 17 4-8h4l4 8M8 13h8M11 8l-1.5-2H7" /></>,
-  calendar: <><rect x="4" y="5.5" width="16" height="14" rx="2" /><path d="M8 3v5m8-5v5M4 10h16M8 14h.01m4 0h.01m4 0h.01m-8 3h.01m4 0h.01" /></>,
+  bike: <><circle cx="5.5" cy="17.5" r="3.5" /><circle cx="18.5" cy="17.5" r="3.5" /><circle cx="15" cy="5" r="1" /><path d="M12 17.5V14l-3-3 4-3 2 3h2M8.5 17.5l2.5-6 2 2 2.5 4" /></>,
+  calendar: <><rect x="3" y="4" width="18" height="17" rx="2.5" /><path d="M8 2v4m8-4v4M3 10h18M8 14h.01m4 0h.01m4 0h.01M8 18h.01m4 0h.01" /></>,
   chevron: <path d="m9 18 6-6-6-6" />,
   clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></>,
+  close: <path d="M7 7l10 10M17 7 7 17" />,
   flag: <><path d="M6 21V4" /><path d="M6 5c4-3 7 3 12 0v9c-5 3-8-3-12 0" /></>,
   group: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 19c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 14c3.6-.7 5.7 1 6.5 4.5" /></>,
   home: <><path d="m3.5 10.5 8.5-7.5 8.5 7.5" /><path d="M5.5 9.5v10h13v-10M9.5 19.5v-6h5v6" /></>,
@@ -143,7 +144,6 @@ export function RaidsDesignPrototype() {
 
 function RaidHub({ newButtonRef, onNew, onPreview, variant }: { newButtonRef: RefObject<HTMLButtonElement | null>; onNew: () => void; onPreview: (route: RouteCardData) => void; variant: RaidsDesignVariant }) {
   const isEmpty = variant === 'empty'
-  const upcomingEmpty = isEmpty || variant === 'upcoming-empty'
   return (
     <div className="rdp-page rdp-page--hub">
       <header className="rdp-heading">
@@ -159,18 +159,13 @@ function RaidHub({ newButtonRef, onNew, onPreview, variant }: { newButtonRef: Re
           {variant === 'idle' ? <IdleRaid onNew={onNew} /> : <ActiveRaid />}
         </section>}
 
-        <section aria-labelledby="upcoming-heading" className="rdp-section">
+        {variant === 'upcoming-cases' && <section aria-labelledby="upcoming-heading" className="rdp-section">
           <h2 id="upcoming-heading">Предстоящие</h2>
-          {upcomingEmpty ? <CompactEmpty icon="calendar" text="Пока ничего не запланировано" /> : <div className="rdp-list-card">
-            {variant === 'upcoming-cases' ? <>
-              <UpcomingRow action="Открыть" avatars={[]} id="lenina-evening" places="0 заявок" subtitle="Понедельник, 31 августа · Сегодня · 19:00" title="По Ленина — очень длинное название вечернего заезда" />
-              <UpcomingRow action="Начать" id="city-center" places="4 едут" subtitle="Вторник, 1 сентября · Завтра · 11:00" title="Центр Ижевска" />
-            </> : <>
-              <UpcomingRow id="lenina-evening" places="7 мест" subtitle="Понедельник, 31 августа · Сегодня · 19:00" title="По Ленина — вечерний заезд" />
-              <UpcomingRow id="city-center" places="8 мест" subtitle="Вторник, 1 сентября · Завтра · 11:00" title="Центр Ижевска" />
-            </>}
-          </div>}
-        </section>
+          <div className="rdp-list-card">
+            <UpcomingRow id="lenina-evening" places="Вы едете" subtitle="Понедельник, 31 августа · Сегодня · 19:00" title="По Ленина — вечерний заезд" />
+            <UpcomingRow id="city-center" places="Вы едете" subtitle="Вторник, 1 сентября · Завтра · 11:00" title="Центр Ижевска" />
+          </div>
+        </section>}
 
         <section aria-labelledby="routes-heading" className="rdp-section">
           <h2 id="routes-heading">Доступные маршруты</h2>
@@ -231,7 +226,6 @@ function RouteCard({ index, noCover = false, onOpen, route }: { index: number; n
       <span className="rdp-route-card__shade" />
       <span className="rdp-route-card__copy"><strong>{route.title}</strong><small><span><Icon name="route" size={12} /> {route.distance}</span><span><Icon name="clock" size={12} /> ~2ч</span><span><Icon name="flag" size={12} /> {route.points}</span></small></span>
     </span>
-    <span className="rdp-route-card__more"><span>Подробнее</span><Icon name="chevron" size={17} /></span>
   </a>
 }
 
@@ -321,7 +315,7 @@ function NewRaidSheet({ onClose, onQuick, onSchedule }: { onClose: () => void; o
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
-  return <div className="rdp-sheet-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} role="presentation"><section aria-labelledby="new-raid-title" aria-modal="true" className="rdp-sheet" ref={dialogRef} role="dialog"><span className="rdp-sheet__handle" /><div className="rdp-sheet__head"><div><p className="rdp-eyebrow">Новый рейд</p><h2 id="new-raid-title">Как едем?</h2></div><button aria-label="Закрыть" autoFocus onClick={onClose} type="button">×</button></div><button className="rdp-sheet-choice" onClick={onQuick} type="button"><span><Icon name="send" /></span><span><strong>Поехали сейчас</strong><small>Начать без предварительного расписания</small></span><Icon name="chevron" /></button><button className="rdp-sheet-choice" onClick={onSchedule} type="button"><span><Icon name="calendar" /></span><span><strong>Запланировать</strong><small>Выбрать дату и время</small></span><Icon name="chevron" /></button></section></div>
+  return <div className="rdp-sheet-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }} role="presentation"><section aria-labelledby="new-raid-title" aria-modal="true" className="rdp-sheet" ref={dialogRef} role="dialog"><span className="rdp-sheet__handle" /><div className="rdp-sheet__head"><div><p className="rdp-eyebrow">Новый рейд</p><h2 id="new-raid-title">Как едем?</h2></div><button aria-label="Закрыть" autoFocus onClick={onClose} type="button"><Icon name="close" size={20} /></button></div><button className="rdp-sheet-choice" onClick={onQuick} type="button"><span><Icon name="send" /></span><span><strong>Поехали сейчас</strong><small>Начать без предварительного расписания</small></span><Icon name="chevron" /></button><button className="rdp-sheet-choice" onClick={onSchedule} type="button"><span><Icon name="calendar" /></span><span><strong>Запланировать</strong><small>Выбрать дату и время</small></span><Icon name="chevron" /></button></section></div>
 }
 
 function BottomNav({ onRaids }: { onRaids: () => void }) {

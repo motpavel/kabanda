@@ -9,14 +9,15 @@
 
 ## Visual parity
 
-Выполнено четыре последовательных визуальных прохода при логическом viewport 430×900. После четвёртого прохода:
+После первоначальной сверки с референсом выполнен отдельный мобильный проход по обратной связи Павла:
 
-- active card: top 114 px, height 229 px;
-- upcoming list: top 383 px, height 114 px;
-- route rail: top 537 px, height 184 px;
-- history: top 735 px, height 124 px;
-- reference active card: примерно top 115 px, height 227 px;
-- horizontal page overflow: отсутствует.
+- на 390×844 сетка маршрутов имеет две колонки по 170 px; карточки 1–2 стоят в первой строке, карточка 3 — под первой;
+- ширина контейнера и `scrollWidth` совпадают: 354 px;
+- на 320×568 сетка имеет две колонки по 142 px и ширину 296 px без горизонтального скролла;
+- отдельные футеры `Подробнее` удалены, вся карточка остаётся доступной ссылкой;
+- пустая секция `Предстоящие` отсутствует, `variant=upcoming-cases` показывает только записи пользователя;
+- close target — ровно 44×44 px с SVG-крестиком; календарь и велосипед приведены к единому outline-стилю;
+- на 320×568 с `text=120` итоговый `document.scrollWidth` равен 320 px.
 
 Артефакты:
 
@@ -68,7 +69,7 @@
 6. disabled-участник недоступен, выбор сохраняется после server error, повторная отправка защищена состоянием submitting.
 7. быстрый старт заканчивается открытым lobby, планирование — состоянием `Рейд запланирован`.
 
-Также проверены прямые query-состояния `idle`, `loading`, `catalog-error`, `partial-error`, `empty`, `upcoming-empty`, `upcoming-cases`, `offline`, `fallback`, `archived`, participant `long/error/permission-error`.
+Также проверены прямые query-состояния `idle`, `loading`, `catalog-error`, `partial-error`, `empty`, `upcoming-empty`, `upcoming-cases`, `offline`, `fallback`, `archived`, participant `long/error/permission-error`. В `upcoming-empty` секция отсутствует; `upcoming-cases` содержит только строки с меткой `Вы едете`.
 
 Keyboard smoke: focus trap цикличен, Escape закрывает chooser, фокус возвращается на `Новый рейд`.
 
@@ -77,8 +78,9 @@ Keyboard smoke: focus trap цикличен, Escape закрывает chooser, 
 - `pnpm --filter @kabanda/pwa typecheck`
 - `pnpm --filter @kabanda/pwa test`
 - `pnpm --filter @kabanda/pwa build`
+- `pnpm exec playwright test e2e/raids-design.spec.ts --list`
 
-Unit tests фиксируют допустимые query states, полноту карточек маршрутов, 20 участников и disabled member. После объединения с актуальной картой последний PWA-прогон: 32 файла, 111 тестов — passed. Полный `pnpm check` также включает domain, API, stand и data-validation тесты.
+Unit tests фиксируют допустимые query states, полноту карточек маршрутов, 20 участников и disabled member. Отдельный e2e-контракт проверяет 2×N layout на 320×568 и 390×844, отсутствие `Подробнее`, условный `Предстоящие`, 44×44 close target и возврат фокуса. После объединения с актуальной картой последний PWA-прогон: 32 файла, 111 тестов — passed. Полный `pnpm check` также включает domain, API, stand и data-validation тесты.
 
 Все финальные `*-390x844.png` имеют фактический размер 390×844 и PNG-кодирование; desktop evidence — 1440×900 PNG.
 
