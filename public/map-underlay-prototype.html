@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f7f5" />
+    <title>КАБАНДА — проба Яндекс-подложки</title>
+    <style>
+      :root {
+        color: #232a35;
+        background: #efefec;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        min-height: 100dvh;
+        margin: 0;
+      }
+
+      .shell {
+        display: grid;
+        width: min(100%, 520px);
+        min-height: 100vh;
+        min-height: 100dvh;
+        grid-template-rows: auto 1fr auto;
+        margin: 0 auto;
+        overflow: hidden;
+        background: #f7f7f5;
+        box-shadow: 0 0 60px rgba(35, 42, 53, 0.12);
+      }
+
+      header {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+        border-bottom: 1px solid #dedfdb;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+
+      header span,
+      footer span {
+        color: #747c86;
+        font-size: 12px;
+      }
+
+      .provider {
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: #232a35;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(35, 42, 53, 0.08);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .map {
+        position: relative;
+        min-height: 480px;
+        overflow: hidden;
+        background: #e5e7e3;
+      }
+
+      .map-stage,
+      .map-stage iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .map-stage {
+        transform: translate3d(0, 0, 0);
+        will-change: transform;
+      }
+
+      .map-stage iframe {
+        opacity: 1;
+        border: 0;
+        pointer-events: none;
+        transition: opacity 280ms ease;
+      }
+
+      .map-stage iframe.map-frame--incoming { opacity: 0; }
+      .map-stage iframe.map-frame--outgoing { opacity: 0; }
+
+      .points-layer {
+        position: absolute;
+        z-index: 1;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .point {
+        position: absolute;
+        width: 19px;
+        height: 19px;
+        transform: translate(-50%, -50%);
+        border: 3px solid rgba(255, 255, 255, 0.96);
+        border-radius: 50%;
+        background: #777d84;
+        box-shadow:
+          0 1px 3px rgba(35, 42, 53, 0.32),
+          0 0 0 1px rgba(35, 42, 53, 0.1);
+      }
+
+      .points-layer.is-animating .point {
+        transition:
+          left 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          top 360ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .point::after {
+        position: absolute;
+        inset: 4px;
+        border-radius: inherit;
+        background: #fff;
+        content: "";
+      }
+
+      .note {
+        position: absolute;
+        z-index: 4;
+        top: 12px;
+        left: 50%;
+        width: max-content;
+        max-width: calc(100% - 24px);
+        transform: translateX(-50%);
+        border-radius: 999px;
+        padding: 8px 12px;
+        color: #232a35;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 4px 18px rgba(35, 42, 53, 0.14);
+        font-size: 12px;
+        font-weight: 700;
+        pointer-events: none;
+      }
+
+      .gesture-layer {
+        position: absolute;
+        z-index: 3;
+        inset: 0;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      .gesture-layer.is-dragging { cursor: grabbing; }
+
+      .zoom-controls {
+        position: absolute;
+        z-index: 5;
+        top: 50%;
+        right: 8px;
+        display: grid;
+        overflow: hidden;
+        transform: translateY(-50%);
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(35, 42, 53, 0.22);
+      }
+
+      .zoom-controls button {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border: 0;
+        color: #353b43;
+        background: #fff;
+        font: 400 28px/1 Arial, sans-serif;
+        cursor: pointer;
+      }
+
+      .zoom-controls button + button { border-top: 1px solid #e1e2df; }
+      .zoom-controls button:hover { background: #f4f4f2; }
+      .zoom-controls button:focus-visible {
+        position: relative;
+        outline: 2px solid #5c6470;
+        outline-offset: -3px;
+      }
+      .zoom-controls button:disabled {
+        color: #b7bbc0;
+        cursor: default;
+      }
+
+      footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 13px 16px max(13px, env(safe-area-inset-bottom));
+        border-top: 1px solid #dedfdb;
+        background: #fff;
+      }
+
+      footer strong { font-size: 13px; }
+
+      @media (min-width: 700px) {
+        body { padding: 24px; }
+        .shell {
+          min-height: calc(100dvh - 48px);
+          border: 1px solid #dedfdb;
+          border-radius: 28px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .map-stage iframe,
+        .points-layer.is-animating .point { transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>Красное&amp;Белое</h1>
+          <span>Ижевск · 177 магазинов</span>
+        </div>
+        <div class="provider">Яндекс</div>
+      </header>
+      <section class="map" aria-label="Интерактивная карта Ижевска">
+        <div class="map-stage">
+          <iframe
+            loading="eager"
+            referrerpolicy="no-referrer-when-downgrade"
+            src="https://yandex.ru/map-widget/v1/?ll=53.204500%2C56.852800&z=12"
+            title="Яндекс Карты — Ижевск"
+          ></iframe>
+          <div class="points-layer" aria-hidden="true"></div>
+        </div>
+        <div class="gesture-layer" aria-label="Перемещение и масштабирование карты"></div>
+        <div class="zoom-controls" aria-label="Масштаб карты">
+          <button type="button" data-zoom="in" aria-label="Приблизить">+</button>
+          <button type="button" data-zoom="out" aria-label="Отдалить">−</button>
+          <button type="button" data-action="reset" aria-label="Вернуться к центру">⌖</button>
+        </div>
+        <div class="note">Точки официальных магазинов КБ</div>
+      </section>
+      <footer>
+        <strong>177 магазинов Красное&amp;Белое</strong>
+        <span>Данные КБ · 31.08.2026</span>
+      </footer>
+    </main>
+    <script>
+      let center = [53.2045, 56.8528];
+      let zoom = 12;
+      const MIN_ZOOM = 10;
+      const MAX_ZOOM = 17;
+      const STORES_UPDATED_AT = "2026-08-31";
+      const STORES_SOURCE = "https://krasnoeibeloe.ru/api/cities/1154/shops/";
+      const STORES = [
+        {"id":6102,"shopNumber":"803","address":"ул. Удмуртская, 300","hours":"пн-вс 9:00 - 22:05","latitude":56.868649,"longitude":53.224085},
+        {"id":6193,"shopNumber":"898","address":"ул. Удмуртская, 261А","hours":"пн-вс 9:00 - 22:05","latitude":56.873564,"longitude":53.220707},
+        {"id":6215,"shopNumber":"920","address":"ул. Т. Барамзиной, 78А","hours":"пн-вс 9:00 - 22:05","latitude":56.865668,"longitude":53.28711},
+        {"id":6216,"shopNumber":"921","address":"ул. Ворошилова, 60А","hours":"пн-вс 9:00 - 22:05","latitude":56.874011,"longitude":53.266746},
+        {"id":6305,"shopNumber":"1018","address":"ул. Молодежная, 58","hours":"пн-вс 9:00 - 22:05","latitude":56.849197,"longitude":53.292141},
+        {"id":6352,"shopNumber":"1067","address":"пр-д 8-ой Подлесный, 10","hours":"пн-вс 9:00 - 22:05","latitude":56.872349,"longitude":53.19082},
+        {"id":6353,"shopNumber":"1068","address":"ул. Барышникова, 41","hours":"пн-вс 9:00 - 22:05","latitude":56.870927,"longitude":53.301178},
+        {"id":6354,"shopNumber":"1069","address":"ул. Ленина, 93","hours":"пн-вс 9:00 - 22:05","latitude":56.849576,"longitude":53.257053},
+        {"id":6355,"shopNumber":"1070","address":"ул. Ленина, 158А","hours":"пн-вс 9:00 - 22:05","latitude":56.842551,"longitude":53.294081},
+        {"id":6356,"shopNumber":"1071","address":"ул. М. Горького, 154","hours":"пн-вс 9:00 - 22:05","latitude":56.854562,"longitude":53.198581},
+        {"id":6357,"shopNumber":"1072","address":"ул. Т. Барамзиной, 64","hours":"пн-вс 9:00 - 22:05","latitude":56.863833,"longitude":53.288449},
+        {"id":6399,"shopNumber":"1116","address":"ул. Архитектора П. П. Берша, 32","hours":"пн-вс 9:00 - 22:05","latitude":56.8674,"longitude":53.30416},
+        {"id":6400,"shopNumber":"1117","address":"ул. Ворошилова, 55, к. 4","hours":"пн-вс 9:00 - 22:05","latitude":56.878424,"longitude":53.267087},
+        {"id":6471,"shopNumber":"1195","address":"ул. Пушкинская, 251","hours":"пн-вс 9:00 - 22:05","latitude":56.858774,"longitude":53.208068},
+        {"id":6472,"shopNumber":"1196","address":"ж/р Машиностроителей, 112","hours":"пн-вс 9:00 - 22:05","latitude":56.834304,"longitude":53.114706},
+        {"id":6507,"shopNumber":"1233","address":"ул. Пушкинская, 169","hours":"пн-вс 9:00 - 22:05","latitude":56.838563,"longitude":53.215649},
+        {"id":6558,"shopNumber":"1289","address":"ул. Удмуртская, 269А","hours":"пн-вс 9:00 - 22:05","latitude":56.880086,"longitude":53.222495},
+        {"id":6559,"shopNumber":"1290","address":"ул. Клубная, 46","hours":"пн-вс 9:00 - 22:05","latitude":56.831098,"longitude":53.137595},
+        {"id":6560,"shopNumber":"1291","address":"ул. Пушкинская, 181","hours":"пн-вс 9:00 - 22:05","latitude":56.843398,"longitude":53.214104},
+        {"id":6632,"shopNumber":"1366","address":"ул. Воровского, 144","hours":"пн-вс 9:00 - 22:05","latitude":56.841295,"longitude":53.232484},
+        {"id":6633,"shopNumber":"1367","address":"ул. Холмогорова, 76","hours":"пн-вс 9:00 - 22:05","latitude":56.875654,"longitude":53.224929},
+        {"id":6710,"shopNumber":"1451","address":"ул. Петрова, 43/1","hours":"пн-вс 9:00 - 22:05","latitude":56.868571,"longitude":53.292914},
+        {"id":6711,"shopNumber":"1452","address":"ул. им. Сабурова А. Н., 19Д","hours":"пн-вс 9:00 - 22:05","latitude":56.880401,"longitude":53.299561},
+        {"id":6712,"shopNumber":"1453","address":"ул. Школьная, 10","hours":"пн-вс 9:00 - 22:05","latitude":56.865904,"longitude":53.1864},
+        {"id":6761,"shopNumber":"1503","address":"ул. Героя России Ильфата Закирова, 30","hours":"пн-вс 9:00 - 22:05","latitude":56.837278,"longitude":53.287164},
+        {"id":6788,"shopNumber":"1530","address":"ул. Высотная, 3А","hours":"пн-вс 9:00 - 22:05","latitude":56.789888,"longitude":53.159835},
+        {"id":6789,"shopNumber":"1531","address":"ул. Тимирязева, 13","hours":"пн-вс 9:00 - 22:05","latitude":56.86492,"longitude":53.241323},
+        {"id":6790,"shopNumber":"1532","address":"с. Октябрьский, 6А","hours":"пн-вс 9:00 - 22:05","latitude":56.841911,"longitude":53.323402},
+        {"id":6847,"shopNumber":"1590","address":"ул. К. Маркса, 2","hours":"пн-вс 9:00 - 22:05","latitude":56.820833,"longitude":53.208903},
+        {"id":6918,"shopNumber":"1661","address":"ул. В. Сивкова, 105","hours":"пн-вс 9:00 - 22:05","latitude":56.835441,"longitude":53.208041},
+        {"id":6919,"shopNumber":"1662","address":"ул. 7-я Подлесная, 20","hours":"пн-вс 9:00 - 22:05","latitude":56.870627,"longitude":53.191072},
+        {"id":7007,"shopNumber":"1757","address":"ул. Пушкинская, 268","hours":"пн-вс 9:00 - 22:05","latitude":56.863031,"longitude":53.209954},
+        {"id":7031,"shopNumber":"1782","address":"ул. Буммашевская, 88","hours":"пн-вс 9:00 - 22:05","latitude":56.875718,"longitude":53.248932},
+        {"id":7115,"shopNumber":"1870","address":"ул. Гагарина, 19","hours":"пн-вс 9:00 - 22:05","latitude":56.8053,"longitude":53.1875685},
+        {"id":2317839,"shopNumber":"11338","address":"ул. Азина, 143","hours":"пн-вс 9:00 - 22:05","latitude":56.818296,"longitude":53.179546},
+        {"id":2317840,"shopNumber":"11341","address":"ш. Воткинское, 66","hours":"пн-вс 9:00 - 22:05","latitude":56.884286,"longitude":53.238494},
+        {"id":2317841,"shopNumber":"11342","address":"ул. Удмуртская, 189","hours":"пн-вс 9:00 - 22:05","latitude":56.838573,"longitude":53.225351},
+        {"id":2317842,"shopNumber":"11343","address":"ул. Героя России И.Закирова, 9","hours":"пн-вс 9:00 - 22:05","latitude":56.840862,"longitude":53.287622},
+        {"id":2317843,"shopNumber":"11344","address":"ул. Тверская, 42","hours":"пн-вс 9:00 - 22:05","latitude":56.854591,"longitude":53.110708},
+        {"id":2317844,"shopNumber":"11390","address":"ул. Баранова, 83а","hours":"пн-вс 9:00 - 22:05","latitude":56.833609,"longitude":53.13269},
+        {"id":2317845,"shopNumber":"11391","address":"ул. Ворошилова, 1а","hours":"пн-вс 9:00 - 22:05","latitude":56.878261,"longitude":53.259865},
+        {"id":2317846,"shopNumber":"11392","address":"ул. Союзная, 31","hours":"пн-вс 9:00 - 22:05","latitude":56.8455,"longitude":53.302508},
+        {"id":2317847,"shopNumber":"11393","address":"ул. Крылова, 24","hours":"пн-вс 9:00 - 22:05","latitude":56.842201,"longitude":53.118155},
+        {"id":2317848,"shopNumber":"11394","address":"ул. Красногеройская, 30","hours":"пн-вс 9:00 - 22:05","latitude":56.848931,"longitude":53.216323},
+        {"id":2317850,"shopNumber":"11396","address":"ул. Архитектора П.П. Берша, 3, корп.2","hours":"пн-вс 9:00 - 22:05","latitude":56.877809,"longitude":53.306316},
+        {"id":2317851,"shopNumber":"11397","address":"ул. Молодежная, 80","hours":"пн-вс 9:00 - 22:05","latitude":56.84705,"longitude":53.290803},
+        {"id":2317852,"shopNumber":"11398","address":"пл. им. 50-летия Октября, 5","hours":"пн-вс 9:00 - 22:05","latitude":56.852952,"longitude":53.223375},
+        {"id":2317854,"shopNumber":"11400","address":"ул. 50 лет Пионерии, 43","hours":"пн-вс 9:00 - 22:05","latitude":56.859178,"longitude":53.18004},
+        {"id":2317855,"shopNumber":"11401","address":"ул. 8-я Подлесная, 48","hours":"пн-вс 9:00 - 22:05","latitude":56.872329,"longitude":53.185466},
+        {"id":2317856,"shopNumber":"11402","address":"ул. Клубная, 17/1","hours":"пн-вс 9:00 - 22:05","latitude":56.830162,"longitude":53.150989},
+        {"id":2317857,"shopNumber":"11403","address":"ул. Майская, 17","hours":"пн-вс 9:00 - 22:05","latitude":56.870027,"longitude":53.217392},
+        {"id":2317858,"shopNumber":"11404","address":"ул. Кирова, 20","hours":"пн-вс 9:00 - 22:05","latitude":56.861992,"longitude":53.182636},
+        {"id":2317859,"shopNumber":"11405","address":"ул. Советская, 45","hours":"пн-вс 9:00 - 22:05","latitude":56.848207,"longitude":53.236338},
+        {"id":2317860,"shopNumber":"11406","address":"ул. Автозаводская, 2","hours":"пн-вс 9:00 - 22:05","latitude":56.87105,"longitude":53.27899},
+        {"id":2317861,"shopNumber":"11407","address":"ул. Воровского, 172","hours":"пн-вс 9:00 - 22:05","latitude":56.84647,"longitude":53.230903},
+        {"id":2317862,"shopNumber":"11408","address":"ш. Воткинское, 132 а","hours":"пн-вс 9:00 - 22:05","latitude":56.889724,"longitude":53.256649},
+        {"id":2317863,"shopNumber":"11409","address":"ул. Циолковского, 22, к. 1","hours":"пн-вс 9:00 - 22:05","latitude":56.837234,"longitude":53.244055},
+        {"id":2317864,"shopNumber":"11414","address":"ул. Оружейника Драгунова, 54","hours":"пн-вс 9:00 - 22:05","latitude":56.828301,"longitude":53.14797},
+        {"id":2317866,"shopNumber":"11416","address":"ул. Пастухова, 39","hours":"пн-вс 9:00 - 22:05","latitude":56.842064,"longitude":53.211095},
+        {"id":2317867,"shopNumber":"11417","address":"ул. Пушкинская, 116","hours":"пн-вс 9:00 - 22:05","latitude":56.834422,"longitude":53.218452},
+        {"id":2317868,"shopNumber":"11418","address":"ул. Автозаводская, 62","hours":"пн-вс 9:00 - 22:05","latitude":56.876112,"longitude":53.293102},
+        {"id":2317869,"shopNumber":"11419","address":"ул. Е.М.Кунгурцева, 25","hours":"пн-вс 9:00 - 22:05","latitude":56.891126,"longitude":53.250073},
+        {"id":2317870,"shopNumber":"11420","address":"ул. К. Маркса, 405","hours":"пн-вс 9:00 - 22:05","latitude":56.864443,"longitude":53.197081},
+        {"id":2317872,"shopNumber":"11422","address":"ул. Коммунаров, 204","hours":"пн-вс 9:00 - 22:05","latitude":56.84357,"longitude":53.220707},
+        {"id":2317873,"shopNumber":"11423","address":"ул. Пушкинская, 367 А","hours":"пн-вс 9:00 - 22:05","latitude":56.871975,"longitude":53.206981},
+        {"id":2317874,"shopNumber":"11424","address":"ул. Промышленная, 31","hours":"пн-вс 9:00 - 22:05","latitude":56.835692,"longitude":53.244908},
+        {"id":2317875,"shopNumber":"11425","address":"ул. Пушкинская, 233","hours":"пн-вс 9:00 - 22:05","latitude":56.855447,"longitude":53.209909},
+        {"id":2317876,"shopNumber":"11426","address":"ул. 40 лет Победы, 52","hours":"пн-вс 9:00 - 22:05","latitude":56.848936,"longitude":53.283939},
+        {"id":2317877,"shopNumber":"11427","address":"ул. 10 лет Октября, 42а","hours":"пн-вс 9:00 - 22:05","latitude":56.871493,"longitude":53.249085},
+        {"id":2317878,"shopNumber":"11436","address":"ш. Воткинское, 39","hours":"пн-вс 9:00 - 22:05","latitude":56.88851,"longitude":53.241746},
+        {"id":2317879,"shopNumber":"11437","address":"ул. Автозаводская, 18","hours":"пн-вс 9:00 - 22:05","latitude":56.872654,"longitude":53.281747},
+        {"id":2317880,"shopNumber":"11440","address":"ул. Удмуртская, 214","hours":"пн-вс 9:00 - 22:05","latitude":56.842393,"longitude":53.228504},
+        {"id":2317881,"shopNumber":"11441","address":"ул. Красноармейская, 142","hours":"пн-вс 9:00 - 22:05","latitude":56.844225,"longitude":53.209568},
+        {"id":2317882,"shopNumber":"11446","address":"ул. Молодежная, 103А","hours":"пн-вс 9:00 - 22:05","latitude":56.853228,"longitude":53.298312},
+        {"id":2332383,"shopNumber":"10639","address":"ул. Ленина, 86","hours":"пн-вс 9:00 - 22:05","latitude":56.845899,"longitude":53.237047},
+        {"id":2336118,"shopNumber":"8958","address":"ул. Молодежная, 37 а","hours":"пн-вс 9:00 - 22:05","latitude":56.853326,"longitude":53.28597},
+        {"id":2355387,"shopNumber":"11844","address":"городок Машиностроителей, 106","hours":"пн-вс 9:00 - 22:05","latitude":56.831667,"longitude":53.10955},
+        {"id":2355409,"shopNumber":"11931","address":"ул. 7-я Подлесная, 118","hours":"пн-вс 9:00 - 22:05","latitude":56.870037,"longitude":53.172467},
+        {"id":2355410,"shopNumber":"11936","address":"ул. Пушкинская, 163","hours":"пн-вс 9:00 - 22:05","latitude":56.83684,"longitude":53.214877},
+        {"id":2368918,"shopNumber":"11499","address":"ул. Автозаводская, 54, маг. № 1006","hours":"пн-вс 9:00 - 22:05","latitude":56.878778,"longitude":53.292626},
+        {"id":2423992,"shopNumber":"12336","address":"ул. Холмогорова, 21а","hours":"пн-вс 9:00 - 22:05","latitude":56.877691,"longitude":53.212487},
+        {"id":2525095,"shopNumber":"12854","address":"ул. Выставочная, 3, кор.1","hours":"пн-вс 9:00 - 22:05","latitude":56.915112,"longitude":53.267222},
+        {"id":2544864,"shopNumber":"12871","address":"ул. Красноармейская, 61","hours":"пн-вс 9:00 - 22:05","latitude":56.832703,"longitude":53.209667},
+        {"id":2549809,"shopNumber":"12885","address":"ул. Гагарина, 5","hours":"пн-вс 9:00 - 22:05","latitude":56.810561,"longitude":53.189032},
+        {"id":2586940,"shopNumber":"12767","address":"ул. Ленина, 110","hours":"пн-вс 9:00 - 22:05","latitude":56.848227,"longitude":53.262065},
+        {"id":2614212,"shopNumber":"12900","address":"ул. Локомотивная, 38","hours":"пн-вс 9:00 - 22:05","latitude":56.788781,"longitude":53.174623},
+        {"id":2657079,"shopNumber":"13184","address":"ул. Орджоникидзе, 36а","hours":"пн-вс 9:00 - 22:05","latitude":56.841911,"longitude":53.239078},
+        {"id":2714064,"shopNumber":"13287","address":"ул. Клубная, 60","hours":"пн-вс 9:00 - 22:05","latitude":56.829965,"longitude":53.130085},
+        {"id":2718882,"shopNumber":"13239","address":"ул. Карла Маркса, 268","hours":"пн-вс 9:00 - 22:05","latitude":56.855895,"longitude":53.203684},
+        {"id":2753325,"shopNumber":"13384","address":"ул. Труда, 48","hours":"пн-вс 9:00 - 22:05","latitude":56.862046,"longitude":53.280283},
+        {"id":2753326,"shopNumber":"13400","address":"ул. Максима Горького, 163","hours":"пн-вс 9:00 - 22:05","latitude":56.858612,"longitude":53.196812},
+        {"id":2834926,"shopNumber":"13631","address":"ул. Ленина, 8","hours":"пн-вс 9:00 - 22:05","latitude":56.843299,"longitude":53.206343},
+        {"id":2903406,"shopNumber":"13851","address":"пр-кт Конструктора Калашникова М.Т, 19","hours":"пн-вс 9:00 - 22:05","latitude":56.85651,"longitude":53.285691},
+        {"id":2918432,"shopNumber":"14276","address":"ул. Дарьинская, 1","hours":"пн-вс 9:00 - 22:05","latitude":56.919023,"longitude":53.263754},
+        {"id":3012880,"shopNumber":"14426","address":"ул. им 50-летия ВЛКСМ, 49","hours":"пн-вс 9:00 - 22:05","latitude":56.876072,"longitude":53.182133},
+        {"id":3047731,"shopNumber":"14560","address":"ул. им Татьяны Барамзиной, 30","hours":"пн-вс 9:00 - 22:05","latitude":56.865402,"longitude":53.282125},
+        {"id":3065434,"shopNumber":"14986","address":"ул. Удмуртская, 268","hours":"пн-вс 9:00 - 22:05","latitude":56.857441,"longitude":53.223123},
+        {"id":3080854,"shopNumber":"14532","address":"ул. Пушкинская, 246","hours":"пн-вс 9:00 - 22:05","latitude":56.859094,"longitude":53.211113},
+        {"id":3127624,"shopNumber":"15243","address":"ул. 50 лет ВЛКСМ, 6","hours":"пн-вс 9:00 - 22:05","latitude":56.877189,"longitude":53.194988},
+        {"id":3138121,"shopNumber":"15203","address":"ул. им. А.Н. Сабурова, 73","hours":"пн-вс 9:00 - 22:05","latitude":56.875531,"longitude":53.300774},
+        {"id":3168577,"shopNumber":"15546","address":"пр-д Редукторный","hours":"пн-вс 9:00 - 22:05","latitude":56.865811,"longitude":53.229933},
+        {"id":3179212,"shopNumber":"15565","address":"ул. Коммунаров, 285","hours":"пн-вс 9:00 - 22:05","latitude":56.851618,"longitude":53.217177},
+        {"id":3191149,"shopNumber":"15235","address":"ул. архитектора П.П.Берша, 16","hours":"пн-вс 9:00 - 22:05","latitude":56.872905,"longitude":53.305526},
+        {"id":3196241,"shopNumber":"14200","address":"ул. Пушкинская, 224","hours":"пн-вс 9:00 - 22:05","latitude":56.856156,"longitude":53.211239},
+        {"id":3196247,"shopNumber":"15684","address":"ул. 10 лет Октября, 7","hours":"пн-вс 9:00 - 22:05","latitude":56.872339,"longitude":53.213107},
+        {"id":3210586,"shopNumber":"15547","address":"ул. Карла Либкнехта, 6","hours":"пн-вс 9:00 - 22:05","latitude":56.837224,"longitude":53.209433},
+        {"id":3224563,"shopNumber":"15928","address":"ул. Удмуртская, 163","hours":"пн-вс 9:00 - 22:05","latitude":56.837235,"longitude":53.227818},
+        {"id":3229628,"shopNumber":"15595","address":"ул. им. Петрова, 3","hours":"пн-вс 9:00 - 22:05","latitude":56.874299,"longitude":53.287544},
+        {"id":3238109,"shopNumber":"16124","address":"ул. Молодежная, 44","hours":"пн-вс 9:00 - 22:05","latitude":56.852078,"longitude":53.289662},
+        {"id":3254934,"shopNumber":"15405","address":"ул. 7-я Подлесная, 71","hours":"пн-вс 9:00 - 22:05","latitude":56.869772,"longitude":53.185698},
+        {"id":3300504,"shopNumber":"16167","address":"ул. Лихвинцева, 66","hours":"пн-вс 9:00 - 22:05","latitude":56.851923,"longitude":53.226599},
+        {"id":3332706,"shopNumber":"16339","address":"ул. им. 50-летия ВЛКСМ, 36","hours":"пн-вс 9:00 - 22:05","latitude":56.876688,"longitude":53.187824},
+        {"id":3334661,"shopNumber":"15914","address":"ул. им Вадима Сивкова, 111","hours":"пн-вс 9:00 - 22:05","latitude":56.837915,"longitude":53.207532},
+        {"id":3355321,"shopNumber":"16502","address":"ул. Пушкинская, 280А","hours":"пн-вс 9:00 - 22:05","latitude":56.869082,"longitude":53.208723},
+        {"id":3360181,"shopNumber":"16405","address":"ул. 30 лет Победы, 7В","hours":"пн-вс 9:00 - 22:05","latitude":56.864015,"longitude":53.181406},
+        {"id":3394900,"shopNumber":"17054","address":"пер. Северный, 45","hours":"пн-вс 9:00 - 22:05","latitude":56.867646,"longitude":53.210349},
+        {"id":3397667,"shopNumber":"17693","address":"ул. Металлургов, 9, к.1","hours":"пн-вс 9:00 - 22:05","latitude":56.873613,"longitude":53.193515},
+        {"id":3398542,"shopNumber":"17242","address":"ул. Ракетная, 9А","hours":"пн-вс 9:00 - 22:05","latitude":56.830615,"longitude":53.277696},
+        {"id":3418709,"shopNumber":"17752","address":"ул. 40 лет Победы, 71","hours":"пн-вс 9:00 - 22:05","latitude":56.863887,"longitude":53.272998},
+        {"id":3434178,"shopNumber":"17920","address":"ул. Гагарина, 27","hours":"пн-вс 9:00 - 22:05","latitude":56.802777,"longitude":53.18676},
+        {"id":3435238,"shopNumber":"16657","address":"ул. Баранова, 92А","hours":"пн-вс 9:00 - 22:05","latitude":56.834412,"longitude":53.124258},
+        {"id":3457247,"shopNumber":"18012","address":"ул. 10 лет Октября, 60Б, к.2","hours":"пн-вс 9:00 - 22:05","latitude":56.86855,"longitude":53.263377},
+        {"id":3459413,"shopNumber":"16941","address":"ул. Динамовская, 124","hours":"пн-вс 9:00 - 22:05","latitude":56.791702,"longitude":53.175118},
+        {"id":3480696,"shopNumber":"18517","address":"ул. Дзержинского, 60","hours":"пн-вс 9:00 - 22:05","latitude":56.88358,"longitude":53.253116},
+        {"id":3483834,"shopNumber":"18466","address":"ул. Карла Либкнехта, 51","hours":"пн-вс 9:00 - 22:05","latitude":56.83876,"longitude":53.230301},
+        {"id":3493906,"shopNumber":"18303","address":"ул. Пушкинская, 289Б","hours":"пн-вс 9:00 - 22:05","latitude":56.869653,"longitude":53.207142},
+        {"id":3519089,"shopNumber":"18490","address":"ул. Азина, 336","hours":"пн-вс 9:00 - 22:05","latitude":56.793701,"longitude":53.157412},
+        {"id":3519095,"shopNumber":"18845","address":"ул. Ленина, 95А","hours":"пн-вс 9:00 - 22:05","latitude":56.850048,"longitude":53.267491},
+        {"id":3623962,"shopNumber":"19864","address":"ул. Карла Либкнехта, 14","hours":"пн-вс 9:00 - 22:05","latitude":56.837524,"longitude":53.218847},
+        {"id":3631633,"shopNumber":"19893","address":"ул. Карла Маркса, 259","hours":"пн-вс 9:00 - 22:05","latitude":56.852903,"longitude":53.202193},
+        {"id":3674019,"shopNumber":"20726","address":"ул. архитектора П. П. Берша, 15","hours":"пн-вс 9:00 - 22:05","latitude":56.877533,"longitude":53.302067},
+        {"id":3687039,"shopNumber":"20749","address":"ул. Красноармейская, 135","hours":"пн-вс 9:00 - 22:05","latitude":56.843068,"longitude":53.20911},
+        {"id":3688788,"shopNumber":"20662","address":"ул. 7-я Подлесная, 100, к. 3","hours":"пн-вс 9:00 - 22:05","latitude":56.870194,"longitude":53.17598},
+        {"id":3700029,"shopNumber":"20776","address":"ул. Карла Маркса, 308, к. 2","hours":"пн-вс 9:00 - 22:05","latitude":56.866032,"longitude":53.202444},
+        {"id":3705336,"shopNumber":"20574","address":"ул. Ворошилова, 71","hours":"пн-вс 9:00 - 22:05","latitude":56.878296,"longitude":53.275639},
+        {"id":3722412,"shopNumber":"20629","address":"ул. Труда, 34","hours":"пн-вс 9:00 - 22:05","latitude":56.862091,"longitude":53.285368},
+        {"id":3731092,"shopNumber":"21216","address":"ул. Ворошилова, 29","hours":"пн-вс 9:00 - 22:05","latitude":56.877315,"longitude":53.26656},
+        {"id":3733423,"shopNumber":"21397","address":"ул. Союзная, 163А,  к. 3","hours":"пн-вс 9:00 - 22:05","latitude":56.859483,"longitude":53.300163},
+        {"id":3745694,"shopNumber":"21279","address":"ул. Коммунаров, 289","hours":"пн-вс 9:00 - 22:05","latitude":56.855708,"longitude":53.216215},
+        {"id":3751766,"shopNumber":"20888","address":"ул. 9 Января, 259","hours":"пн-вс 9:00 - 22:05","latitude":56.883991,"longitude":53.25752},
+        {"id":3761130,"shopNumber":"21656","address":"ул. Максима Горького, 155","hours":"пн-вс 9:00 - 22:05","latitude":56.856855,"longitude":53.195931},
+        {"id":3777304,"shopNumber":"22417","address":"ул. Шишкина, 5","hours":"пн-вс 9:00 - 22:05","latitude":56.863311,"longitude":53.23517},
+        {"id":3789896,"shopNumber":"21996","address":"ул. Удмуртская, 247","hours":"пн-вс 9:00 - 22:05","latitude":56.856599,"longitude":53.220914},
+        {"id":3803492,"shopNumber":"22510","address":"ул. Герцена, 8, к. 1","hours":"пн-вс 9:00 - 22:05","latitude":56.853242,"longitude":53.250953},
+        {"id":3806656,"shopNumber":"22321","address":"ул. архитектора П. П. Берша, 19","hours":"пн-вс 9:00 - 22:05","latitude":56.875822,"longitude":53.306694},
+        {"id":3827593,"shopNumber":"23312","address":"ул. Архитектурная, 7","hours":"пн-вс 9:00 - 22:05","latitude":56.937997,"longitude":53.244126},
+        {"id":3829422,"shopNumber":"23163","address":"ул. Карла Маркса, 302","hours":"пн-вс 9:00 - 22:05","latitude":56.859901,"longitude":53.203109},
+        {"id":3831116,"shopNumber":"23376","address":"ул. Школьная, 47","hours":"пн-вс 9:00 - 22:05","latitude":56.877386,"longitude":53.18411},
+        {"id":3858428,"shopNumber":"24020","address":"ул. 10 лет Октября, 62","hours":"пн-вс 9:00 - 22:05","latitude":56.869678,"longitude":53.266002},
+        {"id":3859846,"shopNumber":"22696","address":"ул. Удмуртская, 265","hours":"пн-вс 9:00 - 22:05","latitude":56.877061,"longitude":53.22112},
+        {"id":3869771,"shopNumber":"24258","address":"ш. Воткинское, 45","hours":"пн-вс 9:00 - 22:05","latitude":56.889218,"longitude":53.245147},
+        {"id":4174728,"shopNumber":"24817","address":"ул. 30 лет Победы, 20","hours":"пн-вс 9:00 - 22:05","latitude":56.865437,"longitude":53.181783},
+        {"id":4192557,"shopNumber":"25281","address":"ш. Славянское, 0/14","hours":"пн-вс 9:00 - 22:05","latitude":56.911913,"longitude":53.233095},
+        {"id":4223593,"shopNumber":"24152","address":"ул. Школьная, 1","hours":"пн-вс 9:00 - 22:05","latitude":56.864157,"longitude":53.185035},
+        {"id":4244368,"shopNumber":"26056","address":"ул. Азина, 220А","hours":"пн-вс 9:00 - 22:05","latitude":56.807383,"longitude":53.168874},
+        {"id":4272274,"shopNumber":"26153","address":"ул. Телегина, 101","hours":"пн-вс 9:00 - 22:05","latitude":56.83422,"longitude":53.148006},
+        {"id":4286851,"shopNumber":"26193","address":"ул. Школьная, 23","hours":"пн-вс 9:00 - 22:05","latitude":56.868182,"longitude":53.184873},
+        {"id":4296123,"shopNumber":"26682","address":"ул. Автозаводская, 9","hours":"пн-вс 9:00 - 22:05","latitude":56.879603,"longitude":53.301761},
+        {"id":4305475,"shopNumber":"27408","address":"ул. Пушкинская, 183","hours":"пн-вс 9:00 - 22:05","latitude":56.844609,"longitude":53.213925},
+        {"id":4320609,"shopNumber":"27674","address":"пр-д Бабушкина, 108","hours":"пн-вс 9:00 - 22:05","latitude":56.870243,"longitude":53.259613},
+        {"id":4330903,"shopNumber":"28164","address":"ул. Кунгурцева Е.М., 10","hours":"пн-вс 9:00 - 22:05","latitude":56.890413,"longitude":53.249507},
+        {"id":4351718,"shopNumber":"26969","address":"ул. Удмуртская, 296","hours":"пн-вс 9:00 - 22:05","latitude":56.86724,"longitude":53.225675},
+        {"id":4365199,"shopNumber":"26718","address":"ул. Васнецова, 2, к. 1","hours":"пн-вс 9:00 - 22:05","latitude":56.850678,"longitude":53.268443},
+        {"id":4381154,"shopNumber":"28451","address":"ул. 9 Января, 255А","hours":"пн-вс 9:00 - 22:05","latitude":56.881586,"longitude":53.256604},
+        {"id":4386545,"shopNumber":"24489","address":"ул. Лихвинцева, 46","hours":"пн-вс 9:00 - 22:05","latitude":56.852071,"longitude":53.213467},
+        {"id":4392920,"shopNumber":"28748","address":"ул. 9-я Подлесная, 11, к. 2","hours":"пн-вс 9:00 - 22:05","latitude":56.874031,"longitude":53.197378},
+        {"id":4401317,"shopNumber":"28780","address":"ул. Новоярушкинская, 38","hours":"пн-вс 9:00 - 22:05","latitude":56.931579,"longitude":53.284184},
+        {"id":4438978,"shopNumber":"28865","address":"ул. Ворошилова, 91","hours":"пн-вс 9:00 - 22:05","latitude":56.879378,"longitude":53.278576},
+        {"id":4464044,"shopNumber":"29744","address":"ул. Металлистов, 54","hours":"пн-вс 9:00 - 22:05","latitude":56.875394,"longitude":53.18958},
+        {"id":4479326,"shopNumber":"29174","address":"ш. Воткинское, 34","hours":"пн-вс 9:00 - 22:05","latitude":56.885618,"longitude":53.2319},
+        {"id":4482390,"shopNumber":"29485","address":"ул. Ракетная, 28А","hours":"пн-вс 9:00 - 22:05","latitude":56.832797,"longitude":53.287075},
+        {"id":4519223,"shopNumber":"30329","address":"ул. Парковая, 5А","hours":"пн-вс 9:00 - 22:05","latitude":56.849359,"longitude":53.246569},
+        {"id":4572271,"shopNumber":"30947","address":"ул. Цветочная, 3","hours":"пн-вс 9:00 - 22:05","latitude":56.873352,"longitude":53.269234},
+        {"id":4650890,"shopNumber":"31571","address":"ул. Новаторов, 2, к.1","hours":"пн-вс 9:00 - 22:05","latitude":56.842879,"longitude":53.303091},
+        {"id":4653565,"shopNumber":"31599","address":"ул. Цветочная, 12, к.1","hours":"пн-вс 9:00 - 22:05","latitude":56.870645,"longitude":53.269719},
+        {"id":4754576,"shopNumber":"32330","address":"ул. Университетская, 6, к. 2","hours":"пн-вс 9:00 - 22:05","latitude":56.850582,"longitude":53.233192},
+        {"id":4766380,"shopNumber":"32362","address":"ул. 1-я Подлесная, 3","hours":"пн-вс 9:00 - 22:05","latitude":56.862529,"longitude":53.188943},
+      ];
+
+      const map = document.querySelector(".map");
+      const stage = document.querySelector(".map-stage");
+      let frame = document.querySelector("iframe");
+      const layer = document.querySelector(".points-layer");
+      const gestureLayer = document.querySelector(".gesture-layer");
+      const zoomInButton = document.querySelector('[data-zoom="in"]');
+      const zoomOutButton = document.querySelector('[data-zoom="out"]');
+      const resetButton = document.querySelector('[data-action="reset"]');
+      let dragStart = null;
+      let dragOffset = { x: 0, y: 0 };
+      let pendingView = null;
+      let wheelLocked = false;
+
+      function worldPoint([longitude, latitude], targetZoom = zoom) {
+        const scale = 256 * 2 ** targetZoom;
+        const sin = Math.sin((latitude * Math.PI) / 180);
+        return {
+          x: ((longitude + 180) / 360) * scale,
+          y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale
+        };
+      }
+
+      function coordinatesFromWorld({ x, y }, targetZoom = zoom) {
+        const scale = 256 * 2 ** targetZoom;
+        const longitude = (x / scale) * 360 - 180;
+        const mercator = Math.PI * (1 - (2 * y) / scale);
+        const latitude = (Math.atan(Math.sinh(mercator)) * 180) / Math.PI;
+        return [longitude, latitude];
+      }
+
+      function mapUrl(nextCenter, nextZoom) {
+        const ll = `${nextCenter[0].toFixed(6)},${nextCenter[1].toFixed(6)}`;
+        return `https://yandex.ru/map-widget/v1/?ll=${encodeURIComponent(ll)}&z=${nextZoom}`;
+      }
+
+      function syncControls() {
+        zoomInButton.disabled = zoom >= MAX_ZOOM || Boolean(pendingView);
+        zoomOutButton.disabled = zoom <= MIN_ZOOM || Boolean(pendingView);
+        resetButton.disabled = Boolean(pendingView);
+      }
+
+      function ensurePoints() {
+        if (layer.children.length === STORES.length) return;
+        layer.replaceChildren(
+          ...STORES.map(() => {
+            const point = document.createElement("span");
+            point.className = "point";
+            return point;
+          })
+        );
+      }
+
+      function renderPoints() {
+        ensurePoints();
+        const projectedCenter = worldPoint(center);
+        const { width, height } = layer.getBoundingClientRect();
+        STORES.forEach((store, index) => {
+          const projected = worldPoint([store.longitude, store.latitude]);
+          const point = layer.children[index];
+          point.dataset.shopId = String(store.id);
+          point.dataset.shopNumber = store.shopNumber;
+          point.title = `К&Б №${store.shopNumber} · ${store.address} · ${store.hours}`;
+          point.style.left = `${width / 2 + projected.x - projectedCenter.x}px`;
+          point.style.top = `${height / 2 + projected.y - projectedCenter.y}px`;
+        });
+      }
+
+      function requestView(nextCenter, nextZoom) {
+        if (pendingView) return;
+        pendingView = {
+          center: nextCenter,
+          zoom: nextZoom,
+          isZoom: nextZoom !== zoom
+        };
+        syncControls();
+
+        const incomingFrame = frame.cloneNode();
+        incomingFrame.className = "map-frame--incoming";
+        incomingFrame.src = mapUrl(nextCenter, nextZoom);
+        incomingFrame.title = "Яндекс Карты — обновлённый вид";
+        incomingFrame.addEventListener("load", () => finishViewChange(incomingFrame), { once: true });
+        stage.insertBefore(incomingFrame, layer);
+      }
+
+      function finishViewChange(incomingFrame) {
+        if (!pendingView) return;
+        const oldFrame = frame;
+        const shouldAnimateZoom = pendingView.isZoom;
+        center = pendingView.center;
+        zoom = pendingView.zoom;
+
+        if (shouldAnimateZoom) layer.classList.add("is-animating");
+
+        requestAnimationFrame(() => {
+          stage.style.transform = "translate3d(0, 0, 0)";
+          dragOffset = { x: 0, y: 0 };
+          renderPoints();
+          incomingFrame.classList.remove("map-frame--incoming");
+
+          if (shouldAnimateZoom) {
+            oldFrame.classList.add("map-frame--outgoing");
+          } else {
+            oldFrame.remove();
+          }
+
+          window.setTimeout(() => {
+            oldFrame.remove();
+            layer.classList.remove("is-animating");
+            frame = incomingFrame;
+            pendingView = null;
+            syncControls();
+          }, shouldAnimateZoom ? 380 : 0);
+        });
+      }
+
+      function requestZoom(nextZoom) {
+        const clampedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+        if (clampedZoom === zoom) return;
+        requestView(center, clampedZoom);
+      }
+
+      function finishDrag(event) {
+        if (!dragStart || pendingView) return;
+        gestureLayer.releasePointerCapture?.(event.pointerId);
+        gestureLayer.classList.remove("is-dragging");
+        dragStart = null;
+
+        if (Math.abs(dragOffset.x) < 2 && Math.abs(dragOffset.y) < 2) {
+          stage.style.transform = "translate3d(0, 0, 0)";
+          return;
+        }
+
+        const projectedCenter = worldPoint(center);
+        const nextCenter = coordinatesFromWorld({
+          x: projectedCenter.x - dragOffset.x,
+          y: projectedCenter.y - dragOffset.y
+        });
+        requestView(nextCenter, zoom);
+      }
+
+      gestureLayer.addEventListener("pointerdown", (event) => {
+        if (pendingView || event.button !== 0) return;
+        dragStart = { x: event.clientX, y: event.clientY };
+        dragOffset = { x: 0, y: 0 };
+        gestureLayer.setPointerCapture(event.pointerId);
+        gestureLayer.classList.add("is-dragging");
+      });
+
+      gestureLayer.addEventListener("pointermove", (event) => {
+        if (!dragStart || pendingView) return;
+        dragOffset = {
+          x: event.clientX - dragStart.x,
+          y: event.clientY - dragStart.y
+        };
+        stage.style.transform = `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`;
+      });
+
+      gestureLayer.addEventListener("pointerup", finishDrag);
+      gestureLayer.addEventListener("pointercancel", finishDrag);
+      gestureLayer.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        requestZoom(zoom + 1);
+      });
+
+      gestureLayer.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        if (wheelLocked || pendingView) return;
+        wheelLocked = true;
+        requestZoom(zoom + (event.deltaY < 0 ? 1 : -1));
+        window.setTimeout(() => { wheelLocked = false; }, 450);
+      }, { passive: false });
+
+      zoomInButton.addEventListener("click", () => requestZoom(zoom + 1));
+      zoomOutButton.addEventListener("click", () => requestZoom(zoom - 1));
+      resetButton.addEventListener("click", () => requestView([53.2045, 56.8528], 12));
+      new ResizeObserver(renderPoints).observe(layer);
+      renderPoints();
+      syncControls();
+    </script>
+  </body>
+</html>
