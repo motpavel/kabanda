@@ -1,6 +1,5 @@
 import '@fontsource-variable/manrope'
-import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
@@ -27,7 +26,6 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
-import { loadMapLibre } from './maplibre'
 import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
@@ -835,9 +833,57 @@ function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint
   return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${point.visitedByMe ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 
-function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: Dispatch<SetStateAction<ProviderState>> }) {
+type MapView = {
+  center: readonly [number, number]
+  zoom: number
+}
+
+type MapFrame = {
+  id: number
+  src: string
+}
+
+const INITIAL_MAP_VIEW: MapView = { center: [53.2045, 56.8528], zoom: 12 }
+const MIN_MAP_ZOOM = 10
+const MAX_MAP_ZOOM = 17
+
+function mapWorldPoint([longitude, latitude]: readonly [number, number], zoom: number) {
+  const scale = 256 * 2 ** zoom
+  const sin = Math.sin((latitude * Math.PI) / 180)
+  return {
+    x: ((longitude + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale,
+  }
+}
+
+function mapCoordinatesFromWorld({ x, y }: { x: number; y: number }, zoom: number): readonly [number, number] {
+  const scale = 256 * 2 ** zoom
+  const longitude = (x / scale) * 360 - 180
+  const mercator = Math.PI * (1 - (2 * y) / scale)
+  const latitude = (Math.atan(Math.sinh(mercator)) * 180) / Math.PI
+  return [longitude, latitude]
+}
+
+function yandexMapUrl(view: MapView) {
+  const ll = `${view.center[0].toFixed(6)},${view.center[1].toFixed(6)}`
+  return `https://yandex.ru/map-widget/v1/?ll=${encodeURIComponent(ll)}&z=${view.zoom}`
+}
+
+function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const trackingRequestedRef = useRef(false)
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null)
+  const pendingViewRef = useRef<MapView | null>(null)
+  const nextFrameIdRef = useRef(1)
+  const fadeTimerRef = useRef<number | null>(null)
+  const wheelLockedRef = useRef(false)
+  const [view, setView] = useState<MapView>(INITIAL_MAP_VIEW)
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
+  const [activeFrame, setActiveFrame] = useState<MapFrame>(() => ({ id: 0, src: yandexMapUrl(INITIAL_MAP_VIEW) }))
+  const [incomingFrame, setIncomingFrame] = useState<MapFrame | null>(null)
+  const [fading, setFading] = useState(false)
+  const [userLocation, setUserLocation] = useState<readonly [number, number] | null>(null)
   const [geolocationError, setGeolocationError] = useState<string | null>(() =>
     'geolocation' in navigator ? null : 'Геолокация недоступна на этом устройстве.',
   )
@@ -845,96 +891,174 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    let destroyed = false
-    let teardown: (() => void) | undefined
-    const shouldResumeTracking = trackingRequestedRef.current
-    void loadMapLibre().then(({ GeolocateControl, Map, Marker }) => {
-      if (destroyed) return
-      const map = new Map({
-        container,
-        center: [53.2045, 56.8528],
-        zoom: 11.3,
-        minZoom: 10,
-        maxZoom: 18,
-        maxBounds: [[53.06, 56.74], [53.34, 56.95]],
-        locale: {
-          'GeolocateControl.FindMyLocation': 'Определить моё местоположение',
-          'GeolocateControl.LocationNotAvailable': 'Геолокация недоступна',
-        },
-        style: {
-          version: 8,
-          sources: {
-            osm: {
-              type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256,
-              maxzoom: 19,
-              attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            },
-          },
-          layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-        },
-      })
-      map.on('error', () => !destroyed && setProviderState('failed'))
-      const geolocate = new GeolocateControl({
-        positionOptions: { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 },
-        fitBoundsOptions: { maxZoom: 16 },
-        trackUserLocation: true,
-        showAccuracyCircle: true,
-        showUserLocation: true,
-      })
-      geolocate.on('trackuserlocationstart', () => {
-        if (destroyed) return
-        trackingRequestedRef.current = true
-        setGeolocationError(null)
-      })
-      geolocate.on('trackuserlocationend', () => {
-        if (!destroyed) trackingRequestedRef.current = false
-      })
-      geolocate.on('geolocate', () => !destroyed && setGeolocationError(null))
-      geolocate.on('error', () => {
-        if (!destroyed) setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
-      })
-      map.addControl(geolocate, 'bottom-left')
-      map.once('load', () => {
-        if (destroyed) return
-        setProviderState('ready')
-        if (shouldResumeTracking) geolocate.trigger()
-      })
-      const markers = points.map((point) => {
-        const element = document.createElement('button')
-        element.type = 'button'
-        element.dataset.pointId = point.id
-        element.className = `kb-map-marker kb-map-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`
-        element.setAttribute('aria-label', point.category === 'stores'
-          ? `${point.name}. ${point.address}`
-          : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`)
-        element.setAttribute('aria-pressed', String(selectedId === point.id))
-        element.addEventListener('click', () => onSelect(point.id))
-        return new Marker({ element }).setLngLat([point.longitude, point.latitude]).addTo(map)
-      })
-      teardown = () => {
-        markers.forEach((marker) => marker.remove())
-        map.remove()
-      }
-    }).catch(() => !destroyed && setProviderState('failed'))
-    return () => {
-      destroyed = true
-      teardown?.()
+    const updateSize = () => {
+      const bounds = container.getBoundingClientRect()
+      setSize({ width: bounds.width, height: bounds.height })
     }
-  }, [onSelect, points, setProviderState])
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(container)
+    updateSize()
+    return () => {
+      observer.disconnect()
+      if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current)
+    }
+  }, [])
 
-  useEffect(() => {
-    const markers = containerRef.current?.querySelectorAll<HTMLElement>('[data-point-id]') ?? []
-    markers.forEach((marker) => {
-      const selected = marker.dataset.pointId === selectedId
-      marker.classList.toggle('selected', selected)
-      marker.setAttribute('aria-pressed', String(selected))
-    })
-  }, [selectedId])
+  const requestView = (center: readonly [number, number], zoom: number) => {
+    if (pendingViewRef.current) return
+    const nextView: MapView = {
+      center,
+      zoom: Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, zoom)),
+    }
+    if (nextView.center[0] === view.center[0] && nextView.center[1] === view.center[1] && nextView.zoom === view.zoom) return
+    pendingViewRef.current = nextView
+    setIncomingFrame({ id: nextFrameIdRef.current++, src: yandexMapUrl(nextView) })
+  }
+
+  const finishFrameTransition = (loadedFrame: MapFrame) => {
+    const nextView = pendingViewRef.current
+    if (!nextView || incomingFrame?.id !== loadedFrame.id) return
+    setView(nextView)
+    setDragOffset({ x: 0, y: 0 })
+    setFading(true)
+    setProviderState('ready')
+    if (fadeTimerRef.current !== null) window.clearTimeout(fadeTimerRef.current)
+    fadeTimerRef.current = window.setTimeout(() => {
+      setActiveFrame(loadedFrame)
+      setIncomingFrame(null)
+      setFading(false)
+      pendingViewRef.current = null
+      fadeTimerRef.current = null
+    }, 380)
+  }
+
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragStart = dragStartRef.current
+    if (!dragStart) return
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    dragStartRef.current = null
+    setDragging(false)
+    if (Math.abs(dragOffset.x) < 2 && Math.abs(dragOffset.y) < 2) {
+      setDragOffset({ x: 0, y: 0 })
+      return
+    }
+    const center = mapWorldPoint(view.center, view.zoom)
+    requestView(mapCoordinatesFromWorld({ x: center.x - dragOffset.x, y: center.y - dragOffset.y }, view.zoom), view.zoom)
+  }
+
+  const locateUser = () => {
+    if (!('geolocation' in navigator)) {
+      setGeolocationError('Геолокация недоступна на этом устройстве.')
+      return
+    }
+    setGeolocationError(null)
+    navigator.geolocation.getCurrentPosition((position) => {
+      const location = [position.coords.longitude, position.coords.latitude] as const
+      setUserLocation(location)
+      requestView(location, Math.max(view.zoom, 15))
+    }, () => {
+      setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
+    }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 })
+  }
+
+  const projectedCenter = mapWorldPoint(view.center, view.zoom)
+  const positionFor = (longitude: number, latitude: number) => {
+    const projected = mapWorldPoint([longitude, latitude], view.zoom)
+    return {
+      left: size.width / 2 + projected.x - projectedCenter.x,
+      top: size.height / 2 + projected.y - projectedCenter.y,
+    }
+  }
+
+  const busy = incomingFrame !== null
 
   return <>
-    <div ref={containerRef} className="kb-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" />
+    <div ref={containerRef} className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска">
+      <div className="kb-yandex-map-stage" style={{ transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)` }}>
+        <iframe
+          key={activeFrame.id}
+          className={fading ? 'is-outgoing' : undefined}
+          src={activeFrame.src}
+          title="Яндекс Карты — Ижевск"
+          loading="eager"
+          referrerPolicy="no-referrer-when-downgrade"
+          onLoad={() => setProviderState('ready')}
+          onError={() => setProviderState('failed')}
+        />
+        {incomingFrame ? (
+          <iframe
+            key={incomingFrame.id}
+            className={`is-incoming${fading ? ' is-ready' : ''}`}
+            src={incomingFrame.src}
+            title="Яндекс Карты — обновлённый вид"
+            loading="eager"
+            referrerPolicy="no-referrer-when-downgrade"
+            onLoad={() => finishFrameTransition(incomingFrame)}
+            onError={() => {
+              pendingViewRef.current = null
+              setIncomingFrame(null)
+              setDragOffset({ x: 0, y: 0 })
+              setProviderState('failed')
+            }}
+          />
+        ) : null}
+        <div className={`kb-yandex-points${fading ? ' is-animating' : ''}`} aria-label="Точки на карте">
+          {points.map((point) => {
+            const position = positionFor(point.longitude, point.latitude)
+            return (
+              <button
+                key={point.id}
+                type="button"
+                data-point-id={point.id}
+                className={`kb-yandex-marker kb-yandex-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`}
+                style={position}
+                aria-label={point.category === 'stores'
+                  ? `${point.name}. ${point.address}`
+                  : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`}
+                aria-pressed={selectedId === point.id}
+                onClick={() => onSelect(point.id)}
+              />
+            )
+          })}
+          {userLocation ? <span className="kb-yandex-user-location" style={positionFor(userLocation[0], userLocation[1])} aria-label="Моё местоположение" /> : null}
+        </div>
+      </div>
+      <div
+        className={`kb-yandex-gesture${dragging ? ' is-dragging' : ''}`}
+        aria-hidden="true"
+        onPointerDown={(event) => {
+          if (busy || event.button !== 0) return
+          dragStartRef.current = { x: event.clientX, y: event.clientY }
+          setDragOffset({ x: 0, y: 0 })
+          setDragging(true)
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }}
+        onPointerMove={(event) => {
+          const dragStart = dragStartRef.current
+          if (!dragStart || busy) return
+          setDragOffset({ x: event.clientX - dragStart.x, y: event.clientY - dragStart.y })
+        }}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          requestView(view.center, view.zoom + 1)
+        }}
+        onWheel={(event) => {
+          event.preventDefault()
+          if (wheelLockedRef.current || busy) return
+          wheelLockedRef.current = true
+          requestView(view.center, view.zoom + (event.deltaY < 0 ? 1 : -1))
+          window.setTimeout(() => { wheelLockedRef.current = false }, 450)
+        }}
+      />
+      <div className="kb-yandex-zoom" aria-label="Масштаб карты">
+        <button type="button" aria-label="Приблизить" disabled={busy || view.zoom >= MAX_MAP_ZOOM} onClick={() => requestView(view.center, view.zoom + 1)}>+</button>
+        <button type="button" aria-label="Отдалить" disabled={busy || view.zoom <= MIN_MAP_ZOOM} onClick={() => requestView(view.center, view.zoom - 1)}>−</button>
+        <button type="button" aria-label="Вернуться к центру" disabled={busy} onClick={() => requestView(INITIAL_MAP_VIEW.center, INITIAL_MAP_VIEW.zoom)}>⌖</button>
+      </div>
+      <button className="kb-yandex-geolocate" type="button" aria-label="Определить моё местоположение" disabled={busy} onClick={locateUser}><span aria-hidden="true">◎</span></button>
+    </div>
     {geolocationError ? <p className="kb-map-geolocation-error" role="alert">{geolocationError}</p> : null}
   </>
 }
