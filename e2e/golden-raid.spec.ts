@@ -63,8 +63,24 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.locator('.kb-team-cover-menu input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   expect((await coverResponse).ok()).toBe(true)
   await expect(page.locator('.kb-team-cover img')).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
+  const categorySelect = page.getByLabel('Категория точек')
+  await expect(categorySelect).toHaveValue('stores')
+  await expect(page.locator('.kb-map-marker--stores')).toHaveCount(177)
+  const [categoryBox, viewSwitchBox] = await Promise.all([
+    categorySelect.boundingBox(),
+    page.locator('.kb-map-view-switch').boundingBox(),
+  ])
+  expect(categoryBox).not.toBeNull()
+  expect(viewSwitchBox).not.toBeNull()
+  expect((categoryBox?.x ?? 0) + (categoryBox?.width ?? 0)).toBeLessThanOrEqual(viewSwitchBox?.x ?? 0)
+  expect(Math.abs((categoryBox?.height ?? 0) - (viewSwitchBox?.height ?? 0))).toBeLessThanOrEqual(1)
+  await categorySelect.selectOption('attractions')
+  await expect(page.locator('.kb-map-marker--stores')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
+  await expect(page.locator('.kb-map-marker--attractions')).toHaveCount(1)
+  await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
   await page.getByRole('button', { name: 'Создать рейд' }).click()
