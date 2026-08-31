@@ -464,6 +464,37 @@
 .kb-map .maplibregl-ctrl-attrib { font-size: 10px; }
 .kb-map .maplibregl-ctrl-bottom-left,
 .kb-map .maplibregl-ctrl-bottom-right { bottom: calc(82px + env(safe-area-inset-bottom)); }
+.kb-map .maplibregl-ctrl-bottom-left .maplibregl-ctrl-group {
+  overflow: hidden;
+  margin: 0 0 10px 12px;
+  border: 1px solid rgb(73 78 72 / 14%);
+  border-radius: 14px;
+  background: rgb(255 253 248 / 96%);
+  box-shadow: 0 6px 18px rgb(32 41 35 / 18%);
+  backdrop-filter: blur(14px);
+}
+.kb-map .maplibregl-ctrl-geolocate { width: 48px; height: 48px; }
+.kb-map .maplibregl-user-location-dot,
+.kb-map .maplibregl-user-location-dot::before { width: 16px; height: 16px; background-color: #1677ff; }
+.kb-map .maplibregl-user-location-dot::after { width: 22px; height: 22px; top: -3px; left: -3px; border-width: 3px; }
+
+.kb-map-geolocation-error {
+  position: fixed;
+  z-index: 63;
+  right: 14px;
+  bottom: calc(142px + env(safe-area-inset-bottom));
+  left: 14px;
+  width: min(calc(100% - 28px), 420px);
+  margin: 0 auto;
+  border: 1px solid rgb(216 61 49 / 18%);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #9d3026;
+  background: rgb(255 250 246 / 96%);
+  box-shadow: 0 8px 24px rgb(32 41 35 / 15%);
+  font-size: .78rem;
+  text-align: center;
+}
 
 .kb-map-controls {
   position: fixed;

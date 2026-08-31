@@ -68,6 +68,11 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const categorySelect = page.getByLabel('Категория точек')
   await expect(categorySelect).toHaveValue('stores')
   await expect(page.locator('.kb-map-marker--stores')).toHaveCount(177)
+  const geolocateButton = page.getByRole('button', { name: 'Определить моё местоположение' })
+  await expect(geolocateButton).toBeEnabled()
+  await geolocateButton.click()
+  await expect(geolocateButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.maplibregl-user-location-dot')).toBeVisible()
   const [categoryBox, viewSwitchBox] = await Promise.all([
     page.locator('.kb-map-category').boundingBox(),
     page.locator('.kb-map-view-switch').boundingBox(),
@@ -81,6 +86,8 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.locator('.kb-map-marker--stores')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
   await expect(page.locator('.kb-map-marker--attractions')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Определить моё местоположение' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.maplibregl-user-location-dot')).toBeVisible()
   await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()

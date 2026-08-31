@@ -837,13 +837,18 @@ function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint
 
 function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: Dispatch<SetStateAction<ProviderState>> }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const trackingRequestedRef = useRef(false)
+  const [geolocationError, setGeolocationError] = useState<string | null>(() =>
+    'geolocation' in navigator ? null : 'Геолокация недоступна на этом устройстве.',
+  )
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
     let destroyed = false
     let teardown: (() => void) | undefined
-    void loadMapLibre().then(({ Map, Marker }) => {
+    const shouldResumeTracking = trackingRequestedRef.current
+    void loadMapLibre().then(({ GeolocateControl, Map, Marker }) => {
       if (destroyed) return
       const map = new Map({
         container,
@@ -852,6 +857,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         minZoom: 10,
         maxZoom: 18,
         maxBounds: [[53.06, 56.74], [53.34, 56.95]],
+        locale: {
+          'GeolocateControl.FindMyLocation': 'Определить моё местоположение',
+          'GeolocateControl.LocationNotAvailable': 'Геолокация недоступна',
+        },
         style: {
           version: 8,
           sources: {
@@ -866,8 +875,32 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
           layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
         },
       })
-      map.once('load', () => !destroyed && setProviderState('ready'))
       map.on('error', () => !destroyed && setProviderState('failed'))
+      const geolocate = new GeolocateControl({
+        positionOptions: { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 },
+        fitBoundsOptions: { maxZoom: 16 },
+        trackUserLocation: true,
+        showAccuracyCircle: true,
+        showUserLocation: true,
+      })
+      geolocate.on('trackuserlocationstart', () => {
+        if (destroyed) return
+        trackingRequestedRef.current = true
+        setGeolocationError(null)
+      })
+      geolocate.on('trackuserlocationend', () => {
+        if (!destroyed) trackingRequestedRef.current = false
+      })
+      geolocate.on('geolocate', () => !destroyed && setGeolocationError(null))
+      geolocate.on('error', () => {
+        if (!destroyed) setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
+      })
+      map.addControl(geolocate, 'bottom-left')
+      map.once('load', () => {
+        if (destroyed) return
+        setProviderState('ready')
+        if (shouldResumeTracking) geolocate.trigger()
+      })
       const markers = points.map((point) => {
         const element = document.createElement('button')
         element.type = 'button'
@@ -900,7 +933,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     })
   }, [selectedId])
 
-  return <div ref={containerRef} className="kb-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" />
+  return <>
+    <div ref={containerRef} className="kb-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" />
+    {geolocationError ? <p className="kb-map-geolocation-error" role="alert">{geolocationError}</p> : null}
+  </>
 }
 
 function PointDetail({ point }: { point: MapPoint }) {
