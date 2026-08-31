@@ -5,6 +5,7 @@ import {
   idempotencyKeySchema,
   pointListQuerySchema,
   previewInviteSchema,
+  transferKabandaLeadershipSchema,
   updateKabandaSchema,
 } from '@kabanda/contracts'
 import type { GeographicBounds } from '@kabanda/domain'
@@ -65,7 +66,7 @@ export async function registerKabandaRoutes(
     if (!user) return authRequired(reply)
     if (user.identityKind !== 'verified') {
       return reply.status(403).send({
-        error: { code: 'VERIFIED_ACCOUNT_REQUIRED', message: 'Создавать команды может только организатор' },
+        error: { code: 'VERIFIED_ACCOUNT_REQUIRED', message: 'Создавать команды может только вожак' },
       })
     }
     const input = createKabandaSchema.parse(request.body)
@@ -109,6 +110,14 @@ export async function registerKabandaRoutes(
     const memberId = resourceIdSchema.parse(params.memberId)
     await dependencies.kabandas.removeMember(user.id, id, memberId)
     return reply.status(204).send()
+  })
+
+  app.post('/api/kabandas/:id/leadership', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const id = resourceIdSchema.parse((request.params as { id: string }).id)
+    const { memberId } = transferKabandaLeadershipSchema.parse(request.body)
+    return { kabanda: await dependencies.kabandas.transferLeadership(user.id, id, memberId) }
   })
 
   app.post('/api/kabandas/:id/invites', async (request, reply) => {

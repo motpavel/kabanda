@@ -138,6 +138,7 @@ export interface KabandaService {
   listMembers(userId: string, kabandaId: string): Promise<Array<Record<string, unknown>>>
   leaveKabanda(userId: string, kabandaId: string): Promise<void>
   removeMember(userId: string, kabandaId: string, memberId: string): Promise<void>
+  transferLeadership(userId: string, kabandaId: string, memberId: string): Promise<KabandaSummary>
   createInvite(
     userId: string,
     kabandaId: string,
@@ -192,7 +193,7 @@ export class DatabaseKabandaService implements KabandaService {
         [userId],
       )
       if (identity.rows[0]?.identity_kind !== 'verified') {
-        throw new KabandaError('VERIFIED_ACCOUNT_REQUIRED', 403, 'Создавать команды может только организатор')
+        throw new KabandaError('VERIFIED_ACCOUNT_REQUIRED', 403, 'Создавать команды может только вожак')
       }
       const result = await client.query<{ id: string; name: string; avatar: string }>(
         `INSERT INTO kabandas (name, avatar, owner_id, create_idempotency_key)
@@ -282,6 +283,39 @@ export class DatabaseKabandaService implements KabandaService {
       [kabandaId, memberId, userId],
     )
     if (result.rowCount !== 1) throw this.notFound()
+  }
+
+  async transferLeadership(
+    userId: string,
+    kabandaId: string,
+    memberId: string,
+  ): Promise<KabandaSummary> {
+    return transaction(this.pool, async (client) => {
+      await client.query('SELECT id FROM kabandas WHERE id = $1 AND archived_at IS NULL FOR UPDATE', [kabandaId])
+      await this.requireOwner(client, userId, kabandaId)
+      const target = await client.query(
+        `SELECT 1 FROM kabanda_memberships
+         WHERE kabanda_id = $1 AND user_id = $2 AND role = 'member' AND removed_at IS NULL
+         FOR UPDATE`,
+        [kabandaId, memberId],
+      )
+      if (target.rowCount !== 1) throw this.notFound()
+      await client.query(
+        `UPDATE kabanda_memberships SET role = 'member'
+         WHERE kabanda_id = $1 AND user_id = $2 AND role = 'owner' AND removed_at IS NULL`,
+        [kabandaId, userId],
+      )
+      await client.query(
+        `UPDATE kabanda_memberships SET role = 'owner'
+         WHERE kabanda_id = $1 AND user_id = $2 AND role = 'member' AND removed_at IS NULL`,
+        [kabandaId, memberId],
+      )
+      await client.query(
+        'UPDATE kabandas SET owner_id = $2, updated_at = now() WHERE id = $1',
+        [kabandaId, memberId],
+      )
+      return this.getSummary(client, userId, kabandaId)
+    })
   }
 
   async createInvite(

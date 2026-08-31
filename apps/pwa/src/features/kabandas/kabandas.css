@@ -707,7 +707,7 @@
   box-shadow: 0 16px 40px rgb(35 42 53 / 16%);
 }
 .kb-team-menu button { display: flex; min-height: 42px; gap: 9px; align-items: center; justify-content: flex-start; border: 0; padding: 9px 11px; text-align: left; box-shadow: none; }
-.kb-team-menu button:last-child { color: var(--kb-danger); }
+.kb-team-menu .kb-team-menu-danger { color: var(--kb-danger); }
 .kb-team-menu button[aria-current="page"] { background: #fff0ed; }
 .kb-team-menu button > span:last-child { display: grid; }
 .kb-team-menu small { color: var(--kb-muted); font-size: .72rem; font-weight: 500; }
@@ -806,14 +806,14 @@
 .kb-team-admin-members li + li { border-top: 1px solid var(--kb-line); }
 .kb-team-admin-members strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kb-shell .kb-team-admin-members button { min-height: 38px; border-color: #ffd5cf; color: var(--kb-danger); background: #fff7f5; box-shadow: none; }
+.kb-shell .kb-team-leadership-members button { border-color: #ffd0ca; color: var(--kb-brand-hover); background: #fff; }
 
-.kb-team-invite { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; }
-.kb-team-invite-copy p { max-width: 34ch; margin: 4px 0 0; color: var(--kb-muted); font-size: .84rem; line-height: 1.4; }
-.kb-shell .kb-invite-primary { display: inline-flex; gap: 8px; align-items: center; border-color: var(--kb-brand); color: #fff; background: var(--kb-brand); box-shadow: 0 7px 18px rgb(240 90 74 / 18%); }
+.kb-team-invite { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: center; }
+.kb-team-invite-copy p { max-width: none; margin: 4px 0 0; color: var(--kb-muted); font-size: clamp(.68rem, 2.6vw, .84rem); line-height: 1.25; white-space: nowrap; }
+.kb-shell .kb-invite-primary { display: inline-flex; width: 100%; grid-column: 1 / -1; gap: 8px; align-items: center; justify-content: center; border-color: var(--kb-brand); color: #fff; background: var(--kb-brand); box-shadow: 0 7px 18px rgb(240 90 74 / 18%); }
 .kb-shell .kb-invite-primary svg { width: 20px; height: 20px; }
-.kb-team-invite-arrow { color: var(--kb-muted); font-size: 2rem; font-weight: 320; line-height: 1; }
-.kb-team-invite-note { grid-column: 2 / -1; margin-top: -6px; color: var(--kb-muted); font-size: .72rem; }
-.kb-team-invite-result { display: grid; grid-column: 2 / -1; width: 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 10px; border-top: 1px solid var(--kb-line); padding-top: 10px; }
+.kb-team-invite-note { grid-column: 1 / -1; margin-top: -3px; color: var(--kb-muted); font-size: .72rem; text-align: center; }
+.kb-team-invite-result { display: grid; grid-column: 1 / -1; width: 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 10px; border-top: 1px solid var(--kb-line); padding-top: 10px; }
 .kb-team-invite-result label { grid-column: 1 / -1; margin: 0; }
 .kb-team-invite-result small { align-self: center; color: var(--kb-muted); font-size: .72rem; }
 .kb-team-invite-result .kb-text-action { margin: 0; }
@@ -923,13 +923,8 @@
   .kb-team-members li { gap: 8px; padding: 10px 0; }
   .kb-team-avatar { width: 40px; height: 40px; }
   .kb-member-role { padding: 5px 7px; font-size: .66rem; }
-  .kb-team-invite { grid-template-columns: auto minmax(0, 1fr) auto; }
   .kb-team-invite-icon { width: 44px; height: 44px; }
-  .kb-team-invite-copy p { font-size: .76rem; }
-  .kb-shell .kb-invite-primary { grid-column: 2 / -1; width: 100%; justify-content: center; }
-  .kb-team-invite-arrow { position: absolute; opacity: 0; pointer-events: none; }
-  .kb-team-invite-note,
-  .kb-team-invite-result { grid-column: 1 / -1; }
+  .kb-team-invite-copy p { font-size: clamp(.64rem, 2.7vw, .76rem); letter-spacing: -.015em; }
   .kb-team-account-row { align-items: stretch; flex-direction: column; }
   .kb-shell .kb-switch-account { width: 100%; justify-content: center; }
   .kb-shell .kb-leave-team { width: 100%; }

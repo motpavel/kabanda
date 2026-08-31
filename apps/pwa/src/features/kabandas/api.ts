@@ -46,6 +46,14 @@ export async function removeMember(kabandaId: string, memberId: string): Promise
   )
 }
 
+export async function transferLeadership(kabandaId: string, memberId: string): Promise<KabandaSummary> {
+  const response = await requestJson<{ kabanda: KabandaSummary }>(
+    `/api/kabandas/${encodeURIComponent(kabandaId)}/leadership`,
+    { method: 'POST', body: JSON.stringify({ memberId }) },
+  )
+  return response.kabanda
+}
+
 export async function leaveKabanda(kabandaId: string): Promise<void> {
   await requestJson<null>(`/api/kabandas/${encodeURIComponent(kabandaId)}/members/me`, {
     method: 'DELETE',

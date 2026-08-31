@@ -22,6 +22,7 @@ import {
   listPoints,
   leaveKabanda,
   removeMember,
+  transferLeadership,
   updateKabanda,
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
@@ -313,10 +314,9 @@ function KabandaWorkspace({
   const [message, setMessage] = useState<string | null>(null)
   const [membershipAction, setMembershipAction] = useState<string | null>(null)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
-  const [adminDialog, setAdminDialog] = useState<'rename' | 'members' | null>(null)
+  const [adminDialog, setAdminDialog] = useState<'rename' | 'members' | 'leadership' | null>(null)
   const [renameDraft, setRenameDraft] = useState(kabanda.name)
-  const [teamAction, setTeamAction] = useState<'rename' | 'cover' | null>(null)
-  const [showAllMembers, setShowAllMembers] = useState(false)
+  const [teamAction, setTeamAction] = useState<'rename' | 'cover' | 'leadership' | null>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const webglAvailable = useMemo(detectWebgl, [])
   const presentation = choosePointPresentation(requestedView, providerState, webglAvailable)
@@ -328,7 +328,7 @@ function KabandaWorkspace({
     const collectionId = kabanda.pointsCollectionId
     if (!collectionId) {
       setProviderState('failed')
-      setMessage('Организатор ещё не загрузил набор точек.')
+      setMessage('Вожак ещё не загрузил набор точек.')
       return () => {
         active = false
       }
@@ -417,6 +417,23 @@ function KabandaWorkspace({
       setMembershipAction(null)
     }
   }
+  const handOverLeadership = async (member: KabandaMember) => {
+    if (!window.confirm(`Передать права вожака участнику ${member.displayName}? После этого управлять Кабандой сможет он.`)) return
+    setTeamAction('leadership')
+    try {
+      const updated = await transferLeadership(kabanda.id, member.id)
+      onKabandaUpdated(updated)
+      setMembers((items) => items.map((item) => item.id === user.id
+        ? { ...item, role: 'member' }
+        : item.id === member.id ? { ...item, role: 'owner' } : item))
+      setAdminDialog(null)
+      setMessage(`Права вожака переданы участнику ${member.displayName}.`)
+    } catch {
+      setMessage('Не удалось передать права вожака. Обновите состав и повторите.')
+    } finally {
+      setTeamAction(null)
+    }
+  }
   const leave = async () => {
     if (!window.confirm(`Выйти из «${kabanda.name}»?`)) return
     setMembershipAction('me')
@@ -435,7 +452,7 @@ function KabandaWorkspace({
   </>
 
   const summary = <div className="kb-summary">
-    <div><h2>{kabanda.name}</h2><p>{kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'}</p></div>
+    <div><h2>{kabanda.name}</h2><p>{kabanda.role === 'owner' ? 'Вы вожак' : 'Вы участник'}</p></div>
     <p><strong>{points.filter(({ visitedByMe }) => visitedByMe).length}</strong><span>посещено лично</span></p>
     <p><strong>{points.filter(({ visitedByTeam }) => visitedByTeam).length}</strong><span>посетила команда</span></p>
   </div>
@@ -503,8 +520,7 @@ function KabandaWorkspace({
   const teamPoints = points.filter(({ visitedByTeam }) => visitedByTeam).length
   const completedRaids = progress?.team.completedRaids ?? 0
   const memberCount = members.length || kabanda.memberCount
-  const visibleMembers = showAllMembers ? members : members.slice(0, 2)
-  const roleLabel = kabanda.role === 'owner' ? 'Вы организатор' : 'Вы участник'
+  const roleLabel = kabanda.role === 'owner' ? 'Вы вожак' : 'Вы участник'
 
   return (
     <section className="kb-team-page" ref={workspaceRef}>
@@ -527,7 +543,8 @@ function KabandaWorkspace({
                   <div className="kb-team-menu" role="menu">
                     <button type="button" role="menuitem" onClick={() => { setRenameDraft(kabanda.name); setAdminDialog('rename'); setTeamMenuOpen(false) }}>Переименовать Кабанду</button>
                     <button type="button" role="menuitem" disabled={teamAction === 'cover'} onClick={chooseCover}>{teamAction === 'cover' ? 'Обрабатываем заставку…' : 'Сменить заставку'}</button>
-                    <button type="button" role="menuitem" onClick={() => { setAdminDialog('members'); setTeamMenuOpen(false) }}>Удалить участников</button>
+                    <button className="kb-team-menu-danger" type="button" role="menuitem" onClick={() => { setAdminDialog('members'); setTeamMenuOpen(false) }}>Удалить участников</button>
+                    <button type="button" role="menuitem" onClick={() => { setAdminDialog('leadership'); setTeamMenuOpen(false) }}>Передать права вожака</button>
                   </div>
                 )}
                 <input ref={coverInputRef} className="kb-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event)} />
@@ -553,19 +570,16 @@ function KabandaWorkspace({
         <section className="kb-team-panel kb-team-members-panel">
           <div className="kb-team-panel-head">
             <h2>Состав Кабанды</h2>
-            <button className="kb-team-text-button" type="button" onClick={() => setShowAllMembers((value) => !value)}>
-              {showAllMembers ? 'Свернуть' : 'Показать всех'}
-            </button>
           </div>
           {members.length ? (
             <ul className="kb-team-members">
-              {visibleMembers.map((member) => (
+              {members.map((member) => (
                 <li key={member.id}>
                   <span className="kb-team-avatar">
                     {member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.displayName.slice(0, 1).toUpperCase()}
                   </span>
-                  <span className="kb-team-member-name"><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Организатор' : 'Участник'}</small></span>
-                  <span className={`kb-member-role${member.role === 'owner' ? ' is-owner' : ''}`}>{member.role === 'owner' ? 'Организатор' : 'Участник'}</span>
+                  <span className="kb-team-member-name"><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Вожак' : 'Участник'}</small></span>
+                  <span className={`kb-member-role${member.role === 'owner' ? ' is-owner' : ''}`}>{member.role === 'owner' ? 'Вожак' : 'Участник'}</span>
                 </li>
               ))}
             </ul>
@@ -607,7 +621,7 @@ function KabandaWorkspace({
             <section className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-members-title">
               <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
               <h2 id="kb-members-title">Удалить участников</h2>
-              <p>Организатор останется в Кабанде.</p>
+              <p>Вожак останется в Кабанде.</p>
               {members.some(({ role }) => role === 'member') ? (
                 <ul className="kb-team-admin-members">
                   {members.filter(({ role }) => role === 'member').map((member) => (
@@ -619,6 +633,27 @@ function KabandaWorkspace({
                   ))}
                 </ul>
               ) : <p className="kb-muted">Других участников пока нет.</p>}
+            </section>
+          </div>
+        )}
+
+        {adminDialog === 'leadership' && (
+          <div className="kb-team-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAdminDialog(null)}>
+            <section className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-leadership-title">
+              <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
+              <h2 id="kb-leadership-title">Передать права вожака</h2>
+              <p>Выберите нового вожака. После передачи он получит управление Кабандой.</p>
+              {members.some(({ role }) => role === 'member') ? (
+                <ul className="kb-team-admin-members kb-team-leadership-members">
+                  {members.filter(({ role }) => role === 'member').map((member) => (
+                    <li key={member.id}>
+                      <span className="kb-team-avatar">{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.displayName.slice(0, 1).toUpperCase()}</span>
+                      <strong>{member.displayName}</strong>
+                      <button type="button" disabled={teamAction === 'leadership'} onClick={() => void handOverLeadership(member)}>{teamAction === 'leadership' ? 'Передаём…' : 'Передать'}</button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="kb-muted">Некому передать права — других участников пока нет.</p>}
             </section>
           </div>
         )}
@@ -724,14 +759,13 @@ function InviteCreator({ kabandaId, canInvite }: { kabandaId: string; canInvite:
   return (
     <section className="kb-team-panel kb-team-invite">
       <span className="kb-team-invite-icon"><TeamScreenIcon name="invite" /></span>
-      <div className="kb-team-invite-copy"><h2>Приглашения</h2><p>Приглашайте друзей в Кабанду и катайтесь вместе.</p></div>
+      <div className="kb-team-invite-copy"><h2>Приглашения</h2><p>Приглашайте друзей в команду — катайтесь вместе.</p></div>
       {!link ? (
-        <button className="kb-invite-primary" type="button" onClick={create} disabled={!canInvite || state === 'creating'} title={!canInvite ? 'Приглашения создаёт организатор Кабанды' : undefined}>
+        <button className="kb-invite-primary" type="button" onClick={create} disabled={!canInvite || state === 'creating'} title={!canInvite ? 'Приглашения создаёт вожак Кабанды' : undefined}>
           <TeamScreenIcon name="members" />{state === 'creating' ? 'Создаём ссылку…' : state === 'error' ? 'Повторить' : 'Пригласить участника'}
         </button>
       ) : <button className="kb-invite-primary" type="button" onClick={copy}><TeamScreenIcon name="invite" />Скопировать ссылку</button>}
-      <span className="kb-team-invite-arrow" aria-hidden="true">›</span>
-      {!canInvite ? <small className="kb-team-invite-note">Ссылку может создать организатор.</small> : null}
+      {!canInvite ? <small className="kb-team-invite-note">Ссылку может создать вожак.</small> : null}
       {link ? (
         <div className="kb-team-invite-result">
           <label htmlFor="invite-link">Одноразовое приглашение</label>
@@ -749,7 +783,7 @@ function Brand() {
 }
 
 function PointList({ points, selectedId, onSelect }: { points: KabandaPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {
-  if (!points.length) return <div className="kb-empty-inline"><strong>Точек пока нет</strong><span>Когда организатор добавит места, они появятся здесь.</span></div>
+  if (!points.length) return <div className="kb-empty-inline"><strong>Точек пока нет</strong><span>Когда вожак добавит места, они появятся здесь.</span></div>
   return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={point.visitedByMe ? 'kb-dot visited' : 'kb-dot'} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 

@@ -362,7 +362,7 @@ export function CheckInPanel({
       )}
 
       {viewerIsOwner && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
-        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setOrganizerAttestation(event.target.checked)} /><span><strong>Подтверждаю как организатор</strong><small>Без этого выбранные участники получат personal claim, но не credit.</small></span></label>
+        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setOrganizerAttestation(event.target.checked)} /><span><strong>Подтверждаю как вожак</strong><small>Без этого выбранные участники получат personal claim, но не credit.</small></span></label>
       )}
 
       {manualResponse && (

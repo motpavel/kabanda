@@ -29,6 +29,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     'Переименовать Кабанду',
     'Сменить заставку',
     'Удалить участников',
+    'Передать права вожака',
   ])
   await page.getByRole('menuitem', { name: 'Переименовать Кабанду' }).click()
   await page.getByLabel('Новое название').fill('E2E Городская Кабанда')

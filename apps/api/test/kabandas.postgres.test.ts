@@ -172,6 +172,29 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     })
   })
 
+  it('transfers the single leader role to an active member atomically', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('leadership')
+    const memberId = await user('new-leader@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'accept-new-leader')
+
+    const formerLeaderView = await service!.transferLeadership(ownerId, kabanda.id, memberId)
+    expect(formerLeaderView.role).toBe('member')
+    expect((await service!.listKabandas(memberId))[0]?.role).toBe('owner')
+    expect(await service!.listMembers(memberId, kabanda.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: ownerId, role: 'member' }),
+      expect.objectContaining({ id: memberId, role: 'owner' }),
+    ]))
+    expect((await pool!.query('SELECT owner_id FROM kabandas WHERE id = $1', [kabanda.id])).rows[0]?.owner_id).toBe(memberId)
+    await expect(
+      service!.updateKabanda(ownerId, kabanda.id, { name: 'Старый вожак' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(
+      service!.transferLeadership(ownerId, kabanda.id, memberId),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
   it('rejects forged, expired, revoked and replayed invite material', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('invites')
     await expect(service!.previewInvite('forged-token-that-is-at-least-32-chars', true)).rejects.toMatchObject({

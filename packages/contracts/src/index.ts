@@ -124,6 +124,10 @@ export const updateKabandaSchema = z
   .strict()
   .refine((value) => value.name !== undefined || value.coverImage !== undefined)
 
+export const transferKabandaLeadershipSchema = z.object({
+  memberId: z.uuid(),
+}).strict()
+
 export const createInviteSchema = z.object({
   expiresInHours: z.coerce.number().int().min(1).max(168).default(24),
 })

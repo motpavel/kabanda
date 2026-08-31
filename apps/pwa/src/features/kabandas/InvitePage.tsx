@@ -100,7 +100,7 @@ export function InvitePage() {
         </aside>
         <div className="kb-auth-form kb-invite-card">
           {state === 'loading' && <><h2>Проверяем ссылку…</h2><p className="kb-muted">Это займёт несколько секунд.</p></>}
-          {state === 'invalid' && <><h2>Приглашение недействительно</h2><p className="kb-muted">Оно могло устареть или уже быть использовано. Попросите организатора отправить новое.</p><a className="kb-link-button" href={appPath('app')}>Перейти в приложение</a></>}
+          {state === 'invalid' && <><h2>Приглашение недействительно</h2><p className="kb-muted">Оно могло устареть или уже быть использовано. Попросите вожака отправить новое.</p><a className="kb-link-button" href={appPath('app')}>Перейти в приложение</a></>}
           {invite && (state === 'ready' || state === 'accepting' || state === 'done') && <><div className="kb-auth-heading"><span className="kb-inline-mark" aria-hidden="true">{invite.kabanda.avatar}</span><h2>{invite.kabanda.name}</h2><p>Вас приглашает {invite.inviterName}. После входа откроются точки и история команды.</p></div><dl className="kb-invite-meta"><div><dt>В команде</dt><dd>{invite.kabanda.memberCount} участников</dd></div><div><dt>Ссылка действует до</dt><dd>{new Date(invite.expiresAt).toLocaleString('ru-RU')}</dd></div></dl>{needsAuth ? <InviteRegistration busy={state === 'accepting'} error={acceptError} onAccept={accept} /> : <button className="kb-primary kb-full" type="button" disabled={state === 'accepting' || state === 'done'} onClick={() => void accept()}>{state === 'accepting' ? 'Присоединяем…' : state === 'done' ? 'Готово' : 'Принять приглашение'}</button>}</>}
         </div>
       </section>
