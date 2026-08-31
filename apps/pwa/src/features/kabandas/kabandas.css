@@ -482,13 +482,15 @@
 .kb-yandex-user-location {
   position: absolute;
   z-index: 4;
-  width: 16px;
-  height: 16px;
+  display: block;
+  width: 42px;
+  height: 42px;
   transform: translate(-50%, -50%);
-  border: 3px solid #fff;
-  border-radius: 50%;
-  background: #1677ff;
-  box-shadow: 0 0 0 8px rgb(22 119 255 / 18%);
+  background: url('/brand/kabanda-logo-reference.png') center / contain no-repeat;
+  filter:
+    drop-shadow(0 0 1px rgb(255 255 255 / 100%))
+    drop-shadow(0 1px 3px rgb(35 42 53 / 40%));
+  pointer-events: none;
 }
 .kb-yandex-zoom {
   position: absolute;
