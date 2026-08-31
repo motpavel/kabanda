@@ -473,17 +473,24 @@
 .kb-yandex-marker::after { position: absolute; inset: -9px; border-radius: 50%; content: ""; }
 .kb-yandex-marker--attractions { background: #60bdea !important; }
 .kb-yandex-marker--attractions.visited { background: #1689c3 !important; }
-.kb-yandex-marker.selected { width: 23px; min-height: 23px !important; box-shadow: 0 0 0 3px rgb(255 255 255 / 82%), 0 3px 10px rgb(38 56 65 / 42%); }
+.kb-yandex-marker.selected {
+  width: 23px;
+  min-height: 23px !important;
+  background: var(--kb-success) !important;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 82%), 0 3px 10px rgb(27 91 68 / 45%);
+}
 .kb-yandex-user-location {
   position: absolute;
   z-index: 4;
-  width: 16px;
-  height: 16px;
+  display: block;
+  width: 42px;
+  height: 42px;
   transform: translate(-50%, -50%);
-  border: 3px solid #fff;
-  border-radius: 50%;
-  background: #1677ff;
-  box-shadow: 0 0 0 8px rgb(22 119 255 / 18%);
+  background: url('/brand/kabanda-logo-reference.png') center / contain no-repeat;
+  filter:
+    drop-shadow(0 0 1px rgb(255 255 255 / 100%))
+    drop-shadow(0 1px 3px rgb(35 42 53 / 40%));
+  pointer-events: none;
 }
 .kb-yandex-zoom {
   position: absolute;

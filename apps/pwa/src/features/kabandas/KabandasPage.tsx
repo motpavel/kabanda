@@ -980,7 +980,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       const userLayout = runtime.templateLayoutFactory.createClass('<span class="kb-yandex-user-location" aria-label="Моё местоположение"></span>')
       userMarkerRef.current = new runtime.Placemark([location[1], location[0]], {}, {
         iconLayout: userLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 14 },
+        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 21 },
         hasBalloon: false,
         hasHint: false,
         zIndex: 3,
