@@ -990,7 +990,6 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       setUserLocated(true)
       updateLocation({ center: location, zoom: Math.max(viewRef.current.zoom, 15) }, 360)
     }, () => {
-      setUserLocated(false)
       setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
     }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 })
   }
