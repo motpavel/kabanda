@@ -28,6 +28,7 @@ import {
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
 import { loadMapLibre } from './maplibre'
+import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
 import { getKabandaProgress } from '../results/api'
@@ -43,6 +44,29 @@ import type {
 import './kabandas.css'
 
 type Session = { state: 'loading' } | { state: 'anonymous' } | { state: 'ready'; user: User }
+
+type MapPointCategory = 'stores' | 'attractions'
+type MapPoint = KabandaPoint & {
+  category: MapPointCategory
+  address?: string
+  hours?: string
+}
+
+const STORE_MAP_POINTS: readonly MapPoint[] = IZHEVSK_KB_STORES.map((store) => ({
+  id: store.id,
+  stableId: store.id,
+  name: `Красное&Белое №${store.shopNumber}`,
+  latitude: store.latitude,
+  longitude: store.longitude,
+  verificationStatus: 'source_checked',
+  visitedByMe: false,
+  visitedByTeam: false,
+  visitedByMeCount: 0,
+  visitedByTeamCount: 0,
+  category: 'stores',
+  address: store.address,
+  hours: store.hours,
+}))
 
 export function KabandasPage() {
   const [session, setSession] = useState<Session>({ state: 'loading' })
@@ -308,9 +332,12 @@ function KabandaWorkspace({
   const [points, setPoints] = useState<KabandaPoint[]>([])
   const [progress, setProgress] = useState<KabandaProgress | null>(null)
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
+  const [pointCategory, setPointCategory] = useState<MapPointCategory>('stores')
   const [requestedView, setRequestedView] = useState<PointPresentation>('map')
   const [providerState, setProviderState] = useState<ProviderState>('checking')
+  const [attractionState, setAttractionState] = useState<ProviderState>('checking')
   const [staleAt, setStaleAt] = useState<string | null>(null)
+  const [pointMessage, setPointMessage] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [membershipAction, setMembershipAction] = useState<string | null>(null)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
@@ -319,7 +346,12 @@ function KabandaWorkspace({
   const [teamAction, setTeamAction] = useState<'rename' | 'cover' | 'leadership' | null>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const webglAvailable = useMemo(detectWebgl, [])
-  const presentation = choosePointPresentation(requestedView, providerState, webglAvailable)
+  const attractionPoints = useMemo<MapPoint[]>(() => points.map((point) => ({ ...point, category: 'attractions' })), [points])
+  const visiblePoints = pointCategory === 'stores' ? STORE_MAP_POINTS : attractionPoints
+  const activeProviderState = pointCategory === 'attractions'
+    ? attractionState === 'failed' ? 'failed' : attractionState === 'checking' ? 'checking' : providerState
+    : providerState
+  const presentation = choosePointPresentation(requestedView, activeProviderState, webglAvailable)
   useKabandaMotion(workspaceRef)
 
   useEffect(() => {
@@ -327,8 +359,8 @@ function KabandaWorkspace({
     listMembers(kabanda.id).then((value) => active && setMembers(value)).catch(() => active && setMessage('Участники временно недоступны.'))
     const collectionId = kabanda.pointsCollectionId
     if (!collectionId) {
-      setProviderState('failed')
-      setMessage('Вожак ещё не загрузил набор точек.')
+      setAttractionState('failed')
+      setPointMessage('Вожак ещё не загрузил набор достопримечательностей.')
       return () => {
         active = false
       }
@@ -337,19 +369,20 @@ function KabandaWorkspace({
       .then(async ({ points: fresh }) => {
         if (!active) return
         setPoints(fresh)
-        setProviderState(webglAvailable ? 'checking' : 'failed')
+        setAttractionState('ready')
+        setPointMessage(null)
         setStaleAt(null)
         await savePointProjection(user.id, kabanda.id, collectionId, fresh)
       })
       .catch(async () => {
         const cached = await readPointProjection(user.id, kabanda.id, collectionId)
         if (!active) return
-        setProviderState('failed')
+        setAttractionState(cached ? 'ready' : 'failed')
         if (cached) {
           setPoints(cached.points)
           setStaleAt(cached.savedAt)
         } else {
-          setMessage('Точки недоступны без сети и ещё не сохранены на этом устройстве.')
+          setPointMessage('Достопримечательности недоступны без сети и ещё не сохранены на этом устройстве.')
         }
       })
     return () => {
@@ -368,7 +401,7 @@ function KabandaWorkspace({
     }
   }, [kabanda.id, section])
 
-  const selectedPoint = points.find(({ id }) => id === selectedPointId) ?? null
+  const selectedPoint = visiblePoints.find(({ id }) => id === selectedPointId) ?? null
   const rename = async (event: FormEvent) => {
     event.preventDefault()
     const name = renameDraft.trim()
@@ -447,7 +480,8 @@ function KabandaWorkspace({
   }
 
   const notices = <>
-    {staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
+    {pointCategory === 'attractions' && staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
+    {section === 'map' && pointCategory === 'attractions' && pointMessage && <p className="kb-notice" role="status">{pointMessage}</p>}
     {message && <p className="kb-notice" role="status">{message}</p>}
   </>
 
@@ -478,17 +512,29 @@ function KabandaWorkspace({
     return (
       <section className="kb-map-screen" ref={workspaceRef} aria-label="Точки маршрута">
         <div className="kb-map-stage">
-          <div className="kb-view-switch kb-map-view-switch" aria-label="Вид точек">
-            <button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || providerState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button>
-            <button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button>
+          <div className="kb-map-controls">
+            <label className="kb-map-category">
+              <span className="kb-visually-hidden">Категория точек</span>
+              <select value={pointCategory} onChange={(event) => {
+                setPointCategory(event.target.value as MapPointCategory)
+                setSelectedPointId(null)
+              }}>
+                <option value="stores">Красное&amp;Белое</option>
+                <option value="attractions">Достопримечательности</option>
+              </select>
+            </label>
+            <div className="kb-view-switch kb-map-view-switch" aria-label="Вид точек">
+              <button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || activeProviderState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button>
+              <button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button>
+            </div>
           </div>
           <div className="kb-map-notices">{notices}</div>
-          {providerState === 'checking' ? <p className="kb-map-loading" aria-busy="true">Получаем точки…</p> : null}
-          {presentation === 'map' && points.length > 0 ? <PointsMap points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
-          {(presentation === 'list' || points.length === 0) && (
+          {pointCategory === 'attractions' && attractionState === 'checking' ? <p className="kb-map-loading" aria-busy="true">Получаем достопримечательности…</p> : null}
+          {presentation === 'map' && visiblePoints.length > 0 ? <PointsMap points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
+          {(presentation === 'list' || visiblePoints.length === 0) && (
             <div className="kb-map-list-panel">
-              <PointList points={points} selectedId={selectedPointId} onSelect={setSelectedPointId} />
-              {providerState === 'failed' && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком.</p>}
+              <PointList points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} />
+              {activeProviderState === 'failed' && visiblePoints.length > 0 && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком.</p>}
             </div>
           )}
           {selectedPoint && (
@@ -784,12 +830,12 @@ function Brand() {
   return <a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>
 }
 
-function PointList({ points, selectedId, onSelect }: { points: KabandaPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {
+function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {
   if (!points.length) return <div className="kb-empty-inline"><strong>Точек пока нет</strong><span>Когда вожак добавит места, они появятся здесь.</span></div>
-  return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={point.visitedByMe ? 'kb-dot visited' : 'kb-dot'} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
+  return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${point.visitedByMe ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 
-function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: KabandaPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: Dispatch<SetStateAction<ProviderState>> }) {
+function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: Dispatch<SetStateAction<ProviderState>> }) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -805,7 +851,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         zoom: 11.3,
         minZoom: 10,
         maxZoom: 18,
-        maxBounds: [[53.06, 56.74], [53.31, 56.94]],
+        maxBounds: [[53.06, 56.74], [53.34, 56.95]],
         style: {
           version: 8,
           sources: {
@@ -826,8 +872,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         const element = document.createElement('button')
         element.type = 'button'
         element.dataset.pointId = point.id
-        element.className = `kb-map-marker${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`
-        element.setAttribute('aria-label', `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`)
+        element.className = `kb-map-marker kb-map-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selectedId === point.id ? ' selected' : ''}`
+        element.setAttribute('aria-label', point.category === 'stores'
+          ? `${point.name}. ${point.address}`
+          : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`)
         element.setAttribute('aria-pressed', String(selectedId === point.id))
         element.addEventListener('click', () => onSelect(point.id))
         return new Marker({ element }).setLngLat([point.longitude, point.latitude]).addTo(map)
@@ -855,12 +903,21 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   return <div ref={containerRef} className="kb-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" />
 }
 
-function PointDetail({ point }: { point: KabandaPoint }) {
+function PointDetail({ point }: { point: MapPoint }) {
   const times = (count: number) => {
     const lastTwo = count % 100
     if (lastTwo >= 11 && lastTwo <= 14) return 'раз'
     const last = count % 10
     return last >= 2 && last <= 4 ? 'раза' : 'раз'
+  }
+  if (point.category === 'stores') {
+    return <>
+      <p className="kb-point-eyebrow">Красное&amp;Белое</p>
+      <h2>{point.address}</h2>
+      <p className="kb-point-place">Ижевск</p>
+      {point.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{point.hours}</strong></p>}
+      <p className="kb-point-source">Официальный каталог сети · обновлено {new Date(`${IZHEVSK_KB_STORES_UPDATED_AT}T00:00:00`).toLocaleDateString('ru-RU')}</p>
+    </>
   }
   return <>
     <h2>{point.name}</h2>
