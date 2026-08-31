@@ -487,7 +487,7 @@
   pointer-events: auto;
 }
 
-.kb-map-category { position: relative; overflow: hidden; border-radius: 10px; }
+.kb-shell .kb-map-category { position: relative; overflow: hidden; margin: 0; border-radius: 10px; }
 .kb-map-category::after { position: absolute; top: 50%; right: 12px; width: 7px; height: 7px; border-right: 1.5px solid var(--kb-ink); border-bottom: 1.5px solid var(--kb-ink); content: ""; pointer-events: none; transform: translateY(-68%) rotate(45deg); }
 .kb-map-category select { width: min(45vw, 178px); height: 48px; border: 0; border-radius: inherit; padding: 0 30px 0 12px; color: var(--kb-ink); background: transparent; font: 700 .78rem/1.1 Manrope, sans-serif; appearance: none; }
 .kb-map-category select:focus-visible { outline: 2px solid var(--kb-brand); outline-offset: -3px; }

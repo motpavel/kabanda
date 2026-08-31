@@ -76,6 +76,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(viewSwitchBox).not.toBeNull()
   expect((categoryBox?.x ?? 0) + (categoryBox?.width ?? 0)).toBeLessThanOrEqual(viewSwitchBox?.x ?? 0)
   expect(Math.abs((categoryBox?.height ?? 0) - (viewSwitchBox?.height ?? 0))).toBeLessThanOrEqual(1)
+  expect(Math.abs((categoryBox?.y ?? 0) - (viewSwitchBox?.y ?? 0))).toBeLessThanOrEqual(1)
   await categorySelect.selectOption('attractions')
   await expect(page.locator('.kb-map-marker--stores')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
