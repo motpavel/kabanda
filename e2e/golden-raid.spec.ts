@@ -24,13 +24,31 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const kabanda = (await (await createKabandaResponse).json()).kabanda as { id: string }
   fixture('attach-point', kabanda.id)
   await page.reload()
+  await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Управление Кабандой' }).click()
-  await expect(page.getByRole('menuitem')).toHaveText([
+  const teamMenu = page.getByRole('menu')
+  await expect(teamMenu.getByRole('menuitem')).toHaveText([
     'Переименовать Кабанду',
     'Сменить заставку',
-    'Удалить участников',
     'Передать права вожака',
+    'Удалить участников',
   ])
+  await expect(page.locator('.kb-team-menu-dots i')).toHaveCount(3)
+  await expect(teamMenu).not.toHaveCSS('box-shadow', 'none')
+  const [menuBox, coverBox] = await Promise.all([
+    teamMenu.boundingBox(),
+    page.locator('.kb-team-cover').boundingBox(),
+  ])
+  expect(menuBox).not.toBeNull()
+  expect(coverBox).not.toBeNull()
+  expect((menuBox?.y ?? 0) + (menuBox?.height ?? 0)).toBeGreaterThan((coverBox?.y ?? 0) + (coverBox?.height ?? 0))
+  const menuBottomIsClickable = await page.evaluate(({ x, y }) =>
+    document.elementFromPoint(x, y)?.closest('.kb-team-menu') !== null,
+  {
+    x: (menuBox?.x ?? 0) + (menuBox?.width ?? 0) / 2,
+    y: Math.min((menuBox?.y ?? 0) + (menuBox?.height ?? 0) - 4, 840),
+  })
+  expect(menuBottomIsClickable).toBe(true)
   await page.getByRole('menuitem', { name: 'Переименовать Кабанду' }).click()
   await page.getByLabel('Новое название').fill('E2E Городская Кабанда')
   const renameResponse = page.waitForResponse((response) =>
@@ -38,6 +56,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
   expect((await renameResponse).ok()).toBe(true)
   await expect(page.getByRole('heading', { name: 'E2E Городская Кабанда' })).toBeVisible()
+  await page.setViewportSize({ width: 1280, height: 720 })
 
   const coverResponse = page.waitForResponse((response) =>
     response.url().endsWith(`/api/kabandas/${kabanda.id}`) && response.request().method() === 'PATCH')

@@ -642,15 +642,16 @@
   box-shadow: 0 10px 30px rgb(35 42 53 / 6%);
 }
 
-.kb-team-hero { overflow: visible; }
+.kb-team-hero { position: relative; overflow: visible; isolation: isolate; }
 .kb-team-cover {
   position: relative;
+  z-index: 2;
   aspect-ratio: 2.05 / 1;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 21px 21px 0 0;
   background: #d5c4b1;
 }
-.kb-team-cover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+.kb-team-cover img { display: block; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; object-position: 50% 50%; }
 
 .kb-team-identity-row {
   position: relative;
@@ -678,7 +679,7 @@
 .kb-member-count { display: inline-flex; gap: 7px; align-items: center; color: var(--kb-ink-soft); font-size: .9rem; font-weight: 560; }
 .kb-member-count svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 
-.kb-team-cover-menu { position: absolute; z-index: 4; top: 11px; right: 11px; }
+.kb-team-cover-menu { position: absolute; z-index: 120; top: 11px; right: 11px; }
 .kb-shell .kb-team-menu-trigger {
   display: grid;
   width: 36px;
@@ -692,17 +693,21 @@
   box-shadow: 0 4px 14px rgb(23 32 28 / 14%);
   backdrop-filter: blur(14px);
 }
-.kb-team-menu-trigger span {
+.kb-team-menu-dots {
+  display: grid;
+  gap: 2.5px;
+  place-items: center;
+}
+.kb-team-menu-dots i {
   display: block;
-  transform: translateY(-2px);
-  font-size: 1.35rem;
-  font-weight: 760;
-  letter-spacing: -.16em;
-  line-height: 1;
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .kb-team-menu {
   position: absolute;
-  z-index: 35;
+  z-index: 140;
   top: calc(100% + 6px);
   right: 0;
   display: grid;

@@ -538,13 +538,15 @@ function KabandaWorkspace({
             />
             {kabanda.role === 'owner' && (
               <div className="kb-team-cover-menu">
-                <button className="kb-team-menu-trigger" type="button" aria-label="Управление Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}><span aria-hidden="true">…</span></button>
+                <button className="kb-team-menu-trigger" type="button" aria-label="Управление Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}>
+                  <span className="kb-team-menu-dots" aria-hidden="true"><i /><i /><i /></span>
+                </button>
                 {teamMenuOpen && (
                   <div className="kb-team-menu" role="menu">
                     <button type="button" role="menuitem" onClick={() => { setRenameDraft(kabanda.name); setAdminDialog('rename'); setTeamMenuOpen(false) }}>Переименовать Кабанду</button>
                     <button type="button" role="menuitem" disabled={teamAction === 'cover'} onClick={chooseCover}>{teamAction === 'cover' ? 'Обрабатываем заставку…' : 'Сменить заставку'}</button>
-                    <button className="kb-team-menu-danger" type="button" role="menuitem" onClick={() => { setAdminDialog('members'); setTeamMenuOpen(false) }}>Удалить участников</button>
                     <button type="button" role="menuitem" onClick={() => { setAdminDialog('leadership'); setTeamMenuOpen(false) }}>Передать права вожака</button>
+                    <button className="kb-team-menu-danger" type="button" role="menuitem" onClick={() => { setAdminDialog('members'); setTeamMenuOpen(false) }}>Удалить участников</button>
                   </div>
                 )}
                 <input ref={coverInputRef} className="kb-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event)} />
