@@ -16,7 +16,8 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Кабанда', exact: true }).click()
-  await page.getByRole('button', { name: '+ Кабанда' }).click()
+  await page.getByRole('button', { name: 'Действия с Кабандой' }).click()
+  await page.getByRole('menuitem', { name: '+ Создать Кабанду' }).click()
   await page.getByLabel('Название Кабанды').fill(`E2E Кабанда ${identity.runId.slice(0, 8)}`)
   const createKabandaResponse = page.waitForResponse((response) =>
     response.url().endsWith('/api/kabandas') && response.request().method() === 'POST')
