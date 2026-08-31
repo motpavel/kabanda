@@ -473,7 +473,12 @@
 .kb-yandex-marker::after { position: absolute; inset: -9px; border-radius: 50%; content: ""; }
 .kb-yandex-marker--attractions { background: #60bdea !important; }
 .kb-yandex-marker--attractions.visited { background: #1689c3 !important; }
-.kb-yandex-marker.selected { width: 23px; min-height: 23px !important; box-shadow: 0 0 0 3px rgb(255 255 255 / 82%), 0 3px 10px rgb(38 56 65 / 42%); }
+.kb-yandex-marker.selected {
+  width: 23px;
+  min-height: 23px !important;
+  background: var(--kb-success) !important;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 82%), 0 3px 10px rgb(27 91 68 / 45%);
+}
 .kb-yandex-user-location {
   position: absolute;
   z-index: 4;
