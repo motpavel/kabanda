@@ -115,9 +115,14 @@ export const createKabandaSchema = z.object({
 export const updateKabandaSchema = z
   .object({
     name: z.string().trim().min(1).max(80).optional(),
-    archived: z.boolean().optional(),
+    coverImage: z
+      .string()
+      .max(420_000)
+      .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/)
+      .optional(),
   })
-  .refine((value) => value.name !== undefined || value.archived !== undefined)
+  .strict()
+  .refine((value) => value.name !== undefined || value.coverImage !== undefined)
 
 export const createInviteSchema = z.object({
   expiresInHours: z.coerce.number().int().min(1).max(168).default(24),

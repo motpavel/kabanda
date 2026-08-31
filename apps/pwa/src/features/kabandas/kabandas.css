@@ -644,6 +644,7 @@
 
 .kb-team-hero { overflow: visible; }
 .kb-team-cover {
+  position: relative;
   aspect-ratio: 2.05 / 1;
   overflow: hidden;
   border-radius: 21px 21px 0 0;
@@ -677,22 +678,24 @@
 .kb-member-count { display: inline-flex; gap: 7px; align-items: center; color: var(--kb-ink-soft); font-size: .9rem; font-weight: 560; }
 .kb-member-count svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 
-.kb-team-menu-wrap { position: relative; flex: 0 0 auto; }
+.kb-team-cover-menu { position: absolute; z-index: 4; top: 11px; right: 11px; }
 .kb-shell .kb-team-menu-trigger {
-  width: 50px;
-  min-height: 50px;
+  width: 36px;
+  min-height: 36px;
   border: 0;
   border-radius: 50%;
   padding: 0;
   color: var(--kb-ink);
-  background: #fff0ed;
-  font-size: 1.1rem;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 5px 16px rgb(23 32 28 / 18%);
+  backdrop-filter: blur(10px);
+  font-size: .9rem;
   letter-spacing: .08em;
 }
 .kb-team-menu {
   position: absolute;
   z-index: 35;
-  top: calc(100% + 8px);
+  top: calc(100% + 6px);
   right: 0;
   display: grid;
   width: min(280px, calc(100vw - 44px));
@@ -703,7 +706,8 @@
   background: #fff;
   box-shadow: 0 16px 40px rgb(35 42 53 / 16%);
 }
-.kb-team-menu button { display: flex; gap: 9px; align-items: center; justify-content: flex-start; border: 0; text-align: left; box-shadow: none; }
+.kb-team-menu button { display: flex; min-height: 42px; gap: 9px; align-items: center; justify-content: flex-start; border: 0; padding: 9px 11px; text-align: left; box-shadow: none; }
+.kb-team-menu button:last-child { color: var(--kb-danger); }
 .kb-team-menu button[aria-current="page"] { background: #fff0ed; }
 .kb-team-menu button > span:last-child { display: grid; }
 .kb-team-menu small { color: var(--kb-muted); font-size: .72rem; font-weight: 500; }
@@ -739,7 +743,7 @@
 .kb-shell .kb-team-text-button { min-height: 40px; border: 0; padding-inline: 0; color: var(--kb-brand-hover); background: transparent; box-shadow: none; }
 
 .kb-team-members { margin: 0; padding: 0; list-style: none; }
-.kb-team-members li { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 12px 0; }
+.kb-team-members li { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 0; }
 .kb-team-members li + li { border-top: 1px solid var(--kb-line); }
 .kb-team-avatar { display: grid; width: 44px; height: 44px; overflow: hidden; place-items: center; border-radius: 50%; color: #fff; background: #17201c; font-size: 1rem; font-weight: 700; }
 .kb-team-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -748,7 +752,60 @@
 .kb-team-member-name small { margin-top: 2px; color: var(--kb-muted); font-size: .78rem; font-weight: 500; }
 .kb-member-role { border-radius: 9px; padding: 6px 10px; color: var(--kb-muted); background: #f5f4f2; font-size: .74rem; font-weight: 650; }
 .kb-member-role.is-owner { color: #383c22; background: #eff58d; }
-.kb-shell .kb-member-remove { width: 36px; min-height: 36px; border: 0; border-radius: 50%; padding: 0; color: var(--kb-danger); background: #fff0ed; font-size: 1.1rem; }
+
+.kb-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.kb-team-dialog-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgb(23 32 28 / 46%);
+  backdrop-filter: blur(4px);
+}
+.kb-team-dialog {
+  position: relative;
+  display: grid;
+  width: min(100%, 430px);
+  max-height: min(78svh, 620px);
+  gap: 14px;
+  overflow: auto;
+  border: 1px solid var(--kb-line);
+  border-radius: 20px;
+  padding: 22px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(23 32 28 / 24%);
+}
+.kb-team-dialog h2 { margin: 0; padding-right: 34px; font-size: 1.25rem; }
+.kb-team-dialog > p { margin: -5px 0 0; color: var(--kb-muted); font-size: .84rem; }
+.kb-shell .kb-team-dialog-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: #f5f4f2;
+  box-shadow: none;
+  font-size: 1.2rem;
+}
+.kb-team-admin-members { margin: 0; padding: 0; list-style: none; }
+.kb-team-admin-members li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; }
+.kb-team-admin-members li + li { border-top: 1px solid var(--kb-line); }
+.kb-team-admin-members strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-shell .kb-team-admin-members button { min-height: 38px; border-color: #ffd5cf; color: var(--kb-danger); background: #fff7f5; box-shadow: none; }
 
 .kb-team-invite { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; }
 .kb-team-invite-copy p { max-width: 34ch; margin: 4px 0 0; color: var(--kb-muted); font-size: .84rem; line-height: 1.4; }
@@ -850,7 +907,9 @@
   .kb-role-pill { min-height: 29px; border-radius: 9px; padding: 4px 9px; font-size: .75rem; }
   .kb-member-count { gap: 5px; font-size: .78rem; }
   .kb-member-count svg { width: 18px; height: 18px; }
-  .kb-shell .kb-team-menu-trigger { width: 44px; min-height: 44px; }
+  .kb-team-cover-menu { top: 8px; right: 8px; }
+  .kb-shell .kb-team-menu-trigger { width: 34px; min-height: 34px; }
+  .kb-team-menu { width: min(245px, calc(100vw - 40px)); }
   .kb-team-stats { padding: 14px 8px 16px; }
   .kb-team-metric { gap: 7px; padding-inline: 6px; }
   .kb-team-metric > span { width: 38px; height: 38px; }
@@ -874,6 +933,8 @@
   .kb-team-account-row { align-items: stretch; flex-direction: column; }
   .kb-shell .kb-switch-account { width: 100%; justify-content: center; }
   .kb-shell .kb-leave-team { width: 100%; }
+  .kb-team-dialog-backdrop { align-items: end; padding: 10px 10px calc(76px + env(safe-area-inset-bottom)); }
+  .kb-team-dialog { width: 100%; max-height: 70svh; border-radius: 18px; padding: 19px; }
 }
 
 @media (max-width: 480px) {

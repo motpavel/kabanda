@@ -1,6 +1,6 @@
 import '@fontsource-variable/manrope'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
@@ -22,6 +22,7 @@ import {
   listPoints,
   leaveKabanda,
   removeMember,
+  updateKabanda,
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
@@ -163,6 +164,9 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
       return next
     })
   }
+  const updateKabandaLocally = (updated: KabandaSummary) => {
+    setKabandas((items) => items.map((item) => item.id === updated.id ? updated : item))
+  }
   const selectSection = (section: AppSection) => {
     const search = appSectionSearch(window.location.search, section, selectedId)
     window.history.pushState(null, '', `${appPath('app')}${search}`)
@@ -232,13 +236,11 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         key={selected.id}
         user={user}
         kabanda={selected}
-        kabandas={kabandas}
         section={activeSection}
         inventory={inventory}
         accountState={accountState}
-        onCreateKabanda={() => setShowCreate(true)}
         onLeft={() => removeKabandaLocally(selected.id)}
-        onSelectKabanda={selectKabanda}
+        onKabandaUpdated={updateKabandaLocally}
         onSwitchAccount={() => void leaveAccount()}
       />}
       <AppTabBar active={activeSection} kabandaId={selectedId} onSelect={selectSection} />
@@ -284,24 +286,20 @@ function CreateKabandaForm({ onCreated, onCancel }: { onCreated: (kabanda: Kaban
 function KabandaWorkspace({
   user,
   kabanda,
-  kabandas,
   section,
   inventory,
   accountState,
-  onCreateKabanda,
   onLeft,
-  onSelectKabanda,
+  onKabandaUpdated,
   onSwitchAccount,
 }: {
   user: User
   kabanda: KabandaSummary
-  kabandas: KabandaSummary[]
   section: AppSection
   inventory: IdentityLocalInventory | null
   accountState: 'idle' | 'loading' | 'leaving' | 'error'
-  onCreateKabanda: () => void
   onLeft: () => void
-  onSelectKabanda: (kabandaId: string) => void
+  onKabandaUpdated: (kabanda: KabandaSummary) => void
   onSwitchAccount: () => void
 }) {
   const workspaceRef = useRef<HTMLElement>(null)
@@ -315,7 +313,11 @@ function KabandaWorkspace({
   const [message, setMessage] = useState<string | null>(null)
   const [membershipAction, setMembershipAction] = useState<string | null>(null)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
+  const [adminDialog, setAdminDialog] = useState<'rename' | 'members' | null>(null)
+  const [renameDraft, setRenameDraft] = useState(kabanda.name)
+  const [teamAction, setTeamAction] = useState<'rename' | 'cover' | null>(null)
   const [showAllMembers, setShowAllMembers] = useState(false)
+  const coverInputRef = useRef<HTMLInputElement>(null)
   const webglAvailable = useMemo(detectWebgl, [])
   const presentation = choosePointPresentation(requestedView, providerState, webglAvailable)
   useKabandaMotion(workspaceRef)
@@ -367,6 +369,42 @@ function KabandaWorkspace({
   }, [kabanda.id, section])
 
   const selectedPoint = points.find(({ id }) => id === selectedPointId) ?? null
+  const rename = async (event: FormEvent) => {
+    event.preventDefault()
+    const name = renameDraft.trim()
+    if (!name || teamAction) return
+    setTeamAction('rename')
+    try {
+      const updated = await updateKabanda(kabanda.id, { name })
+      onKabandaUpdated(updated)
+      setAdminDialog(null)
+      setMessage('Название Кабанды обновлено.')
+    } catch {
+      setMessage('Не удалось переименовать Кабанду. Повторите позже.')
+    } finally {
+      setTeamAction(null)
+    }
+  }
+  const chooseCover = () => {
+    setTeamMenuOpen(false)
+    coverInputRef.current?.click()
+  }
+  const changeCover = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || teamAction) return
+    setTeamAction('cover')
+    try {
+      const coverImage = await prepareKabandaCover(file)
+      const updated = await updateKabanda(kabanda.id, { coverImage })
+      onKabandaUpdated(updated)
+      setMessage('Заставка Кабанды обновлена.')
+    } catch {
+      setMessage('Не удалось сменить заставку. Выберите JPG, PNG или WebP до 12 МБ.')
+    } finally {
+      event.target.value = ''
+      setTeamAction(null)
+    }
+  }
   const remove = async (member: KabandaMember) => {
     if (!window.confirm(`Удалить ${member.displayName} из Кабанды?`)) return
     setMembershipAction(member.id)
@@ -476,12 +514,25 @@ function KabandaWorkspace({
         <article className="kb-team-hero">
           <div className="kb-team-cover">
             <img
-              src={appPath('brand/kabanda-team-cover.jpg')}
+              src={kabanda.coverImage ?? appPath('brand/kabanda-team-cover.jpg')}
               alt="Кабаны на велосипедах едут вместе по городу"
               width="1792"
               height="896"
               decoding="async"
             />
+            {kabanda.role === 'owner' && (
+              <div className="kb-team-cover-menu">
+                <button className="kb-team-menu-trigger" type="button" aria-label="Управление Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}>•••</button>
+                {teamMenuOpen && (
+                  <div className="kb-team-menu" role="menu">
+                    <button type="button" role="menuitem" onClick={() => { setRenameDraft(kabanda.name); setAdminDialog('rename'); setTeamMenuOpen(false) }}>Переименовать Кабанду</button>
+                    <button type="button" role="menuitem" disabled={teamAction === 'cover'} onClick={chooseCover}>{teamAction === 'cover' ? 'Обрабатываем заставку…' : 'Сменить заставку'}</button>
+                    <button type="button" role="menuitem" onClick={() => { setAdminDialog('members'); setTeamMenuOpen(false) }}>Удалить участников</button>
+                  </div>
+                )}
+                <input ref={coverInputRef} className="kb-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event)} />
+              </div>
+            )}
           </div>
           <div className="kb-team-identity-row">
             <div>
@@ -490,19 +541,6 @@ function KabandaWorkspace({
                 <span className="kb-role-pill">{roleLabel}</span>
                 <span className="kb-member-count"><TeamScreenIcon name="members" />{memberCount} {pluralizeMembers(memberCount)}</span>
               </div>
-            </div>
-            <div className="kb-team-menu-wrap">
-              <button className="kb-team-menu-trigger" type="button" aria-label="Действия с Кабандой" aria-expanded={teamMenuOpen} onClick={() => setTeamMenuOpen((value) => !value)}>•••</button>
-              {teamMenuOpen && (
-                <div className="kb-team-menu" role="menu">
-                  {kabandas.map((item) => (
-                    <button key={item.id} type="button" role="menuitem" aria-current={item.id === kabanda.id ? 'page' : undefined} onClick={() => { onSelectKabanda(item.id); setTeamMenuOpen(false) }}>
-                      <span>{item.avatar}</span><span>{item.name}<small>{item.memberCount} {pluralizeMembers(item.memberCount)}</small></span>
-                    </button>
-                  ))}
-                  {user.identityKind === 'verified' && <button type="button" role="menuitem" onClick={onCreateKabanda}>+ Создать Кабанду</button>}
-                </div>
-              )}
             </div>
           </div>
           <div className="kb-team-stats" aria-label="Статистика Кабанды">
@@ -528,9 +566,6 @@ function KabandaWorkspace({
                   </span>
                   <span className="kb-team-member-name"><strong>{member.displayName}</strong><small>{member.role === 'owner' ? 'Организатор' : 'Участник'}</small></span>
                   <span className={`kb-member-role${member.role === 'owner' ? ' is-owner' : ''}`}>{member.role === 'owner' ? 'Организатор' : 'Участник'}</span>
-                  {kabanda.role === 'owner' && member.role !== 'owner' && member.id !== user.id ? (
-                    <button className="kb-member-remove" type="button" aria-label={`Удалить ${member.displayName} из Кабанды`} disabled={membershipAction === member.id} onClick={() => remove(member)}>×</button>
-                  ) : null}
                 </li>
               ))}
             </ul>
@@ -554,9 +589,86 @@ function KabandaWorkspace({
             </button>
           )}
         </section>
+
+        {adminDialog === 'rename' && (
+          <div className="kb-team-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAdminDialog(null)}>
+            <form className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-rename-title" onSubmit={rename}>
+              <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
+              <h2 id="kb-rename-title">Переименовать Кабанду</h2>
+              <label htmlFor="kb-rename-input">Новое название</label>
+              <input id="kb-rename-input" autoFocus required minLength={1} maxLength={80} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} />
+              <button className="kb-primary" type="submit" disabled={teamAction === 'rename'}>{teamAction === 'rename' ? 'Сохраняем…' : 'Сохранить'}</button>
+            </form>
+          </div>
+        )}
+
+        {adminDialog === 'members' && (
+          <div className="kb-team-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAdminDialog(null)}>
+            <section className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-members-title">
+              <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
+              <h2 id="kb-members-title">Удалить участников</h2>
+              <p>Организатор останется в Кабанде.</p>
+              {members.some(({ role }) => role === 'member') ? (
+                <ul className="kb-team-admin-members">
+                  {members.filter(({ role }) => role === 'member').map((member) => (
+                    <li key={member.id}>
+                      <span className="kb-team-avatar">{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.displayName.slice(0, 1).toUpperCase()}</span>
+                      <strong>{member.displayName}</strong>
+                      <button type="button" disabled={membershipAction === member.id} onClick={() => void remove(member)}>{membershipAction === member.id ? 'Удаляем…' : 'Удалить'}</button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="kb-muted">Других участников пока нет.</p>}
+            </section>
+          </div>
+        )}
       </div>
     </section>
   )
+}
+
+async function prepareKabandaCover(file: File): Promise<string> {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024) {
+    throw new Error('Unsupported cover image')
+  }
+  const sourceUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const value = new Image()
+      value.onload = () => resolve(value)
+      value.onerror = () => reject(new Error('Invalid image'))
+      value.src = sourceUrl
+    })
+    const ratio = 2.05
+    const width = Math.min(1280, image.naturalWidth)
+    const height = Math.max(1, Math.round(width / ratio))
+    const sourceRatio = image.naturalWidth / image.naturalHeight
+    const sourceWidth = sourceRatio > ratio ? image.naturalHeight * ratio : image.naturalWidth
+    const sourceHeight = sourceRatio > ratio ? image.naturalHeight : image.naturalWidth / ratio
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Canvas unavailable')
+    context.drawImage(
+      image,
+      (image.naturalWidth - sourceWidth) / 2,
+      (image.naturalHeight - sourceHeight) / 2,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      width,
+      height,
+    )
+    for (const quality of [0.78, 0.66, 0.54]) {
+      const dataUrl = canvas.toDataURL('image/jpeg', quality)
+      if (dataUrl.length <= 420_000) return dataUrl
+    }
+    throw new Error('Compressed cover is too large')
+  } finally {
+    URL.revokeObjectURL(sourceUrl)
+  }
 }
 
 function pluralizeMembers(count: number) {

@@ -21,6 +21,17 @@ export async function createKabanda(name: string, avatar: string, idempotencyKey
   return response.kabanda
 }
 
+export async function updateKabanda(
+  kabandaId: string,
+  input: { name?: string; coverImage?: string },
+): Promise<KabandaSummary> {
+  const response = await requestJson<{ kabanda: KabandaSummary }>(
+    `/api/kabandas/${encodeURIComponent(kabandaId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+  )
+  return response.kabanda
+}
+
 export async function listMembers(kabandaId: string): Promise<KabandaMember[]> {
   const response = await requestJson<{ members: KabandaMember[] }>(
     `/api/kabandas/${encodeURIComponent(kabandaId)}/members`,

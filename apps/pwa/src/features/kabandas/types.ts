@@ -2,6 +2,7 @@ export interface KabandaSummary {
   id: string
   name: string
   avatar: string
+  coverImage: string | null
   role: 'owner' | 'member'
   memberCount: number
   pointsCollectionId: string | null

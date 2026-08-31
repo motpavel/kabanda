@@ -24,6 +24,25 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const kabanda = (await (await createKabandaResponse).json()).kabanda as { id: string }
   fixture('attach-point', kabanda.id)
   await page.reload()
+  await page.getByRole('button', { name: 'Управление Кабандой' }).click()
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'Переименовать Кабанду',
+    'Сменить заставку',
+    'Удалить участников',
+  ])
+  await page.getByRole('menuitem', { name: 'Переименовать Кабанду' }).click()
+  await page.getByLabel('Новое название').fill('E2E Городская Кабанда')
+  const renameResponse = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/kabandas/${kabanda.id}`) && response.request().method() === 'PATCH')
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  expect((await renameResponse).ok()).toBe(true)
+  await expect(page.getByRole('heading', { name: 'E2E Городская Кабанда' })).toBeVisible()
+
+  const coverResponse = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/kabandas/${kabanda.id}`) && response.request().method() === 'PATCH')
+  await page.locator('.kb-team-cover-menu input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  expect((await coverResponse).ok()).toBe(true)
+  await expect(page.locator('.kb-team-cover img')).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
 

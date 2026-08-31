@@ -154,6 +154,24 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     expect(Number((await pool!.query('SELECT count(*) FROM kabanda_memberships')).rows[0]?.count)).toBe(1)
   })
 
+  it('lets only the owner rename a Kabanda and replace its cover', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('presentation')
+    const outsiderId = await user('cover-outsider@example.com')
+    const coverImage = `data:image/jpeg;base64,${'A'.repeat(32)}`
+    const updated = await service!.updateKabanda(ownerId, kabanda.id, {
+      name: 'Городская Кабанда',
+      coverImage,
+    })
+    expect(updated).toMatchObject({ name: 'Городская Кабанда', coverImage })
+    await expect(
+      service!.updateKabanda(outsiderId, kabanda.id, { name: 'Чужое название' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect((await service!.listKabandas(ownerId))[0]).toMatchObject({
+      name: 'Городская Кабанда',
+      coverImage,
+    })
+  })
+
   it('rejects forged, expired, revoked and replayed invite material', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('invites')
     await expect(service!.previewInvite('forged-token-that-is-at-least-32-chars', true)).rejects.toMatchObject({

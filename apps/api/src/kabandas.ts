@@ -22,6 +22,7 @@ export type KabandaSummary = {
   id: string
   name: string
   avatar: string
+  coverImage: string | null
   role: 'owner' | 'member'
   memberCount: number
   pointsCollectionId: string | null
@@ -60,6 +61,7 @@ type SummaryRow = {
   id: string
   name: string
   avatar: string
+  cover_image: string | null
   role: 'owner' | 'member'
   member_count: number
   points_collection_id: string | null
@@ -84,7 +86,7 @@ type PointRow = {
 }
 
 const summarySelect = `
-  SELECT k.id, k.name, k.avatar, m.role,
+  SELECT k.id, k.name, k.avatar, k.cover_image, m.role,
     (SELECT count(*)::int FROM kabanda_memberships active
       WHERE active.kabanda_id = k.id AND active.removed_at IS NULL) AS member_count,
     (SELECT c.id FROM point_collections c
@@ -103,6 +105,7 @@ function toSummary(row: SummaryRow): KabandaSummary {
     id: row.id,
     name: row.name,
     avatar: row.avatar,
+    coverImage: row.cover_image,
     role: row.role,
     memberCount: Number(row.member_count),
     pointsCollectionId: row.points_collection_id,
@@ -127,6 +130,11 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 export interface KabandaService {
   listKabandas(userId: string): Promise<KabandaSummary[]>
   createKabanda(userId: string, name: string, avatar: string, idempotencyKey: string): Promise<KabandaSummary>
+  updateKabanda(
+    userId: string,
+    kabandaId: string,
+    input: { name?: string | undefined; coverImage?: string | undefined },
+  ): Promise<KabandaSummary>
   listMembers(userId: string, kabandaId: string): Promise<Array<Record<string, unknown>>>
   leaveKabanda(userId: string, kabandaId: string): Promise<void>
   removeMember(userId: string, kabandaId: string, memberId: string): Promise<void>
@@ -206,6 +214,23 @@ export class DatabaseKabandaService implements KabandaService {
         [kabanda.id, userId],
       )
       return this.getSummary(client, userId, kabanda.id)
+    })
+  }
+
+  async updateKabanda(
+    userId: string,
+    kabandaId: string,
+    input: { name?: string | undefined; coverImage?: string | undefined },
+  ): Promise<KabandaSummary> {
+    return transaction(this.pool, async (client) => {
+      await this.requireOwner(client, userId, kabandaId)
+      await client.query(
+        `UPDATE kabandas
+         SET name = coalesce($2, name), cover_image = coalesce($3, cover_image), updated_at = now()
+         WHERE id = $1 AND archived_at IS NULL`,
+        [kabandaId, input.name ?? null, input.coverImage ?? null],
+      )
+      return this.getSummary(client, userId, kabandaId)
     })
   }
 
@@ -818,7 +843,7 @@ export class DatabaseKabandaService implements KabandaService {
 
   private async getPublicSummary(client: PoolClient, kabandaId: string): Promise<KabandaSummary> {
     const result = await client.query<SummaryRow>(
-      `SELECT k.id, k.name, k.avatar, 'member'::kabanda_membership_role AS role,
+      `SELECT k.id, k.name, k.avatar, k.cover_image, 'member'::kabanda_membership_role AS role,
          (SELECT count(*)::int FROM kabanda_memberships m
            WHERE m.kabanda_id = k.id AND m.removed_at IS NULL) AS member_count,
          (SELECT c.id FROM point_collections c

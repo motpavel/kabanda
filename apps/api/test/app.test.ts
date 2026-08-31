@@ -57,6 +57,7 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
   return {
     listKabandas: vi.fn().mockResolvedValue([]),
     createKabanda: vi.fn(),
+    updateKabanda: vi.fn(),
     listMembers: vi.fn().mockResolvedValue([]),
     leaveKabanda: vi.fn(),
     removeMember: vi.fn(),
@@ -676,6 +677,51 @@ describe('API foundation', () => {
     })
     expect(response.statusCode).toBe(403)
     expect(createKabanda).not.toHaveBeenCalled()
+  })
+
+  it('updates Kabanda presentation through the owner-checked service', async () => {
+    const coverImage = `data:image/jpeg;base64,${'A'.repeat(32)}`
+    const updateKabanda = vi.fn().mockResolvedValue({
+      id: '81297402-898c-48d6-bc78-c74b6b38205c',
+      name: 'Новый маршрут',
+      avatar: '🐗',
+      coverImage,
+      role: 'owner',
+      memberCount: 1,
+      pointsCollectionId: null,
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ updateKabanda }),
+    )
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/kabandas/81297402-898c-48d6-bc78-c74b6b38205c',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: { name: 'Новый маршрут', coverImage },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(updateKabanda).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      { name: 'Новый маршрут', coverImage },
+    )
+  })
+
+  it('rejects an unsafe Kabanda cover before calling the service', async () => {
+    const updateKabanda = vi.fn()
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ updateKabanda }),
+    )
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/kabandas/81297402-898c-48d6-bc78-c74b6b38205c',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: { coverImage: 'https://example.com/tracker.jpg' },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(updateKabanda).not.toHaveBeenCalled()
   })
 
   it('never places a raw invite token in a redirect', async () => {
