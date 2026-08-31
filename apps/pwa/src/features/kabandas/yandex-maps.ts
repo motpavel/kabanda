@@ -1,67 +1,69 @@
 export type YandexCoordinates = readonly [number, number]
 
-export type YandexMapEntity = object
+type YandexEvent = {
+  get: (name: string) => unknown
+  stopPropagation?: () => void
+}
 
-export type YandexMapLocation = {
-  center?: YandexCoordinates
-  zoom?: number
-  duration?: number
-  easing?: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out'
+type YandexEventManager = {
+  add: (name: string, handler: (event: YandexEvent) => void) => void
+}
+
+type YandexDataManager = {
+  set: (name: string, value: unknown) => void
+}
+
+type YandexOptionManager = {
+  set: (name: string, value: unknown) => void
+}
+
+export type YandexPlacemark = {
+  events: YandexEventManager
+  properties: YandexDataManager
+  options: YandexOptionManager
 }
 
 export type YandexMap = {
-  addChild: (entity: YandexMapEntity) => YandexMap
-  removeChild: (entity: YandexMapEntity) => YandexMap
-  update: (props: { location?: YandexMapLocation }) => void
+  events: YandexEventManager
+  geoObjects: {
+    add: (object: YandexPlacemark) => void
+    remove: (object: YandexPlacemark) => void
+  }
+  getCenter: () => YandexCoordinates
+  getZoom: () => number
+  setCenter: (center: YandexCoordinates, zoom?: number, options?: {
+    duration?: number
+    timingFunction?: string
+  }) => void
+  setZoom: (zoom: number, options?: { duration?: number }) => void
   destroy: () => void
 }
 
-type YandexMapUpdate = {
-  location?: {
+export type YandexMapsRuntime = {
+  ready: (success: () => void, error?: (reason: unknown) => void) => void
+  Map: new (element: HTMLElement, state: {
     center: YandexCoordinates
     zoom: number
-  }
-}
-
-export type YandexMapsRuntime = {
-  ready: Promise<void>
-  YMap: new (element: HTMLElement, props: {
-    location: { center: YandexCoordinates; zoom: number }
+    controls?: readonly string[]
     behaviors?: readonly string[]
-    mode?: 'raster' | 'vector'
-    zoomRange?: { min: number; max: number }
-    zoomRounding?: 'smooth'
-  }) => YandexMap
-  YMapDefaultSchemeLayer: new (props?: {
-    customization?: readonly {
-      tags: { any: readonly string[] }
-      elements: string
-      stylers: readonly { visibility: 'off' | 'on' }[]
-    }[]
-  }) => YandexMapEntity
-  YMapDefaultFeaturesLayer: new (props?: { zIndex?: number }) => YandexMapEntity
-  YMapMarker: new (props: {
-    coordinates: YandexCoordinates
-    zIndex?: number
-    blockEvents?: boolean
-    blockBehaviors?: boolean
-  }, element?: HTMLElement) => YandexMapEntity
-  YMapListener: new (props: {
-    layer: 'any'
-    onUpdate: (update: YandexMapUpdate) => void
-  }) => YandexMapEntity
+    type?: string
+  }, options?: { suppressMapOpenBlock?: boolean }) => YandexMap
+  Placemark: new (coordinates: YandexCoordinates, properties?: Record<string, unknown>, options?: Record<string, unknown>) => YandexPlacemark
+  templateLayoutFactory: {
+    createClass: (template: string) => unknown
+  }
 }
 
 declare global {
   interface Window {
-    ymaps3?: YandexMapsRuntime
+    ymaps?: YandexMapsRuntime
   }
 }
 
 let runtimePromise: Promise<YandexMapsRuntime> | null = null
 
 export function yandexMapsApiUrl(apiKey: string) {
-  const url = new URL('https://api-maps.yandex.ru/v3/')
+  const url = new URL('https://api-maps.yandex.ru/2.1/')
   url.searchParams.set('apikey', apiKey.trim())
   url.searchParams.set('lang', 'ru_RU')
   return url.toString()
@@ -74,19 +76,19 @@ export function loadYandexMaps(apiKey: string) {
 
   runtimePromise = new Promise<YandexMapsRuntime>((resolve, reject) => {
     const finish = () => {
-      const runtime = window.ymaps3
+      const runtime = window.ymaps
       if (!runtime) {
         runtimePromise = null
         reject(new Error('Yandex Maps API did not initialize'))
         return
       }
-      runtime.ready.then(() => resolve(runtime)).catch((error: unknown) => {
+      runtime.ready(() => resolve(runtime), (error) => {
         runtimePromise = null
         reject(error)
       })
     }
 
-    if (window.ymaps3) {
+    if (window.ymaps) {
       finish()
       return
     }
