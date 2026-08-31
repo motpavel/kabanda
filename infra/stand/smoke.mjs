@@ -69,8 +69,12 @@ expectStatus(asset, 200, 'hashed asset')
 if (!asset.headers.get('cache-control')?.includes('immutable')) {
   throw new Error('hashed asset is not immutable')
 }
-if (!(await asset.text()).includes('https://yandex.ru/map-widget/v1/?ll=')) {
-  throw new Error('PWA bundle does not contain the Yandex map underlay')
+const assetBody = await asset.text()
+if (!assetBody.includes('https://api-maps.yandex.ru/v3/')) {
+  throw new Error('PWA bundle does not contain Yandex Maps JavaScript API v3')
+}
+if (assetBody.includes('https://yandex.ru/map-widget/v1/?ll=')) {
+  throw new Error('PWA bundle still contains the legacy Yandex iframe map')
 }
 
 const health = await request('/api/health')
