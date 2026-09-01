@@ -2,6 +2,7 @@ import { VerifyMagicLinkPage } from '../features/auth/VerifyMagicLinkPage'
 import { CapabilityLabPage } from '../features/capability-lab/App'
 import { PrototypePage } from '../features/prototype/PrototypePage'
 import { RaidsDesignPrototype } from '../features/raids-design/RaidsDesignPrototype'
+import { RouteTrackingPrototype } from '../features/route-tracking-prototype/RouteTrackingPrototype'
 import { InvitePage } from '../features/kabandas/InvitePage'
 import { KabandasPage } from '../features/kabandas/KabandasPage'
 import { RaidApp } from '../features/raids/RaidApp'
@@ -14,6 +15,7 @@ import { InstallProvider } from '../features/install/InstallGuidance'
 export function App() {
   if (window.location.pathname.endsWith('/auth/verify')) return <VerifyMagicLinkPage />
   if (window.location.pathname.endsWith('/prototype/raids')) return <RaidsDesignPrototype />
+  if (window.location.pathname.endsWith('/prototype/route-tracking')) return <RouteTrackingPrototype />
   if (window.location.pathname.endsWith('/prototype')) return <PrototypePage />
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab')) return <CapabilityLabPage />
