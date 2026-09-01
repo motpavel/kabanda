@@ -5,7 +5,7 @@ import { TelemetryVariant } from './TelemetryVariant'
 import './route-tracking-prototype.css'
 
 const variants = [
-  { name: 'Чистая карта', render: CleanMapVariant },
+  { name: 'Навигация', render: CleanMapVariant },
   { name: 'Штурман', render: NavigatorVariant },
   { name: 'Телеметрия', render: TelemetryVariant },
 ] as const

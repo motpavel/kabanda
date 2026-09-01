@@ -28,9 +28,11 @@ type PrototypeMap = Omit<YandexMap, 'geoObjects'> & {
 type MovingPlacemark = YandexMapObject
 
 export function RouteSimulationMap({
+  followMode,
   showSamples,
   traveled,
 }: {
+  followMode?: boolean
   showSamples?: boolean
   traveled: readonly RouteCoordinate[]
 }) {
@@ -53,8 +55,8 @@ export function RouteSimulationMap({
       if (!active) return
       const runtime = baseRuntime as PrototypeRuntime
       const map = new runtime.Map(container, {
-        center: [56.85355, 53.2127],
-        zoom: 15,
+        center: followMode ? TEST_ROUTE[0]! : [56.85355, 53.2127],
+        zoom: followMode ? 17 : 15,
         controls: [],
         behaviors: ['default', 'scrollZoom'],
         type: 'yandex#map',
@@ -82,16 +84,18 @@ export function RouteSimulationMap({
         strokeWidth: 5,
         strokeOpacity: 1,
       })
-      const riderLayout = runtime.templateLayoutFactory.createClass(
-        `<span class="route-proto-rider" aria-label="Навигатор рейда"><img src="${import.meta.env.BASE_URL}brand/kabanda-logo-reference.png" alt="" /></span>`,
-      )
-      const rider = new runtime.Placemark(TEST_ROUTE[0]!, {}, {
-        iconLayout: riderLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 24 },
-        hasBalloon: false,
-        hasHint: false,
-        zIndex: 8,
-      }) as unknown as MovingPlacemark
+      const rider = followMode ? null : (() => {
+        const riderLayout = runtime.templateLayoutFactory.createClass(
+          `<span class="route-proto-rider" aria-label="Навигатор рейда"><img src="${import.meta.env.BASE_URL}brand/kabanda-logo-reference.png" alt="" /></span>`,
+        )
+        return new runtime.Placemark(TEST_ROUTE[0]!, {}, {
+          iconLayout: riderLayout,
+          iconShape: { type: 'Circle', coordinates: [0, 0], radius: 24 },
+          hasBalloon: false,
+          hasHint: false,
+          zIndex: 8,
+        }) as unknown as MovingPlacemark
+      })()
       const destinationLayout = runtime.templateLayoutFactory.createClass(
         '<span class="route-proto-destination" aria-label="Следующая точка"><span></span></span>',
       )
@@ -108,7 +112,7 @@ export function RouteSimulationMap({
       map.geoObjects.add(actualCasing)
       map.geoObjects.add(actualLine)
       map.geoObjects.add(destination)
-      map.geoObjects.add(rider)
+      if (rider) map.geoObjects.add(rider)
       mapRef.current = map
       runtimeRef.current = runtime
       actualLineRef.current = actualLine
@@ -129,13 +133,19 @@ export function RouteSimulationMap({
       riderRef.current = null
       samplesRef.current = []
     }
-  }, [])
+  }, [followMode])
 
   useEffect(() => {
     if (status !== 'ready' || !traveled.length) return
     actualLineRef.current?.geometry.setCoordinates(traveled)
     actualCasingRef.current?.geometry.setCoordinates(traveled)
     riderRef.current?.geometry.setCoordinates(traveled.at(-1)!)
+    if (followMode) {
+      mapRef.current?.setCenter(traveled.at(-1)!, 17, {
+        duration: 560,
+        timingFunction: 'ease-out',
+      })
+    }
 
     const map = mapRef.current
     const runtime = runtimeRef.current
@@ -153,11 +163,18 @@ export function RouteSimulationMap({
       samplesRef.current.push(sample)
       map.geoObjects.add(sample)
     }
-  }, [showSamples, status, traveled])
+  }, [followMode, showSamples, status, traveled])
 
   return (
     <div className="route-proto-map-wrap">
       <div ref={containerRef} className="route-proto-map" aria-label="Симуляция маршрута рейда" />
+      {followMode ? (
+        <span className="route-proto-user-arrow" aria-label="Положение и направление навигатора">
+          <svg viewBox="0 0 52 62" aria-hidden="true">
+            <path d="M26 4 47 55 26 45 5 55 26 4Z" />
+          </svg>
+        </span>
+      ) : null}
       {status === 'loading' ? <p className="route-proto-map-state">Загружаем карту…</p> : null}
       {status === 'failed' ? <p className="route-proto-map-state route-proto-map-state--error">Карта не загрузилась. Проверьте локальный API-ключ Яндекса.</p> : null}
       <div className="route-proto-legend" aria-label="Обозначения маршрута">

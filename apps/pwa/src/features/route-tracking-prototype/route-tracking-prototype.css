@@ -49,6 +49,23 @@
 
 .route-proto-rider img { width: 43px; height: 43px; object-fit: contain; }
 
+.route-proto-user-arrow {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 52px;
+  height: 62px;
+  transform: translate(-50%, -50%);
+  place-items: center;
+  pointer-events: none;
+  filter: drop-shadow(0 5px 10px rgb(35 42 53 / 34%));
+}
+
+.route-proto-user-arrow svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.route-proto-user-arrow path { fill: #17191b; stroke: #fff; stroke-width: 4; stroke-linejoin: round; }
+
 .route-proto-destination {
   position: absolute;
   display: grid;
@@ -155,7 +172,7 @@
 }
 
 .route-proto-floating-control:hover { transform: translateX(-50%); }
-.route-proto--clean .route-proto-legend { bottom: 82px; }
+.route-proto--clean .route-proto-legend { bottom: 18px; }
 
 .route-proto-sheet {
   position: absolute;
