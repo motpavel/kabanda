@@ -564,7 +564,7 @@
   --rt-point-sheet-drag: 0px;
   display: grid;
   width: min(100%, 640px);
-  max-height: min(54dvh, 440px);
+  max-height: min(65dvh, 440px);
   overflow-y: auto;
   gap: 7px;
   justify-self: center;
@@ -620,6 +620,12 @@
 }
 
 .rt-point-sheet form { display: grid; gap: 7px; }
+
+.rt-point-sheet input,
+.rt-point-sheet textarea {
+  min-height: 44px;
+  padding-block: 8px;
+}
 
 .rt-point-sheet form > label,
 .rt-point-sheet__field-head > label { margin-bottom: -4px; color: #3e4147; font-size: 10px; font-weight: 730; }
@@ -691,6 +697,7 @@ body.rt-point-sheet-open { overflow: hidden; }
   .rt-editor-nav__brand strong { display: none; }
   .rt-editor__heading h1 { font-size: 1.75rem; }
   .rt-map { height: 50dvh; min-height: 330px; }
+  .rt-map--point-editing { height: 100dvh; min-height: 100dvh; }
   .rt-route-summary > span { padding-inline: 10px; }
   .rt-point-card { grid-template-columns: minmax(0, 1fr) 132px; }
   .rt-point-card__drag { display: none; }
