@@ -109,13 +109,13 @@ export function isRaidStateTransitionAllowed(state: RaidState, action: RaidActio
 
 export function getRaidAllowedActions(input: {
   state: RaidState
-  role: 'owner' | 'member'
+  isOrganizer: boolean
   participantState: RaidParticipantState | null
   navigatorReady: boolean
   finalizationCanSettle?: boolean
 }): RaidAction[] {
   const actions: RaidAction[] = []
-  if (input.role === 'owner') {
+  if (input.isOrganizer) {
     if (isRaidStateTransitionAllowed(input.state, 'open-lobby')) actions.push('open-lobby')
     if (input.state === 'lobby') {
       actions.push('assign-navigator')
@@ -139,7 +139,7 @@ export function getRaidAllowedActions(input: {
     actions.push('ready')
   }
   if (
-    input.role === 'member' &&
+    !input.isOrganizer &&
     input.participantState === 'active' &&
     (input.state === 'active' || input.state === 'paused')
   ) {

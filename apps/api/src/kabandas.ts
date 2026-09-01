@@ -258,31 +258,44 @@ export class DatabaseKabandaService implements KabandaService {
   }
 
   async leaveKabanda(userId: string, kabandaId: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE kabanda_memberships member
-       SET removed_at = now()
-       FROM kabandas k
-       WHERE member.kabanda_id = $1 AND member.user_id = $2
-         AND member.kabanda_id = k.id AND k.archived_at IS NULL
-         AND member.removed_at IS NULL AND member.role = 'member'`,
-      [kabandaId, userId],
-    )
-    if (result.rowCount !== 1) throw this.notFound()
+    return transaction(this.pool, async (client) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT member.id FROM kabanda_memberships member
+         JOIN kabandas k ON k.id = member.kabanda_id AND k.archived_at IS NULL
+         WHERE member.kabanda_id = $1 AND member.user_id = $2
+           AND member.removed_at IS NULL AND member.role = 'member'
+         FOR UPDATE OF member`,
+        [kabandaId, userId],
+      )
+      const membershipId = membership.rows[0]?.id
+      if (!membershipId) throw this.notFound()
+      await this.requireNoActionableOrganizedRaids(client, kabandaId, userId)
+      await client.query('UPDATE kabanda_memberships SET removed_at = now() WHERE id = $1', [
+        membershipId,
+      ])
+    })
   }
 
   async removeMember(userId: string, kabandaId: string, memberId: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE kabanda_memberships target
-       SET removed_at = now()
-       FROM kabanda_memberships owner, kabandas k
-       WHERE target.kabanda_id = $1 AND target.user_id = $2
-         AND target.role = 'member' AND target.removed_at IS NULL
-         AND owner.kabanda_id = target.kabanda_id AND owner.user_id = $3
-         AND owner.role = 'owner' AND owner.removed_at IS NULL
-         AND k.id = target.kabanda_id AND k.archived_at IS NULL`,
-      [kabandaId, memberId, userId],
-    )
-    if (result.rowCount !== 1) throw this.notFound()
+    return transaction(this.pool, async (client) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT target.id FROM kabanda_memberships target
+         JOIN kabanda_memberships owner
+           ON owner.kabanda_id = target.kabanda_id AND owner.user_id = $3
+           AND owner.role = 'owner' AND owner.removed_at IS NULL
+         JOIN kabandas k ON k.id = target.kabanda_id AND k.archived_at IS NULL
+         WHERE target.kabanda_id = $1 AND target.user_id = $2
+           AND target.role = 'member' AND target.removed_at IS NULL
+         FOR UPDATE OF target`,
+        [kabandaId, memberId, userId],
+      )
+      const membershipId = membership.rows[0]?.id
+      if (!membershipId) throw this.notFound()
+      await this.requireNoActionableOrganizedRaids(client, kabandaId, memberId)
+      await client.query('UPDATE kabanda_memberships SET removed_at = now() WHERE id = $1', [
+        membershipId,
+      ])
+    })
   }
 
   async transferLeadership(
@@ -899,6 +912,27 @@ export class DatabaseKabandaService implements KabandaService {
       [kabandaId, userId],
     )
     if (!result.rowCount) throw this.notFound()
+  }
+
+  private async requireNoActionableOrganizedRaids(
+    client: PoolClient,
+    kabandaId: string,
+    userId: string,
+  ): Promise<void> {
+    const result = await client.query(
+      `SELECT 1 FROM raids
+       WHERE kabanda_id = $1 AND organizer_user_id = $2
+         AND state IN ('draft', 'planned', 'lobby', 'active', 'paused', 'finalizing')
+       LIMIT 1`,
+      [kabandaId, userId],
+    )
+    if (result.rowCount) {
+      throw new KabandaError(
+        'RAID_ORGANIZER_REMOVAL_BLOCKED',
+        409,
+        'Сначала заверши или отмени незавершённые рейды участника',
+      )
+    }
   }
 
   private invalidInvite(): KabandaError {

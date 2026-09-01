@@ -1,8 +1,10 @@
 import type { CreateRaidInput } from './types'
 
-const storageKey = 'kabanda:create-raid-attempt:v1'
+const legacyStorageKey = 'kabanda:create-raid-attempt:v1'
+const storageKey = (identityId: string) => `kabanda:create-raid-attempt:v2:${encodeURIComponent(identityId)}`
 
 export interface CreateRaidAttempt {
+  identityId: string
   kabandaId: string
   normalizedPayload: string
   key: string
@@ -25,22 +27,24 @@ export function normalizeCreateRaidPayload(input: CreateRaidInput): string {
 
 export function selectCreateRaidAttempt(
   previous: CreateRaidAttempt | null,
+  identityId: string,
   kabandaId: string,
   normalizedPayload: string,
   freshKey: string,
 ): CreateRaidAttempt {
-  if (matchesCreateRaidAttempt(previous, kabandaId, normalizedPayload)) {
+  if (matchesCreateRaidAttempt(previous, identityId, kabandaId, normalizedPayload)) {
     return previous
   }
-  return { kabandaId, normalizedPayload, key: freshKey }
+  return { identityId, kabandaId, normalizedPayload, key: freshKey }
 }
 
 export function matchesCreateRaidAttempt(
   attempt: CreateRaidAttempt | null,
+  identityId: string,
   kabandaId: string,
   normalizedPayload: string,
 ): attempt is CreateRaidAttempt {
-  return attempt?.kabandaId === kabandaId && attempt.normalizedPayload === normalizedPayload
+  return attempt?.identityId === identityId && attempt.kabandaId === kabandaId && attempt.normalizedPayload === normalizedPayload
 }
 
 export function localDateTimeInputToIso(value: string): string | null {
@@ -57,9 +61,10 @@ function isoToLocalDateTimeInput(value: string): string | null {
 
 export function restoreCreateRaidForm(
   attempt: CreateRaidAttempt | null,
+  identityId: string,
   kabandaId: string,
 ): RestoredCreateRaidForm | null {
-  if (!attempt || attempt.kabandaId !== kabandaId || !attempt.key) return null
+  if (!attempt || attempt.identityId !== identityId || attempt.kabandaId !== kabandaId || !attempt.key) return null
   try {
     const value = JSON.parse(attempt.normalizedPayload) as Partial<CreateRaidInput>
     if (
@@ -97,11 +102,13 @@ function parseAttempt(raw: string | null): CreateRaidAttempt | null {
   if (!raw) return null
   try {
     const value = JSON.parse(raw) as Partial<CreateRaidAttempt>
-    return typeof value.kabandaId === 'string' &&
+    return typeof value.identityId === 'string' &&
+      typeof value.kabandaId === 'string' &&
       typeof value.normalizedPayload === 'string' &&
       typeof value.key === 'string' &&
       value.key.length > 0
       ? {
+          identityId: value.identityId,
           kabandaId: value.kabandaId,
           normalizedPayload: value.normalizedPayload,
           key: value.key,
@@ -112,26 +119,32 @@ function parseAttempt(raw: string | null): CreateRaidAttempt | null {
   }
 }
 
-export function readCreateRaidAttempt(): CreateRaidAttempt | null {
+export function readCreateRaidAttempt(identityId: string): CreateRaidAttempt | null {
   try {
-    return parseAttempt(sessionStorage.getItem(storageKey))
+    sessionStorage.removeItem(legacyStorageKey)
+    const attempt = parseAttempt(sessionStorage.getItem(storageKey(identityId)))
+    return attempt?.identityId === identityId ? attempt : null
   } catch {
     return null
   }
 }
 
-export function persistCreateRaidAttempt(attempt: CreateRaidAttempt): void {
+export function persistCreateRaidAttempt(identityId: string, attempt: CreateRaidAttempt): void {
+  if (attempt.identityId !== identityId) return
   try {
-    sessionStorage.setItem(storageKey, JSON.stringify(attempt))
+    sessionStorage.removeItem(legacyStorageKey)
+    sessionStorage.setItem(storageKey(identityId), JSON.stringify(attempt))
   } catch {
     // The in-memory fallback in the form still keeps retries stable for this mount.
   }
 }
 
-export function clearCreateRaidAttempt(attempt: CreateRaidAttempt): void {
+export function clearCreateRaidAttempt(identityId: string, attempt: CreateRaidAttempt): void {
+  if (attempt.identityId !== identityId) return
   try {
-    if (parseAttempt(sessionStorage.getItem(storageKey))?.key === attempt.key) {
-      sessionStorage.removeItem(storageKey)
+    const key = storageKey(identityId)
+    if (parseAttempt(sessionStorage.getItem(key))?.key === attempt.key) {
+      sessionStorage.removeItem(key)
     }
   } catch {
     // A canonical response is already received; unavailable storage needs no cleanup.
