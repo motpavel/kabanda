@@ -22,6 +22,7 @@ export type KabandaSummary = {
   id: string
   name: string
   avatar: string
+  coverImage: string | null
   role: 'owner' | 'member'
   memberCount: number
   pointsCollectionId: string | null
@@ -60,6 +61,7 @@ type SummaryRow = {
   id: string
   name: string
   avatar: string
+  cover_image: string | null
   role: 'owner' | 'member'
   member_count: number
   points_collection_id: string | null
@@ -79,12 +81,12 @@ type PointRow = {
   latitude: number
   longitude: number
   verification_status: ManifestPoint['verificationStatus']
-  visited_by_me: boolean
-  visited_by_team: boolean
+  visited_by_me_count: number
+  visited_by_team_count: number
 }
 
 const summarySelect = `
-  SELECT k.id, k.name, k.avatar, m.role,
+  SELECT k.id, k.name, k.avatar, k.cover_image, m.role,
     (SELECT count(*)::int FROM kabanda_memberships active
       WHERE active.kabanda_id = k.id AND active.removed_at IS NULL) AS member_count,
     (SELECT c.id FROM point_collections c
@@ -103,6 +105,7 @@ function toSummary(row: SummaryRow): KabandaSummary {
     id: row.id,
     name: row.name,
     avatar: row.avatar,
+    coverImage: row.cover_image,
     role: row.role,
     memberCount: Number(row.member_count),
     pointsCollectionId: row.points_collection_id,
@@ -127,9 +130,15 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 export interface KabandaService {
   listKabandas(userId: string): Promise<KabandaSummary[]>
   createKabanda(userId: string, name: string, avatar: string, idempotencyKey: string): Promise<KabandaSummary>
+  updateKabanda(
+    userId: string,
+    kabandaId: string,
+    input: { name?: string | undefined; coverImage?: string | undefined },
+  ): Promise<KabandaSummary>
   listMembers(userId: string, kabandaId: string): Promise<Array<Record<string, unknown>>>
   leaveKabanda(userId: string, kabandaId: string): Promise<void>
   removeMember(userId: string, kabandaId: string, memberId: string): Promise<void>
+  transferLeadership(userId: string, kabandaId: string, memberId: string): Promise<KabandaSummary>
   createInvite(
     userId: string,
     kabandaId: string,
@@ -184,7 +193,7 @@ export class DatabaseKabandaService implements KabandaService {
         [userId],
       )
       if (identity.rows[0]?.identity_kind !== 'verified') {
-        throw new KabandaError('VERIFIED_ACCOUNT_REQUIRED', 403, 'Создавать команды может только организатор')
+        throw new KabandaError('VERIFIED_ACCOUNT_REQUIRED', 403, 'Создавать команды может только вожак')
       }
       const result = await client.query<{ id: string; name: string; avatar: string }>(
         `INSERT INTO kabandas (name, avatar, owner_id, create_idempotency_key)
@@ -206,6 +215,23 @@ export class DatabaseKabandaService implements KabandaService {
         [kabanda.id, userId],
       )
       return this.getSummary(client, userId, kabanda.id)
+    })
+  }
+
+  async updateKabanda(
+    userId: string,
+    kabandaId: string,
+    input: { name?: string | undefined; coverImage?: string | undefined },
+  ): Promise<KabandaSummary> {
+    return transaction(this.pool, async (client) => {
+      await this.requireOwner(client, userId, kabandaId)
+      await client.query(
+        `UPDATE kabandas
+         SET name = coalesce($2, name), cover_image = coalesce($3, cover_image), updated_at = now()
+         WHERE id = $1 AND archived_at IS NULL`,
+        [kabandaId, input.name ?? null, input.coverImage ?? null],
+      )
+      return this.getSummary(client, userId, kabandaId)
     })
   }
 
@@ -257,6 +283,39 @@ export class DatabaseKabandaService implements KabandaService {
       [kabandaId, memberId, userId],
     )
     if (result.rowCount !== 1) throw this.notFound()
+  }
+
+  async transferLeadership(
+    userId: string,
+    kabandaId: string,
+    memberId: string,
+  ): Promise<KabandaSummary> {
+    return transaction(this.pool, async (client) => {
+      await client.query('SELECT id FROM kabandas WHERE id = $1 AND archived_at IS NULL FOR UPDATE', [kabandaId])
+      await this.requireOwner(client, userId, kabandaId)
+      const target = await client.query(
+        `SELECT 1 FROM kabanda_memberships
+         WHERE kabanda_id = $1 AND user_id = $2 AND role = 'member' AND removed_at IS NULL
+         FOR UPDATE`,
+        [kabandaId, memberId],
+      )
+      if (target.rowCount !== 1) throw this.notFound()
+      await client.query(
+        `UPDATE kabanda_memberships SET role = 'member'
+         WHERE kabanda_id = $1 AND user_id = $2 AND role = 'owner' AND removed_at IS NULL`,
+        [kabandaId, userId],
+      )
+      await client.query(
+        `UPDATE kabanda_memberships SET role = 'owner'
+         WHERE kabanda_id = $1 AND user_id = $2 AND role = 'member' AND removed_at IS NULL`,
+        [kabandaId, memberId],
+      )
+      await client.query(
+        'UPDATE kabandas SET owner_id = $2, updated_at = now() WHERE id = $1',
+        [kabandaId, memberId],
+      )
+      return this.getSummary(client, userId, kabandaId)
+    })
   }
 
   async createInvite(
@@ -590,11 +649,11 @@ export class DatabaseKabandaService implements KabandaService {
       `SELECT p.id, p.stable_key, p.name,
          ST_Y(p.location)::float8 AS latitude, ST_X(p.location)::float8 AS longitude,
          p.verification_status,
-         EXISTS (SELECT 1 FROM point_visits mine
+         (SELECT COUNT(*)::int FROM point_visits mine
            WHERE mine.kabanda_id = c.kabanda_id AND mine.point_id = p.id AND mine.user_id = $1)
-           AS visited_by_me,
-         EXISTS (SELECT 1 FROM point_visits team
-           WHERE team.kabanda_id = c.kabanda_id AND team.point_id = p.id) AS visited_by_team
+           AS visited_by_me_count,
+         (SELECT COUNT(*)::int FROM point_visits team
+           WHERE team.kabanda_id = c.kabanda_id AND team.point_id = p.id) AS visited_by_team_count
        FROM point_collections c
        JOIN kabanda_memberships member
          ON member.kabanda_id = c.kabanda_id AND member.user_id = $1 AND member.removed_at IS NULL
@@ -634,8 +693,10 @@ export class DatabaseKabandaService implements KabandaService {
         latitude: row.latitude,
         longitude: row.longitude,
         verificationStatus: row.verification_status,
-        visitedByMe: row.visited_by_me,
-        visitedByTeam: row.visited_by_team,
+        visitedByMe: row.visited_by_me_count > 0,
+        visitedByTeam: row.visited_by_team_count > 0,
+        visitedByMeCount: row.visited_by_me_count,
+        visitedByTeamCount: row.visited_by_team_count,
       })),
       nextCursor: null,
     }
@@ -816,7 +877,7 @@ export class DatabaseKabandaService implements KabandaService {
 
   private async getPublicSummary(client: PoolClient, kabandaId: string): Promise<KabandaSummary> {
     const result = await client.query<SummaryRow>(
-      `SELECT k.id, k.name, k.avatar, 'member'::kabanda_membership_role AS role,
+      `SELECT k.id, k.name, k.avatar, k.cover_image, 'member'::kabanda_membership_role AS role,
          (SELECT count(*)::int FROM kabanda_memberships m
            WHERE m.kabanda_id = k.id AND m.removed_at IS NULL) AS member_count,
          (SELECT c.id FROM point_collections c

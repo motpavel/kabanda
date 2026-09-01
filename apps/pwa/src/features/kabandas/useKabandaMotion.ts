@@ -35,19 +35,6 @@ export function useKabandaMotion(scope: RefObject<HTMLElement | null>) {
         )
       })
 
-      media.add('(min-width: 1101px)', () => {
-        const rail = scope.current?.querySelector<HTMLElement>('[data-journey-rail]')
-        if (!rail || !scope.current) return
-
-        ScrollTrigger.create({
-          trigger: scope.current,
-          start: 'top 24px',
-          end: 'bottom bottom-=48',
-          pin: rail,
-          pinSpacing: false,
-        })
-      })
-
       return () => media.revert()
     },
     { scope },

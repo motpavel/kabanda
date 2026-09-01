@@ -48,7 +48,14 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       injectRegister: null,
-      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      includeAssets: [
+        'apple-touch-icon.png',
+        'pwa-192x192.png',
+        'pwa-512x512.png',
+        'brand/kabanda-logo-reference.png',
+        'brand/kabanda-login-riders.jpg',
+        'brand/kabanda-team-cover.jpg',
+      ],
       manifest: {
         name: 'КАБАНДА',
         short_name: 'КАБАНДА',

@@ -11,7 +11,10 @@ import {
 } from '../../lib/diagnostics'
 import { reconcileAndCountUnsyncedCheckInWork } from '../checkins/store'
 import { readQueueDiagnosticSnapshots } from '../offline/diagnostics'
-import { shouldDeferServiceWorkerUpdate } from './recording/state'
+import {
+  shouldDeferServiceWorkerUpdate,
+  shouldShowServiceWorkerUpdateNotice,
+} from './recording/state'
 import { useRecordingRuntime } from './recording/runtime'
 import { reconcileAndCountUnsyncedRouteWork } from './recording/store'
 
@@ -35,7 +38,12 @@ export function PwaUpdateGate() {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({ immediate: true })
-  const deferred = shouldDeferServiceWorkerUpdate(phase, Math.max(unsyncedCheckInWork, durableUnsyncedWork))
+  const deferred = shouldDeferServiceWorkerUpdate(phase)
+
+  useEffect(() => {
+    if (!needRefresh || deferred) return
+    void updateServiceWorker(true)
+  }, [deferred, needRefresh, updateServiceWorker])
 
   useEffect(() => {
     if (!alphaDiagnosticsEnabled()) return
@@ -115,12 +123,11 @@ export function PwaUpdateGate() {
     return () => navigator.serviceWorker.removeEventListener('controllerchange', changed)
   }, [durableUnsyncedWork, phase, unsyncedCheckInWork])
 
-  if (!needRefresh) return null
+  if (!shouldShowServiceWorkerUpdateNotice(needRefresh, phase)) return null
   return (
     <aside className="pwa-update-gate" role="status" aria-live="polite">
-      <strong>Доступна новая версия</strong>
-      <span>{deferred ? 'Обновление отложено, пока маршрут или локальные материалы не синхронизированы.' : 'Можно безопасно обновить приложение.'}</span>
-      {!deferred && <button type="button" onClick={() => void updateServiceWorker(true)}>Обновить</button>}
+      <strong>Обновление подождёт</strong>
+      <span>Установим новую версию автоматически после остановки активной записи маршрута.</span>
     </aside>
   )
 }

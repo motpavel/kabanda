@@ -15,6 +15,7 @@
     "points:import": "tsx src/import-alpha.ts",
     "alpha:access": "tsx src/alpha-access-cli.ts",
     "alpha:rollback": "tsx src/alpha-rollback-cli.ts",
+    "credential:reset": "tsx src/credential-reset-cli.ts",
     "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {

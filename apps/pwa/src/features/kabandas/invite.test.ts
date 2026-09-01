@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { consumeInviteFragment, inviteAcceptanceKey } from './invite'
+import { ApiError } from '../../lib/http'
+import {
+  classifyInviteAcceptanceFailure,
+  consumeInviteFragment,
+  inviteAcceptanceKey,
+} from './invite'
 
 describe('invite fragment handoff', () => {
   it('extracts the raw invite and clears it from the URL before continuation exchange', () => {
@@ -32,5 +37,26 @@ describe('invite fragment handoff', () => {
     expect(await inviteAcceptanceKey(`${continuation}-other`)).not.toBe(first)
     expect(first).toMatch(/^invite-[a-f0-9]{64}$/)
     expect(first).not.toContain(continuation)
+  })
+
+  it('only declares an invite invalid for the explicit INVITE_INVALID response', () => {
+    expect(
+      classifyInviteAcceptanceFailure(new ApiError('INVITE_INVALID', 'expired', 400)),
+    ).toBe('invite-invalid')
+    expect(
+      classifyInviteAcceptanceFailure(new ApiError('REQUEST_FAILED', 'offline', 503)),
+    ).toBe('retryable')
+    expect(classifyInviteAcceptanceFailure(new TypeError('network failed'))).toBe('retryable')
+  })
+
+  it('keeps the existing recovery paths for username conflicts and authentication', () => {
+    expect(
+      classifyInviteAcceptanceFailure(
+        new ApiError('REGISTRATION_UNAVAILABLE', 'username unavailable', 409),
+      ),
+    ).toBe('registration-unavailable')
+    expect(classifyInviteAcceptanceFailure(new ApiError('AUTH_REQUIRED', 'login', 401))).toBe(
+      'auth-required',
+    )
   })
 })

@@ -154,6 +154,47 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     expect(Number((await pool!.query('SELECT count(*) FROM kabanda_memberships')).rows[0]?.count)).toBe(1)
   })
 
+  it('lets only the owner rename a Kabanda and replace its cover', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('presentation')
+    const outsiderId = await user('cover-outsider@example.com')
+    const coverImage = `data:image/jpeg;base64,${'A'.repeat(32)}`
+    const updated = await service!.updateKabanda(ownerId, kabanda.id, {
+      name: 'Городская Кабанда',
+      coverImage,
+    })
+    expect(updated).toMatchObject({ name: 'Городская Кабанда', coverImage })
+    await expect(
+      service!.updateKabanda(outsiderId, kabanda.id, { name: 'Чужое название' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    expect((await service!.listKabandas(ownerId))[0]).toMatchObject({
+      name: 'Городская Кабанда',
+      coverImage,
+    })
+  })
+
+  it('transfers the single leader role to an active member atomically', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('leadership')
+    const memberId = await user('new-leader@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'accept-new-leader')
+
+    const formerLeaderView = await service!.transferLeadership(ownerId, kabanda.id, memberId)
+    expect(formerLeaderView.role).toBe('member')
+    expect((await service!.listKabandas(memberId))[0]?.role).toBe('owner')
+    expect(await service!.listMembers(memberId, kabanda.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: ownerId, role: 'member' }),
+      expect.objectContaining({ id: memberId, role: 'owner' }),
+    ]))
+    expect((await pool!.query('SELECT owner_id FROM kabandas WHERE id = $1', [kabanda.id])).rows[0]?.owner_id).toBe(memberId)
+    await expect(
+      service!.updateKabanda(ownerId, kabanda.id, { name: 'Старый вожак' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(
+      service!.transferLeadership(ownerId, kabanda.id, memberId),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
   it('rejects forged, expired, revoked and replayed invite material', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('invites')
     await expect(service!.previewInvite('forged-token-that-is-at-least-32-chars', true)).rejects.toMatchObject({
@@ -324,6 +365,43 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     await expect(
       service!.listPoints(memberId, imported.collectionId, bounds, 100),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('returns personal and team visit counts for every point', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('visit-counts')
+    const imported = await service!.importManifest(
+      ownerId,
+      kabanda.id,
+      'visit-counts-v1',
+      'f'.repeat(64),
+      'Ижевск visit counts',
+      manifest,
+    )
+    const memberId = await user('visit-counts-member@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'accept-visit-counts-member')
+
+    const pointId = (await service!.listPoints(ownerId, imported.collectionId, bounds, 100)).points[0]!
+      .id as string
+    await service!.recordVisit(ownerId, kabanda.id, pointId, 'visit-counts-owner-1')
+    await service!.recordVisit(ownerId, kabanda.id, pointId, 'visit-counts-owner-2')
+    await service!.recordVisit(memberId, kabanda.id, pointId, 'visit-counts-member-1')
+
+    const ownerPoint = (await service!.listPoints(ownerId, imported.collectionId, bounds, 100)).points[0]
+    const memberPoint = (await service!.listPoints(memberId, imported.collectionId, bounds, 100)).points[0]
+    expect(ownerPoint).toMatchObject({
+      visitedByMe: true,
+      visitedByTeam: true,
+      visitedByMeCount: 2,
+      visitedByTeamCount: 3,
+    })
+    expect(memberPoint).toMatchObject({
+      visitedByMe: true,
+      visitedByTeam: true,
+      visitedByMeCount: 1,
+      visitedByTeamCount: 3,
+    })
   })
 
   it('replays one alpha import and keeps point IDs and visit history stable across rename/archive', async () => {

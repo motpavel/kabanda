@@ -2,6 +2,7 @@ export interface KabandaSummary {
   id: string
   name: string
   avatar: string
+  coverImage: string | null
   role: 'owner' | 'member'
   memberCount: number
   pointsCollectionId: string | null
@@ -23,6 +24,8 @@ export interface KabandaPoint {
   verificationStatus: 'source_checked' | 'field_verified' | 'rejected'
   visitedByMe: boolean
   visitedByTeam: boolean
+  visitedByMeCount: number
+  visitedByTeamCount: number
 }
 
 export interface InvitePreview {

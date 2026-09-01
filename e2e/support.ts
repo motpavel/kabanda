@@ -46,6 +46,132 @@ export async function installSyntheticSession(
   }])
 }
 
+export async function installYandexMapsMock(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    type MapEvent = { get: (name: string) => unknown }
+    type MapHandler = (event: MapEvent) => void
+    type PlacemarkHandler = (event: { stopPropagation: () => void }) => void
+
+    class MockPlacemark {
+      element: HTMLElement | null = null
+      readonly values: Record<string, unknown>
+      readonly settings: Record<string, unknown>
+      readonly handlers: Record<string, PlacemarkHandler[]> = {}
+      readonly properties = {
+        set: (name: string, value: unknown) => {
+          this.values[name] = value
+          this.syncElement()
+        },
+      }
+      readonly options = {
+        set: (name: string, value: unknown) => {
+          this.settings[name] = value
+        },
+      }
+      readonly events = {
+        add: (name: string, handler: PlacemarkHandler) => {
+          this.handlers[name] = [...(this.handlers[name] ?? []), handler]
+        },
+      }
+
+      constructor(
+        readonly coordinates: readonly [number, number],
+        properties: Record<string, unknown> = {},
+        options: Record<string, unknown> = {},
+      ) {
+        this.values = { ...properties }
+        this.settings = { ...options }
+      }
+
+      syncElement() {
+        if (!this.element) return
+        const markerClass = this.values.markerClass
+        if (typeof markerClass === 'string') this.element.className = markerClass
+        const ariaLabel = this.values.ariaLabel
+        if (typeof ariaLabel === 'string') this.element.setAttribute('aria-label', ariaLabel)
+        const selected = this.values.selected
+        if (typeof selected === 'string') this.element.setAttribute('aria-pressed', selected)
+      }
+    }
+
+    class MockYandexMap {
+      private center: readonly [number, number]
+      private zoom: number
+      private readonly handlers: Record<string, MapHandler[]> = {}
+      private readonly objects = new Set<MockPlacemark>()
+      readonly events = {
+        add: (name: string, handler: MapHandler) => {
+          this.handlers[name] = [...(this.handlers[name] ?? []), handler]
+        },
+      }
+      readonly geoObjects = {
+        add: (placemark: MockPlacemark) => {
+          this.objects.add(placemark)
+          const markerClass = placemark.values.markerClass
+          const element = document.createElement(typeof markerClass === 'string' ? 'button' : 'span')
+          if (element instanceof HTMLButtonElement) element.type = 'button'
+          if (typeof markerClass !== 'string') {
+            element.className = 'kb-yandex-user-location'
+            element.setAttribute('aria-label', 'Моё местоположение')
+          }
+          placemark.element = element
+          placemark.syncElement()
+          element.addEventListener('click', (event) => {
+            for (const handler of placemark.handlers.click ?? []) {
+              handler({ stopPropagation: () => event.stopPropagation() })
+            }
+          })
+          this.container.append(element)
+        },
+        remove: (placemark: MockPlacemark) => {
+          this.objects.delete(placemark)
+          placemark.element?.remove()
+          placemark.element = null
+        },
+      }
+
+      constructor(
+        private readonly container: HTMLElement,
+        state: { center: readonly [number, number]; zoom: number },
+      ) {
+        this.center = state.center
+        this.zoom = state.zoom
+      }
+
+      private emitBoundsChange() {
+        const event: MapEvent = {
+          get: (name) => name === 'newCenter' ? this.center : name === 'newZoom' ? this.zoom : undefined,
+        }
+        for (const handler of this.handlers.boundschange ?? []) handler(event)
+      }
+
+      getCenter() { return this.center }
+      getZoom() { return this.zoom }
+      setCenter(center: readonly [number, number], zoom = this.zoom) {
+        this.center = center
+        this.zoom = zoom
+        this.emitBoundsChange()
+      }
+      setZoom(zoom: number) {
+        this.zoom = zoom
+        this.emitBoundsChange()
+      }
+      destroy() {
+        for (const placemark of this.objects) placemark.element?.remove()
+        this.objects.clear()
+      }
+    }
+
+    const ymaps = {
+      ready: (success: () => void) => success(),
+      Map: MockYandexMap,
+      Placemark: MockPlacemark,
+      templateLayoutFactory: { createClass: (template: string) => template },
+    }
+    ;(window as unknown as { ymaps: typeof ymaps }).ymaps = ymaps
+  })
+}
+
 export function operationId(prefix: string): string {
   return `${prefix}-${randomUUID()}`
 }

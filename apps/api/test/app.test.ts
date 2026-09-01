@@ -57,9 +57,11 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
   return {
     listKabandas: vi.fn().mockResolvedValue([]),
     createKabanda: vi.fn(),
+    updateKabanda: vi.fn(),
     listMembers: vi.fn().mockResolvedValue([]),
     leaveKabanda: vi.fn(),
     removeMember: vi.fn(),
+    transferLeadership: vi.fn(),
     createInvite: vi.fn(),
     revokeInvite: vi.fn(),
     previewInvite: vi.fn(),
@@ -676,6 +678,80 @@ describe('API foundation', () => {
     })
     expect(response.statusCode).toBe(403)
     expect(createKabanda).not.toHaveBeenCalled()
+  })
+
+  it('updates Kabanda presentation through the owner-checked service', async () => {
+    const coverImage = `data:image/jpeg;base64,${'A'.repeat(32)}`
+    const updateKabanda = vi.fn().mockResolvedValue({
+      id: '81297402-898c-48d6-bc78-c74b6b38205c',
+      name: 'Новый маршрут',
+      avatar: '🐗',
+      coverImage,
+      role: 'owner',
+      memberCount: 1,
+      pointsCollectionId: null,
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ updateKabanda }),
+    )
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/kabandas/81297402-898c-48d6-bc78-c74b6b38205c',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: { name: 'Новый маршрут', coverImage },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(updateKabanda).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      { name: 'Новый маршрут', coverImage },
+    )
+  })
+
+  it('rejects an unsafe Kabanda cover before calling the service', async () => {
+    const updateKabanda = vi.fn()
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ updateKabanda }),
+    )
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/kabandas/81297402-898c-48d6-bc78-c74b6b38205c',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: { coverImage: 'https://example.com/tracker.jpg' },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(updateKabanda).not.toHaveBeenCalled()
+  })
+
+  it('passes leadership only through the authenticated Kabanda service', async () => {
+    const memberId = '383bb699-4f6b-423a-876d-bb143cfa97f3'
+    const transferLeadership = vi.fn().mockResolvedValue({
+      id: '81297402-898c-48d6-bc78-c74b6b38205c',
+      name: 'Ночные кабаны',
+      avatar: '🐗',
+      coverImage: null,
+      role: 'member',
+      memberCount: 2,
+      pointsCollectionId: null,
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas({ transferLeadership }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/kabandas/81297402-898c-48d6-bc78-c74b6b38205c/leadership',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: { memberId },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(transferLeadership).toHaveBeenCalledWith(
+      user.id,
+      '81297402-898c-48d6-bc78-c74b6b38205c',
+      memberId,
+    )
   })
 
   it('never places a raw invite token in a redirect', async () => {

@@ -3,17 +3,22 @@ import {
   api,
   fixture,
   installSyntheticSession,
+  installYandexMapsMock,
   type FixtureIdentity,
 } from './support.js'
 
 test('owner completes one canonical raid and opens the next raid form', async ({ context, page }) => {
   const identity = fixture<FixtureIdentity>('prepare')
+  const pageErrors: Error[] = []
+  page.on('pageerror', (error) => pageErrors.push(error))
+  await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
   page.on('dialog', (dialog) => void dialog.accept())
   await page.goto('/app')
-  await expect(page.getByRole('heading', { name: 'Мои Кабанды' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
 
-  await page.getByRole('button', { name: '+ Кабанда' }).click()
+  await page.getByRole('link', { name: 'Кабанда', exact: true }).click()
+  await page.getByRole('button', { name: 'Создать Кабанду', exact: true }).click()
   await page.getByLabel('Название Кабанды').fill(`E2E Кабанда ${identity.runId.slice(0, 8)}`)
   const createKabandaResponse = page.waitForResponse((response) =>
     response.url().endsWith('/api/kabandas') && response.request().method() === 'POST')
@@ -21,8 +26,73 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const kabanda = (await (await createKabandaResponse).json()).kabanda as { id: string }
   fixture('attach-point', kabanda.id)
   await page.reload()
-  await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: 'Управление Кабандой' }).click()
+  const teamMenu = page.getByRole('menu')
+  await expect(teamMenu.getByRole('menuitem')).toHaveText([
+    'Переименовать Кабанду',
+    'Сменить заставку',
+    'Передать права вожака',
+    'Удалить участников',
+  ])
+  await expect(page.locator('.kb-team-menu-dots i')).toHaveCount(3)
+  await expect(teamMenu).not.toHaveCSS('box-shadow', 'none')
+  const [menuBox, coverBox] = await Promise.all([
+    teamMenu.boundingBox(),
+    page.locator('.kb-team-cover').boundingBox(),
+  ])
+  expect(menuBox).not.toBeNull()
+  expect(coverBox).not.toBeNull()
+  expect((menuBox?.y ?? 0) + (menuBox?.height ?? 0)).toBeGreaterThan((coverBox?.y ?? 0) + (coverBox?.height ?? 0))
+  const menuBottomIsClickable = await page.evaluate(({ x, y }) =>
+    document.elementFromPoint(x, y)?.closest('.kb-team-menu') !== null,
+  {
+    x: (menuBox?.x ?? 0) + (menuBox?.width ?? 0) / 2,
+    y: Math.min((menuBox?.y ?? 0) + (menuBox?.height ?? 0) - 4, 840),
+  })
+  expect(menuBottomIsClickable).toBe(true)
+  await page.getByRole('menuitem', { name: 'Переименовать Кабанду' }).click()
+  await page.getByLabel('Новое название').fill('E2E Городская Кабанда')
+  const renameResponse = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/kabandas/${kabanda.id}`) && response.request().method() === 'PATCH')
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  expect((await renameResponse).ok()).toBe(true)
+  await expect(page.getByRole('heading', { name: 'E2E Городская Кабанда' })).toBeVisible()
+  await page.setViewportSize({ width: 1280, height: 720 })
 
+  const coverResponse = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/kabandas/${kabanda.id}`) && response.request().method() === 'PATCH')
+  await page.locator('.kb-team-cover-menu input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  expect((await coverResponse).ok()).toBe(true)
+  await expect(page.locator('.kb-team-cover img')).toHaveAttribute('src', /^data:image\/jpeg;base64,/)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('link', { name: 'Карта', exact: true }).click()
+  const categorySelect = page.getByLabel('Категория точек')
+  await expect(categorySelect).toHaveValue('stores')
+  await expect(page.locator('.kb-yandex-marker--stores')).toHaveCount(177)
+  const geolocateButton = page.getByRole('button', { name: 'Определить моё местоположение' })
+  await expect(geolocateButton).toBeEnabled()
+  await geolocateButton.click()
+  await expect(geolocateButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.kb-yandex-user-location')).toBeVisible()
+  const [categoryBox, viewSwitchBox] = await Promise.all([
+    page.locator('.kb-map-category').boundingBox(),
+    page.locator('.kb-map-view-switch').boundingBox(),
+  ])
+  expect(categoryBox).not.toBeNull()
+  expect(viewSwitchBox).not.toBeNull()
+  expect((categoryBox?.x ?? 0) + (categoryBox?.width ?? 0)).toBeLessThanOrEqual(viewSwitchBox?.x ?? 0)
+  expect(Math.abs((categoryBox?.height ?? 0) - (viewSwitchBox?.height ?? 0))).toBeLessThanOrEqual(1)
+  expect(Math.abs((categoryBox?.y ?? 0) - (viewSwitchBox?.y ?? 0))).toBeLessThanOrEqual(1)
+  await categorySelect.selectOption('attractions')
+  await expect(page.locator('.kb-yandex-marker--stores')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
+  await expect(page.locator('.kb-yandex-marker--attractions')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Определить моё местоположение' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.kb-yandex-user-location')).toBeVisible()
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  await page.getByRole('link', { name: 'Главная', exact: true }).click()
   await page.getByRole('button', { name: 'Создать рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
   await page.getByLabel('Название').fill('Синтетический золотой рейд')
@@ -40,6 +110,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Начать рейд' }).click()
 
   await expect(page.getByText('fresh', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { acceptedSampleCount: number } } }>(
       page,
@@ -84,6 +155,10 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(result.result.team).toMatchObject({ uniquePoints: 1, photos: 1 })
 
   await page.getByRole('link', { name: 'КАБАНДА — на главную' }).click()
+  await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
+  await page.getByRole('link', { name: 'Рейды', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Рейды' })).toBeVisible()
+  expect(pageErrors).toEqual([])
   await expect(page.getByRole('link', { name: /Синтетический золотой рейд/ })).toBeVisible()
   await page.getByRole('link', { name: /Синтетический золотой рейд/ }).click()
   await page.getByRole('link', { name: 'Запланировать следующий рейд' }).click()
