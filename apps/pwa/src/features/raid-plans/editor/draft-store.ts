@@ -27,15 +27,7 @@ export function readRaidTemplateDraft(
   if (!storage) return null
   try {
     const value: unknown = JSON.parse(storage.getItem(draftKey(identityId, kabandaId)) ?? 'null')
-    const draft = parseDraft(value, identityId, kabandaId)
-    if (draft) {
-      try {
-        storage.setItem(draftKey(identityId, kabandaId), JSON.stringify(draft))
-      } catch {
-        storage.removeItem(draftKey(identityId, kabandaId))
-      }
-    }
-    return draft
+    return parseDraft(value, identityId, kabandaId)
   } catch {
     return null
   }

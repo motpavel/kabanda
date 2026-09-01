@@ -64,15 +64,21 @@ export function RaidTemplateEditorRoute({ identityId, kabandaId }: { identityId:
 }
 
 function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kabanda: KabandaSummary }) {
-  const restoredDraft = useRef(readRaidTemplateDraft(identityId, kabanda.id))
+  const [initialDraft] = useState(() => {
+    const restored = readRaidTemplateDraft(identityId, kabanda.id)
+    return {
+      draft: restored ?? createRaidTemplateDraft(identityId, kabanda.id),
+      restored: restored !== null,
+    }
+  })
   const [draft, dispatch] = useReducer(
     raidTemplateDraftReducer,
-    restoredDraft.current ?? createRaidTemplateDraft(identityId, kabanda.id),
+    initialDraft.draft,
   )
   const draftRef = useRef(draft)
   const routeTimeoutRef = useRef<number | null>(null)
   const [routeEstimate, setRouteEstimate] = useState<DraftRouteEstimate>({ status: 'idle' })
-  const [localState, setLocalState] = useState<'saving' | 'saved' | 'failed'>(restoredDraft.current ? 'saved' : 'saving')
+  const [localState, setLocalState] = useState<'saving' | 'saved' | 'failed'>(initialDraft.restored ? 'saved' : 'saving')
   const [coverState, setCoverState] = useState<'idle' | 'processing'>('idle')
   const [coverError, setCoverError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle')
