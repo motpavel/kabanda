@@ -14,9 +14,10 @@ const environmentSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   APP_ORIGIN: z.url().default('http://localhost:5173'),
   APP_BASE_PATH: z.string().regex(/^\/([^?#]*\/)?$/).default('/'),
+  NOMINATIM_BASE_URL: z.url().default('https://nominatim.openstreetmap.org'),
   PWA_DIST_DIR: z.string().min(1).optional(),
   TRUST_PROXY_ADDRESS: z.string().min(1).optional(),
-  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0010_kabanda_cover.sql'),
+  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0012_raid_template_visibility.sql'),
   DATABASE_URL: z
     .string()
     .min(1)

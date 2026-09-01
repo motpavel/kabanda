@@ -163,6 +163,35 @@ export const recordPointVisitSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
 })
 
+export const raidTemplatePointInputSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  address: z.string().trim().min(1).max(300),
+  comment: z.string().trim().max(500).default(''),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+}).strict()
+
+export const createRaidTemplateSchema = z.object({
+  scope: z.enum(['kabanda', 'all_authenticated']).default('kabanda'),
+  title: z.string().trim().min(1).max(120),
+  coverImage: z
+    .string()
+    .max(420_000)
+    .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/),
+  points: z.array(raidTemplatePointInputSchema).min(2).max(10),
+}).strict()
+
+export const reverseGeocodeQuerySchema = z.object({
+  latitude: z.coerce.number().min(56.7).max(57),
+  longitude: z.coerce.number().min(53).max(53.4),
+}).strict()
+
+export const reverseGeocodeResultSchema = z.object({
+  name: z.string().max(160),
+  address: z.string().max(300),
+  source: z.literal('openstreetmap'),
+}).strict()
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -177,3 +206,7 @@ export type RequestMagicLink = z.infer<typeof requestMagicLinkSchema>
 export type UpdateProfile = z.infer<typeof updateProfileSchema>
 export type CreateKabanda = z.infer<typeof createKabandaSchema>
 export type UpdateKabanda = z.infer<typeof updateKabandaSchema>
+export type RaidTemplatePointInput = z.infer<typeof raidTemplatePointInputSchema>
+export type CreateRaidTemplate = z.infer<typeof createRaidTemplateSchema>
+export type ReverseGeocodeQuery = z.infer<typeof reverseGeocodeQuerySchema>
+export type ReverseGeocodeResult = z.infer<typeof reverseGeocodeResultSchema>

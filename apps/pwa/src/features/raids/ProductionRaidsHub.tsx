@@ -22,6 +22,7 @@ import {
 } from './production-model'
 import { isStaleConflict, selectPrimaryAction } from './state'
 import type { RaidProjection } from './types'
+import { RaidTemplateCatalog } from '../raid-plans/RaidTemplateCatalog'
 import '../raids-design/raids-design.css'
 import './production-raids.css'
 
@@ -241,7 +242,6 @@ export function ProductionRaidsHub({
   )
   const staleAt = newestDate(actionableStaleAt, historyStaleAt)
   const coverImage = kabanda.coverImage ?? appPath('brand/kabanda-team-cover.jpg')
-  const createRaidHref = `${appPath('app')}?createRaid=${encodeURIComponent(kabanda.id)}`
   const resourcePolicy = productionResourcePolicy(resourceState, online)
   const canMutate = resourcePolicy.canMutate
 
@@ -249,7 +249,7 @@ export function ProductionRaidsHub({
     <section className="prd-raids" data-testid="production-raids-hub" aria-busy={resourceState === 'loading'} aria-label="Рейды Кабанды">
       <header className="rdp-heading prd-raids__heading">
         <h1>Рейды</h1>
-        <ProductionCreateRaidAction enabled={canMutate} kabandaId={kabanda.id} />
+        <ProductionCreateActions enabled={canMutate} kabandaId={kabanda.id} />
       </header>
 
       {resourceState === 'stale' && staleAt && (
@@ -310,33 +310,33 @@ export function ProductionRaidsHub({
             </section>
           )}
 
-          <ProductionHistory coverImage={coverImage} createRaidHref={canMutate ? createRaidHref : null} history={history} />
+          <ProductionHistory coverImage={coverImage} history={history} />
 
-          <section className="rdp-section prd-routes-empty" aria-labelledby="production-routes-heading" data-testid="production-route-catalog-empty">
-            <h2 id="production-routes-heading">Доступные маршруты</h2>
-            <RaidEmptyState
-              detail="Здесь появятся готовые маршруты Кабанды. Пока новый рейд создаётся без шаблона."
-              eyebrow="Скоро"
-              icon="route"
-              image={appPath('brand/kabanda-login-riders.jpg')}
-              title="Каталог маршрутов готовится"
-            />
-          </section>
+          <RaidTemplateCatalog kabandaId={kabanda.id} />
         </>
       )}
     </section>
   )
 }
 
-export function ProductionCreateRaidAction({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
+export function ProductionCreateActions({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
   if (!enabled) return null
-  return <a
-    className="rdp-new prd-raids__new"
-    data-testid="production-new-raid"
-    href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
-  >
-    <span aria-hidden="true">＋</span> Новый рейд
-  </a>
+  return <nav aria-label="Создание рейда и маршрута" className="prd-raids__create-actions">
+    <a
+      className="rdp-new prd-raids__new"
+      data-testid="production-new-raid"
+      href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
+    >
+      <span aria-hidden="true">＋</span> Новый рейд
+    </a>
+    <a
+      className="rdp-new prd-raids__new prd-raids__new--template"
+      data-testid="production-new-template"
+      href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}
+    >
+      <Icon name="route" size={18} /> Новый маршрут
+    </a>
+  </nav>
 }
 
 function ProductionResourceError({
@@ -470,7 +470,7 @@ function UpcomingRaidRow({ identityId, raid }: { identityId: string; raid: RaidP
   </a>
 }
 
-function ProductionHistory({ coverImage, createRaidHref, history }: { coverImage: string; createRaidHref: string | null; history: RaidHistoryItem[] }) {
+export function ProductionHistory({ coverImage, history }: { coverImage: string; history: RaidHistoryItem[] }) {
   const [filter, setFilter] = useState<ProductionHistoryFilter>('all')
   const visibleHistory = filterProductionHistory(history, filter)
 
@@ -478,8 +478,6 @@ function ProductionHistory({ coverImage, createRaidHref, history }: { coverImage
     <h2 id="production-history-heading">История</h2>
     {history.length === 0 ? (
       <RaidEmptyState
-        actionHref={createRaidHref ?? undefined}
-        actionLabel="Создать первый рейд"
         detail="После завершения здесь появятся только реальные километры, точки и фотографии команды."
         eyebrow="Всё впереди"
         icon="flag"

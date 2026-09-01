@@ -17,15 +17,21 @@ import Fastify, { LogController, type FastifyInstance } from 'fastify'
 import { z, ZodError } from 'zod'
 import type { AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
+import { registerGeocodingRoutes } from './geocoding-routes.js'
+import { GeocodingError, type GeocodingService } from './geocoding.js'
 import { registerKabandaRoutes } from './kabanda-routes.js'
 import { KabandaError, type KabandaService } from './kabandas.js'
 import { registerRaidRoutes } from './raid-routes.js'
 import { RaidError, type RaidService } from './raids.js'
+import { registerRaidTemplateRoutes } from './raid-template-routes.js'
+import { RaidTemplateError, type RaidTemplateService } from './raid-templates.js'
 
 export interface AppDependencies {
   auth: AuthService
   kabandas: KabandaService
   raids?: RaidService
+  raidTemplates?: RaidTemplateService
+  geocoding?: GeocodingService
   config: ApiConfig
   readiness: () => Promise<void>
   onDiagnosticSignal?: (signal: AlphaDiagnosticSignal) => void
@@ -202,6 +208,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         error: { code: error.code, message: error.message, details: error.details },
       })
     }
+    if (error instanceof RaidTemplateError) {
+      return reply.status(error.statusCode).send({
+        error: { code: error.code, message: error.message, details: error.details },
+      })
+    }
+    if (error instanceof GeocodingError) {
+      return reply.status(error.statusCode).send({
+        error: { code: error.code, message: error.message },
+      })
+    }
     const databaseError = error as { code?: string; constraint?: string }
     request.log.error(
       {
@@ -332,6 +348,18 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   await registerKabandaRoutes(app, dependencies)
   if (dependencies.raids) await registerRaidRoutes(app, { ...dependencies, raids: dependencies.raids })
+  if (dependencies.raidTemplates) {
+    await registerRaidTemplateRoutes(app, {
+      ...dependencies,
+      raidTemplates: dependencies.raidTemplates,
+    })
+  }
+  if (dependencies.geocoding) {
+    await registerGeocodingRoutes(app, {
+      ...dependencies,
+      geocoding: dependencies.geocoding,
+    })
+  }
 
   app.setNotFoundHandler((request, reply) => {
     const acceptsHtml = request.headers.accept
