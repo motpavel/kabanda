@@ -1,0 +1,162 @@
+.prd-raids {
+  --rdp-red: #f42d29;
+  --rdp-red-dark: #d92824;
+  --rdp-action: #d62f2a;
+  --rdp-ink: #17181b;
+  --rdp-muted: #696b72;
+  --rdp-line: #e4e4e7;
+  display: grid;
+  width: min(100%, 960px);
+  gap: 18px;
+  margin: 0 auto;
+  padding-bottom: 18px;
+  color: var(--rdp-ink);
+  font-family: "Manrope Variable", Manrope, ui-sans-serif, system-ui, sans-serif;
+}
+
+.prd-raids *,
+.prd-raids *::before,
+.prd-raids *::after { box-sizing: border-box; }
+
+.prd-raids a:focus-visible,
+.prd-raids button:focus-visible {
+  outline: 3px solid #4d83ff;
+  outline-offset: 3px;
+}
+
+.prd-raids__heading {
+  min-height: 52px;
+  align-items: center;
+}
+
+.prd-raids__heading h1 {
+  margin-top: 0;
+  font-size: clamp(2rem, 5vw, 2.65rem);
+}
+
+.prd-raids__new {
+  min-height: 46px;
+  text-decoration: none;
+}
+
+.prd-raids > .rdp-section,
+.prd-raids > .rdp-section--history { margin-top: 0; }
+
+.prd-raids__issue {
+  margin: -6px 0 0;
+  border: 1px solid #efaaa6;
+  border-radius: 13px;
+  padding: 10px 12px;
+  color: #8e2c27;
+  background: #fff1f0;
+  font-size: .82rem;
+}
+
+.prd-raids__loading {
+  margin-top: 0;
+}
+
+.prd-raids__loading i,
+.prd-raids__loading i:first-child,
+.prd-raids__loading i:nth-child(3) { height: 112px; }
+
+.prd-current-raid {
+  padding: 14px;
+  border-radius: 20px;
+}
+
+.prd-current-raid .rdp-active__intro {
+  grid-template-columns: 112px minmax(0, 1fr);
+  margin-top: 12px;
+}
+
+.prd-current-raid .rdp-active__intro img {
+  width: 112px;
+  height: 96px;
+}
+
+.prd-current-raid .rdp-active__intro p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.prd-current-raid .rdp-active__metrics {
+  margin: 14px 0;
+}
+
+.prd-active-link { text-decoration: none; }
+
+.prd-routes-empty .rdp-compact-empty strong {
+  line-height: 1.35;
+}
+
+.prd-history-card__hero {
+  height: 112px;
+}
+
+.prd-history-card__hero img {
+  object-position: 50% 42%;
+  filter: saturate(.88) contrast(.96);
+}
+
+.prd-history-personal {
+  max-width: 92px;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #5c6068;
+  background: #f1f1f3;
+  font-size: 10px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .prd-raids .rdp-history-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prd-raids .rdp-list-card {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+
+  .prd-raids .rdp-row:last-child { border-bottom: 0; }
+}
+
+@media (max-width: 620px) {
+  .prd-raids { gap: 16px; }
+
+  .prd-raids__heading { min-height: 46px; }
+  .prd-raids__heading h1 { font-size: 2rem; }
+  .prd-raids__new { min-height: 44px; padding-inline: 12px; font-size: .88rem; }
+  .prd-raids__new span { font-size: 21px; }
+
+  .prd-current-raid { padding: 11px; }
+  .prd-current-raid .rdp-active__intro { grid-template-columns: 88px minmax(0, 1fr); gap: 11px; }
+  .prd-current-raid .rdp-active__intro img { width: 88px; height: 82px; }
+  .prd-current-raid .rdp-active__intro h3 { font-size: 1.16rem; }
+  .prd-current-raid .rdp-active__metrics { margin: 11px 0; }
+
+  .prd-raids .rdp-row__badge {
+    max-width: 98px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .prd-history-card__hero { height: 88px; }
+}
+
+@media (max-width: 350px) {
+  .prd-raids__heading { flex-wrap: wrap; }
+  .prd-raids__heading h1 { flex: 1 1 90px; }
+  .prd-current-raid .rdp-active__metrics svg { display: none; }
+  .prd-raids .rdp-row__badge { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prd-raids__loading i { animation: none; }
+}
