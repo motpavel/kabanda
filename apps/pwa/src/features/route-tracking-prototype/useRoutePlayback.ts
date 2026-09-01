@@ -24,18 +24,8 @@ export function useRoutePlayback(route: readonly RouteCoordinate[]) {
     () => splitRouteAtDistance(route, traveledDistanceM),
     [route, traveledDistanceM],
   )
-  const completed = sampleIndex >= FRAME_COUNT
-
   return {
-    completed,
     current: split.current,
-    progress,
-    remaining: split.remaining,
-    remainingDistanceM: Math.max(0, totalDistanceM - traveledDistanceM),
-    sampleIndex,
-    speedKmh: completed ? 0 : 18 + (sampleIndex % 5),
-    totalDistanceM,
     traveled: split.traveled,
-    traveledDistanceM,
   }
 }
