@@ -16,6 +16,8 @@ const INITIAL_CENTER = [56.8528, 53.2045] as const
 const INITIAL_ZOOM = 12
 const MIN_ZOOM = 10
 const MAX_ZOOM = 18
+const POINT_EDIT_ZOOM = 15
+const WEB_MERCATOR_MAX_LATITUDE = 85.05112878
 
 type RequestGenerationRef = { current: number }
 
@@ -38,9 +40,39 @@ export function raidTemplatePointAtMapCenter(map: Pick<YandexMap, 'getCenter'>):
   return { latitude, longitude }
 }
 
+function latitudeToMercatorY(latitude: number) {
+  const safeLatitude = Math.max(-WEB_MERCATOR_MAX_LATITUDE, Math.min(WEB_MERCATOR_MAX_LATITUDE, latitude))
+  const sine = Math.sin(safeLatitude * Math.PI / 180)
+  return .5 - Math.log((1 + sine) / (1 - sine)) / (4 * Math.PI)
+}
+
+function mercatorYToLatitude(value: number) {
+  const safeValue = Math.max(0, Math.min(1, value))
+  return Math.atan(Math.sinh(Math.PI * (1 - 2 * safeValue))) * 180 / Math.PI
+}
+
+/**
+ * Keeps the selected point in the visual centre of the map area that remains
+ * above the point sheet, rather than underneath the sheet itself.
+ */
+export function raidTemplateSelectedPointCenter(
+  point: RaidPlanGeoPoint,
+  zoom: number,
+  viewportHeight: number,
+  sheetHeight: number,
+): readonly [number, number] {
+  const safeViewportHeight = Math.max(1, viewportHeight)
+  const safeSheetHeight = Math.max(0, Math.min(sheetHeight, safeViewportHeight * .82))
+  const worldSize = 256 * 2 ** Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))
+  const pointY = latitudeToMercatorY(point.latitude)
+  const mapCenterY = pointY + safeSheetHeight / (2 * worldSize)
+  return [mercatorYToLatitude(mapCenterY), point.longitude]
+}
+
 export function RaidTemplateEditorMap({
   points,
   selectedPointId,
+  pointSheetHeight,
   canAddPoint,
   onAddPoint,
   onRouteState,
@@ -48,6 +80,7 @@ export function RaidTemplateEditorMap({
 }: {
   points: readonly DraftRaidTemplatePoint[]
   selectedPointId: string | null
+  pointSheetHeight: number
   canAddPoint: boolean
   onAddPoint: (point: RaidPlanGeoPoint) => void
   onRouteState: (state: BicycleRouteState) => void
@@ -64,6 +97,9 @@ export function RaidTemplateEditorMap({
   const [retryVersion, setRetryVersion] = useState(0)
   const [zoom, setZoom] = useState(INITIAL_ZOOM)
   const [locating, setLocating] = useState(false)
+  const selectedPoint = points.find((point) => point.clientId === selectedPointId) ?? null
+  const selectedLatitude = selectedPoint?.latitude ?? null
+  const selectedLongitude = selectedPoint?.longitude ?? null
   const coordinatesFingerprint = points.map((point) => `${point.latitude}:${point.longitude}`).join('|')
   const routePoints = useMemo<RaidPlanGeoPoint[]>(
     () => points.map(({ latitude, longitude }) => ({ latitude, longitude })),
@@ -119,6 +155,39 @@ export function RaidTemplateEditorMap({
       mapRef.current = null
     }
   }, [retryVersion])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (providerState !== 'ready' || !map) return
+    let frame = 0
+    const viewport = window.visualViewport
+
+    const fitAndCenter = () => {
+      map.container?.fitToViewport?.()
+      if (selectedLatitude === null || selectedLongitude === null) return
+      const viewportHeight = viewport?.height ?? window.innerHeight
+      const targetZoom = Math.max(POINT_EDIT_ZOOM, map.getZoom())
+      map.setCenter(raidTemplateSelectedPointCenter(
+        { latitude: selectedLatitude, longitude: selectedLongitude },
+        targetZoom,
+        viewportHeight,
+        pointSheetHeight,
+      ), targetZoom, { duration: 220, timingFunction: 'ease-in-out' })
+    }
+    const scheduleFit = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(fitAndCenter)
+    }
+
+    scheduleFit()
+    window.addEventListener('resize', scheduleFit)
+    viewport?.addEventListener('resize', scheduleFit)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('resize', scheduleFit)
+      viewport?.removeEventListener('resize', scheduleFit)
+    }
+  }, [pointSheetHeight, providerState, selectedLatitude, selectedLongitude])
 
   useEffect(() => {
     const map = mapRef.current
@@ -221,7 +290,7 @@ export function RaidTemplateEditorMap({
     if (point) addPointRef.current(point)
   }, [canAddPoint])
 
-  return <div className="rt-map" role="group" aria-label="Карта конструктора маршрута">
+  return <div className={`rt-map${selectedPoint ? ' rt-map--point-editing' : ''}`} role="group" aria-label="Карта конструктора маршрута">
     <div className="rt-map__stage" ref={containerRef} />
     {providerState === 'loading' && <div className="rt-map__status" role="status">Загружаем карту…</div>}
     {providerState === 'failed' && <div className="rt-map__status rt-map__status--error" role="alert">

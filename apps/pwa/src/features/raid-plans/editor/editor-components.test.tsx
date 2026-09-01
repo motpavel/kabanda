@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { DraftRaidTemplatePoint } from '../types'
 import { RaidTemplatePointList } from './RaidTemplatePointList'
-import { RaidTemplatePointSheet } from './RaidTemplatePointSheet'
+import { RaidTemplatePointSheet, shouldDismissPointSheet } from './RaidTemplatePointSheet'
 
 const points: DraftRaidTemplatePoint[] = [
   {
@@ -36,13 +36,23 @@ describe('raid template point controls', () => {
       onClose={() => undefined}
       onConfirm={() => undefined}
       onDelete={() => undefined}
+      onHeightChange={() => undefined}
       onRetryGeocode={() => undefined}
       onUpdate={() => undefined}
       point={points[1]!}
       pointNumber={2}
     />)
-    expect(markup).toContain('Адреса © OpenStreetMap contributors')
+    expect(markup).toContain('© OpenStreetMap')
     expect(markup).toContain('https://www.openstreetmap.org/copyright')
-    expect(markup).toContain('Подтвердить название и адрес')
+    expect(markup).toContain('Подтвердить')
+    expect(markup).toContain('rows="1"')
+    expect(markup).not.toContain('Закрыть карточку точки')
+    expect(markup).not.toContain('Сервис адресов предложил подписи')
+  })
+
+  it('dismisses only after a deliberate downward swipe', () => {
+    expect(shouldDismissPointSheet(100, 171)).toBe(false)
+    expect(shouldDismissPointSheet(100, 172)).toBe(true)
+    expect(shouldDismissPointSheet(100, 40)).toBe(false)
   })
 })

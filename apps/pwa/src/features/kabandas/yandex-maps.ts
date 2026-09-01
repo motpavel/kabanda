@@ -31,6 +31,9 @@ export type YandexPlacemark = {
 }
 
 export type YandexMap = {
+  container?: {
+    fitToViewport?: () => void
+  }
   events: YandexEventManager
   geoObjects: {
     add: (object: YandexMapObject) => void

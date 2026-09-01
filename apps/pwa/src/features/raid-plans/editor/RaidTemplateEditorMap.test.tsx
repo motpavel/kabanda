@@ -5,6 +5,7 @@ import {
   invalidateLocationRequests,
   isCurrentLocationRequest,
   RaidTemplateMapControls,
+  raidTemplateSelectedPointCenter,
   raidTemplatePointAtMapCenter,
 } from './RaidTemplateEditorMap'
 
@@ -29,6 +30,15 @@ describe('raid template editor map controls', () => {
 
     expect(centerReads).toBe(1)
     expect(point).toEqual({ latitude: 56.8528, longitude: 53.2045 })
+  })
+
+  it('centres a selected point in the map area left above the sheet', () => {
+    const point = { latitude: 56.861663, longitude: 53.202876 }
+    const center = raidTemplateSelectedPointCenter(point, 15, 844, 340)
+
+    expect(center[0]).toBeLessThan(point.latitude)
+    expect(center[0]).toBeGreaterThan(point.latitude - 1)
+    expect(center[1]).toBe(point.longitude)
   })
 
   it('exposes the add-at-center action to keyboard users and disables it at the point limit', () => {

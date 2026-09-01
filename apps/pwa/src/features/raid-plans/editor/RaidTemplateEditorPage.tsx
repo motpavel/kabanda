@@ -85,6 +85,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
   const [saveError, setSaveError] = useState<string | null>(null)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const [pointSheetHeight, setPointSheetHeight] = useState(0)
   const coordinateFingerprint = draft.points.map((point) => `${point.latitude}:${point.longitude}`).join('|')
   const selectedPoint = draft.points.find((point) => point.clientId === draft.selectedPointId) ?? null
   const selectedPointNumber = selectedPoint ? draft.points.findIndex((point) => point.clientId === selectedPoint.clientId) + 1 : 0
@@ -287,6 +288,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         onAddPoint={addPoint}
         onRouteState={handleRouteState}
         onSelectPoint={(pointId) => dispatch({ type: 'select-point', pointId })}
+        pointSheetHeight={pointSheetHeight}
         points={draft.points}
         selectedPointId={draft.selectedPointId}
       />
@@ -322,6 +324,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
       }}
       onDelete={() => deletePoint(selectedPoint.clientId)}
       onRetryGeocode={() => void requestGeocode(selectedPoint)}
+      onHeightChange={setPointSheetHeight}
       onUpdate={(patch) => dispatch({ type: 'update-point', pointId: selectedPoint.clientId, patch })}
       point={selectedPoint}
       pointNumber={selectedPointNumber}
