@@ -1,5 +1,5 @@
 import '@fontsource-variable/manrope'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
@@ -30,8 +30,8 @@ import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-st
 import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
+import { ProductionRaidsHub } from '../raids/ProductionRaidsHub'
 import { getKabandaProgress } from '../results/api'
-import { RaidHistory } from '../results/RaidHistory'
 import type { KabandaProgress } from '../results/types'
 import type {
   KabandaMember,
@@ -242,7 +242,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         </button>
       </header>
 
-      {activeSection !== 'kabanda' && <section className="kb-heading-row">
+      {activeSection !== 'kabanda' && activeSection !== 'raids' && <section className="kb-heading-row">
         <div><h1>{sectionHeading(activeSection).title}</h1><p>{sectionHeading(activeSection).description}</p></div>
       </section>}
 
@@ -552,10 +552,7 @@ function KabandaWorkspace({
       <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
         <div className="kb-workspace-main kb-workspace-main--wide">
           {notices}
-          <div className="kb-command-grid">
-            <RaidHomeCard identityId={user.id} kabanda={kabanda} />
-            <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
-          </div>
+          <ProductionRaidsHub identityId={user.id} kabanda={kabanda} />
         </div>
       </section>
     )
@@ -840,6 +837,7 @@ type MapView = {
 }
 
 const INITIAL_MAP_VIEW: MapView = { center: [53.2045, 56.8528], zoom: 12 }
+const USER_LOCATION_MAP_ZOOM = 14
 const MIN_MAP_ZOOM = 10
 const MAX_MAP_ZOOM = 17
 
@@ -849,6 +847,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   const runtimeRef = useRef<YandexMapsRuntime | null>(null)
   const markersRef = useRef(new Map<string, { placemark: YandexPlacemark; point: MapPoint }>())
   const userMarkerRef = useRef<YandexPlacemark | null>(null)
+  const autoLocateStartedRef = useRef(false)
   const viewRef = useRef<MapView>(INITIAL_MAP_VIEW)
   const [mapReady, setMapReady] = useState(false)
   const [userLocated, setUserLocated] = useState(false)
@@ -953,7 +952,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     }
   }, [selectedId])
 
-  const updateLocation = (location: { center?: readonly [number, number]; zoom?: number }, duration = 260) => {
+  const updateLocation = useCallback((location: { center?: readonly [number, number]; zoom?: number }, duration = 260) => {
     const map = mapRef.current
     if (!map) return
     if (location.center) {
@@ -964,9 +963,9 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       return
     }
     if (location.zoom !== undefined) map.setZoom(location.zoom, { duration })
-  }
+  }, [])
 
-  const locateUser = () => {
+  const locateUser = useCallback((accuracy: 'fast' | 'precise' = 'precise') => {
     if (!('geolocation' in navigator)) {
       setGeolocationError('Геолокация недоступна на этом устройстве.')
       return
@@ -981,18 +980,26 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       const userLayout = runtime.templateLayoutFactory.createClass('<span class="kb-yandex-user-location" aria-label="Моё местоположение"></span>')
       userMarkerRef.current = new runtime.Placemark([location[1], location[0]], {}, {
         iconLayout: userLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 21 },
+        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 23 },
         hasBalloon: false,
         hasHint: false,
         zIndex: 3,
       })
       map.geoObjects.add(userMarkerRef.current)
       setUserLocated(true)
-      updateLocation({ center: location, zoom: Math.max(viewRef.current.zoom, 15) }, 360)
+      updateLocation({ center: location, zoom: USER_LOCATION_MAP_ZOOM }, 360)
     }, () => {
       setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
-    }, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 12_000 })
-  }
+    }, accuracy === 'fast'
+      ? { enableHighAccuracy: false, maximumAge: 300_000, timeout: 8_000 }
+      : { enableHighAccuracy: true, maximumAge: 15_000, timeout: 12_000 })
+  }, [updateLocation])
+
+  useEffect(() => {
+    if (!mapReady || autoLocateStartedRef.current) return
+    autoLocateStartedRef.current = true
+    locateUser('fast')
+  }, [locateUser, mapReady])
 
   return <>
     <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска">
@@ -1000,9 +1007,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       <div className="kb-yandex-zoom" aria-label="Масштаб карты">
         <button type="button" aria-label="Приблизить" disabled={!mapReady || zoom >= MAX_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.min(MAX_MAP_ZOOM, viewRef.current.zoom + 1) })}>+</button>
         <button type="button" aria-label="Отдалить" disabled={!mapReady || zoom <= MIN_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.max(MIN_MAP_ZOOM, viewRef.current.zoom - 1) })}>−</button>
-        <button type="button" aria-label="Вернуться к центру" disabled={!mapReady} onClick={() => updateLocation(INITIAL_MAP_VIEW, 360)}>⌖</button>
+        <button className="kb-yandex-locate" type="button" aria-label="Показать моё местоположение" aria-pressed={userLocated} disabled={!mapReady} onClick={() => locateUser('precise')}>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20.62 3.38 4.15 9.56a1 1 0 0 0 .08 1.9l6.27 2.04 2.04 6.27a1 1 0 0 0 1.9.08l6.18-16.47Z" /></svg>
+        </button>
       </div>
-      <button className="kb-yandex-geolocate" type="button" aria-label="Определить моё местоположение" aria-pressed={userLocated} disabled={!mapReady} onClick={locateUser}><span aria-hidden="true">◎</span></button>
     </div>
     {geolocationError ? <p className="kb-map-geolocation-error" role="alert">{geolocationError}</p> : null}
   </>

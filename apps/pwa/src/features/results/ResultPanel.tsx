@@ -23,7 +23,17 @@ export function ResultPanel({
   const [error, setError] = useState<string | null>(null)
   const [card, setCard] = useState<{ blob: Blob; url: string } | null>(null)
   const [shareMessage, setShareMessage] = useState<string | null>(null)
-  const viewerIsOwner = raid.organizerUserId === identityId
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+
+  useEffect(() => {
+    const updateConnection = () => setOnline(navigator.onLine)
+    window.addEventListener('online', updateConnection)
+    window.addEventListener('offline', updateConnection)
+    return () => {
+      window.removeEventListener('online', updateConnection)
+      window.removeEventListener('offline', updateConnection)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -102,9 +112,24 @@ export function ResultPanel({
       </div>
       <section className="kb-card"><p className="kb-kicker">Участники</p><ul className="result-participants">{result.participants.map((participant) => <li key={participant.userId}><strong>{participant.displayName}</strong><span>{participant.metrics.uniquePoints} точек · {participant.metrics.photos} фото</span></li>)}</ul></section>
       {card && <section className="kb-card result-share"><img src={card.url} alt="Приватная карточка результата без маршрута и внутренних ID" /><button className="kb-link-button" type="button" onClick={share}>Поделиться карточкой</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
-      {viewerIsOwner ? <a className="kb-primary raid-primary result-next" href={`${appPath('app')}?createRaid=${encodeURIComponent(result.raid.kabandaId)}`}>Запланировать следующий рейд</a> : <a className="kb-link-button result-next" href={`${appPath('app')}?kabanda=${encodeURIComponent(result.raid.kabandaId)}`}>Вернуться к истории</a>}
+      <ResultNextRaidAction enabled={!staleOnly && online} kabandaId={result.raid.kabandaId} />
     </section>
   )
+}
+
+export function ResultNextRaidAction({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
+  if (!enabled) return <a
+    className="kb-link-button result-next"
+    href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}
+  >
+    Вернуться к истории
+  </a>
+  return <a
+    className="kb-link-button kb-primary raid-primary result-next"
+    href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
+  >
+    Запланировать следующий рейд
+  </a>
 }
 
 function readSessionKey(storageKey: string): string | null {

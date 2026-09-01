@@ -522,14 +522,14 @@ export class DatabaseRaidService implements RaidService {
       )
       if (replay) return replay
 
-      const owner = await client.query(
+      const membership = await client.query(
         `SELECT 1 FROM kabanda_memberships m
          JOIN kabandas k ON k.id = m.kabanda_id AND k.archived_at IS NULL
-         WHERE m.kabanda_id = $1 AND m.user_id = $2 AND m.role = 'owner'
-           AND m.removed_at IS NULL`,
+         WHERE m.kabanda_id = $1 AND m.user_id = $2 AND m.removed_at IS NULL
+         FOR UPDATE OF m`,
         [kabandaId, actorUserId],
       )
-      if (!owner.rowCount) throw this.notFound()
+      if (!membership.rowCount) throw this.notFound()
 
       const result = await client.query<{ id: string; created_at: Date }>(
         `INSERT INTO raids
@@ -1026,7 +1026,7 @@ export class DatabaseRaidService implements RaidService {
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
       this.requireActiveParticipant(raid)
-      if (input.organizerAttestation && raid.membership_role !== 'owner') {
+      if (input.organizerAttestation && raid.organizer_user_id !== actorUserId) {
         throw this.forbiddenCommand()
       }
       const pointResult = await client.query<{
@@ -1721,7 +1721,11 @@ export class DatabaseRaidService implements RaidService {
       )
       const row = media.rows[0]
       if (!row) throw this.notFound()
-      if (row.uploader_user_id !== actorUserId && raid.membership_role !== 'owner') {
+      if (
+        row.uploader_user_id !== actorUserId &&
+        raid.organizer_user_id !== actorUserId &&
+        raid.membership_role !== 'owner'
+      ) {
         throw this.notFound()
       }
       if (
@@ -1914,7 +1918,7 @@ export class DatabaseRaidService implements RaidService {
       const raid = await this.lockRaid(client, actorUserId, raidId)
       this.requireVersion(raid, expectedVersion)
       if (
-        raid.membership_role === 'owner' ||
+        raid.organizer_user_id === actorUserId ||
         raid.participant_state !== 'active' ||
         (raid.state !== 'active' && raid.state !== 'paused')
       ) {
@@ -2138,7 +2142,7 @@ export class DatabaseRaidService implements RaidService {
          ON m.kabanda_id = r.kabanda_id AND m.user_id = $1 AND m.removed_at IS NULL
        LEFT JOIN raid_participants p ON p.raid_id = r.id AND p.user_id = $1
        WHERE r.state IN ('active', 'paused', 'finalizing')
-         AND (m.role = 'owner' OR p.state = 'active')
+         AND (r.organizer_user_id = $1 OR p.state = 'active')
        ORDER BY r.updated_at DESC, r.id LIMIT 2`,
       [actorUserId],
     )
@@ -3222,7 +3226,7 @@ export class DatabaseRaidService implements RaidService {
       })),
       allowedActions: getRaidAllowedActions({
         state: raid.state,
-        role: raid.membership_role,
+        isOrganizer: raid.organizer_user_id === actorUserId,
         participantState: raid.participant_state,
         navigatorReady,
         finalizationCanSettle: finalization?.canSettle ?? false,
@@ -3498,7 +3502,7 @@ export class DatabaseRaidService implements RaidService {
   }
 
   private requireOrganizer(raid: RaidRow, actorUserId: string): void {
-    if (raid.membership_role !== 'owner' || raid.organizer_user_id !== actorUserId) {
+    if (raid.organizer_user_id !== actorUserId) {
       throw this.forbiddenCommand()
     }
   }

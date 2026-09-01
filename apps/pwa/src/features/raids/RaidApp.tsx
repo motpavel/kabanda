@@ -31,6 +31,7 @@ import {
 } from './createAttempt'
 import { useRaidProjection } from './hooks'
 import { collectLocalReadiness } from './platform'
+import { findRaidCreationMembership } from './production-model'
 import type { RaidRoute } from './routing'
 import {
   raidDetailRemountKey,
@@ -135,7 +136,7 @@ export function RaidApp({ route }: { route: Exclude<RaidRoute, { kind: 'home' }>
   if (session.status === 'unavailable') return <RaidShell><EmptyState title="Не удалось проверить вход" detail="Соединение недоступно, а сохранённой identity на этом устройстве нет. Попробуйте ещё раз онлайн." /></RaidShell>
   if (route.kind === 'invalid') return <RaidShell><EmptyState title="Ссылка на рейд некорректна" detail="Откройте рейд с главной страницы КАБАНДЫ." /></RaidShell>
   if (session.source === 'cached' && route.kind !== 'raid') return <RaidShell><EmptyState title="Доступна только сохранённая копия" detail="Создание рейда требует подтверждённой онлайн-сессии." /></RaidShell>
-  if (route.kind === 'create') return <CreateRaidPage kabandaId={route.kabandaId} />
+  if (route.kind === 'create') return <CreateRaidPage identityId={session.identity.id} kabandaId={route.kabandaId} />
   return <RaidDetailPage
     key={raidDetailRemountKey(session.identity.id, route.raidId)}
     user={session.identity}
@@ -185,7 +186,7 @@ function RaidSignIn() {
   )
 }
 
-function CreateRaidPage({ kabandaId }: { kabandaId: string }) {
+function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabandaId: string }) {
   const [kabanda, setKabanda] = useState<KabandaSummary | null>(null)
   const [title, setTitle] = useState(defaultRaidTitle)
   const [startMode, setStartMode] = useState<'now' | 'later'>('now')
@@ -195,23 +196,30 @@ function CreateRaidPage({ kabandaId }: { kabandaId: string }) {
   const fallbackAttempt = useRef<CreateRaidAttempt | null>(null)
 
   useEffect(() => {
-    const attempt = readCreateRaidAttempt()
-    const restored = restoreCreateRaidForm(attempt, kabandaId)
+    fallbackAttempt.current = null
+    setTitle(defaultRaidTitle())
+    setDescription('')
+    setStartMode('now')
+    setStartsAt('')
+    const attempt = readCreateRaidAttempt(identityId)
+    const restored = restoreCreateRaidForm(attempt, identityId, kabandaId)
     if (!attempt || !restored) return
     fallbackAttempt.current = attempt
     setTitle(restored.title)
     setDescription(restored.description)
     setStartMode(restored.startMode)
     setStartsAt(restored.startsAt)
-  }, [kabandaId])
+  }, [identityId, kabandaId])
 
   useEffect(() => {
     let active = true
+    setKabanda(null)
+    setStatus('loading')
     listKabandas()
       .then((kabandas) => {
         if (!active) return
-        const selected = kabandas.find(({ id }) => id === kabandaId) ?? null
-        if (!selected || selected.role !== 'owner') throw new Error('Owner access required')
+        const selected = findRaidCreationMembership(kabandas, kabandaId)
+        if (!selected) throw new Error('Active Kabanda membership required')
         setKabanda(selected)
         setStatus('ready')
       })
@@ -219,7 +227,7 @@ function CreateRaidPage({ kabandaId }: { kabandaId: string }) {
     return () => {
       active = false
     }
-  }, [kabandaId])
+  }, [identityId, kabandaId])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -234,26 +242,27 @@ function CreateRaidPage({ kabandaId }: { kabandaId: string }) {
         scheduledAt,
       }
       const normalizedPayload = normalizeCreateRaidPayload(input)
-      const previous = readCreateRaidAttempt() ?? fallbackAttempt.current
+      const previous = readCreateRaidAttempt(identityId) ?? fallbackAttempt.current
       if (
         scheduledAt &&
         Date.parse(scheduledAt) <= Date.now() &&
-        !matchesCreateRaidAttempt(previous, kabanda.id, normalizedPayload)
+        !matchesCreateRaidAttempt(previous, identityId, kabanda.id, normalizedPayload)
       ) throw new Error('Scheduled time must be in the future')
       const attempt = selectCreateRaidAttempt(
         previous,
+        identityId,
         kabanda.id,
         normalizedPayload,
         crypto.randomUUID(),
       )
       fallbackAttempt.current = attempt
-      persistCreateRaidAttempt(attempt)
+      persistCreateRaidAttempt(identityId, attempt)
       const raid = await createRaid(
         kabanda.id,
         input,
         attempt.key,
       )
-      clearCreateRaidAttempt(attempt)
+      clearCreateRaidAttempt(identityId, attempt)
       fallbackAttempt.current = null
       window.location.assign(`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`)
     } catch {
@@ -263,7 +272,7 @@ function CreateRaidPage({ kabandaId }: { kabandaId: string }) {
 
   return (
     <RaidShell>
-      <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}`}>← Назад к Кабанде</a>
+      <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Назад к рейдам</a>
       <header className="raid-page-head"><p className="kb-kicker">Меньше минуты</p><h1>Новый рейд</h1><p>Название, время и люди. Остальное решите в lobby.</p></header>
       {status === 'loading' && <p aria-busy="true">Загружаем Кабанду…</p>}
       {status === 'error' && <p className="kb-error" role="alert">Не удалось открыть форму или сохранить рейд. Проверьте будущее время, доступ и соединение.</p>}
@@ -477,7 +486,7 @@ function RaidDetailPage({
 
   return (
     <RaidShell>
-      <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}`}>← На главную</a>
+      <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>← К рейдам</a>
       <header className="raid-hero">
         <div><p className="kb-kicker">Рейд Кабанды</p><h1>{raid.title}</h1><p>{raid.scheduledAt ? new Date(raid.scheduledAt).toLocaleString('ru-RU') : 'Старт после готовности команды'}</p></div>
         <span className={`raid-state raid-state--${raid.state}`}>{stateLabel(raid.state)}</span>

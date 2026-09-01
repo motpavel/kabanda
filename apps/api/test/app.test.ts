@@ -919,6 +919,46 @@ describe('API foundation', () => {
     )
   })
 
+  it('delegates raid creation for any authenticated participant to membership authorization', async () => {
+    const member = { ...user, id: '383bb699-4f6b-423a-876d-bb143cfa97f3' }
+    const createDraft = vi.fn().mockResolvedValue({
+      receipt: {
+        operationId: 'member-create-raid',
+        command: 'create-raid',
+        resultingVersion: 1,
+        serverAt: '2026-08-28T12:00:00.000Z',
+      },
+      raid: {
+        id: '81297402-898c-48d6-bc78-c74b6b38205c',
+        organizerUserId: member.id,
+        state: 'draft',
+        version: 1,
+      },
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(member) }),
+      createKabandas(),
+      createRaids({ createDraft }),
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/kabandas/2e56a447-23dc-4507-af50-5b8c2430ac81/raids',
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'member-create-raid',
+      },
+      payload: { title: 'Рейд участника', description: 'Вечерний круг' },
+    })
+    expect(response.statusCode).toBe(201)
+    expect(createDraft).toHaveBeenCalledWith(
+      member.id,
+      '2e56a447-23dc-4507-af50-5b8c2430ac81',
+      { title: 'Рейд участника', description: 'Вечерний круг' },
+      'member-create-raid',
+    )
+  })
+
   it('reports device readiness separately from participant readiness', async () => {
     const command = vi.fn().mockResolvedValue({
       receipt: {

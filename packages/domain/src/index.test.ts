@@ -55,7 +55,7 @@ describe('raid lifecycle', () => {
     expect(
       getRaidAllowedActions({
         state: 'lobby',
-        role: 'owner',
+        isOrganizer: true,
         participantState: 'accepted',
         navigatorReady: false,
       }),
@@ -63,7 +63,7 @@ describe('raid lifecycle', () => {
     expect(
       getRaidAllowedActions({
         state: 'lobby',
-        role: 'member',
+        isOrganizer: false,
         participantState: 'accepted',
         navigatorReady: false,
       }),
@@ -71,7 +71,7 @@ describe('raid lifecycle', () => {
     expect(
       getRaidAllowedActions({
         state: 'lobby',
-        role: 'owner',
+        isOrganizer: true,
         participantState: 'ready',
         navigatorReady: true,
       }),
@@ -83,7 +83,7 @@ describe('raid lifecycle', () => {
       expect(
         getRaidAllowedActions({
           state,
-          role: 'owner',
+          isOrganizer: true,
           participantState: 'active',
           navigatorReady: false,
         }),
@@ -91,7 +91,7 @@ describe('raid lifecycle', () => {
       expect(
         getRaidAllowedActions({
           state,
-          role: 'member',
+          isOrganizer: false,
           participantState: 'active',
           navigatorReady: false,
         }),
@@ -100,7 +100,7 @@ describe('raid lifecycle', () => {
     expect(
       getRaidAllowedActions({
         state: 'finalizing',
-        role: 'owner',
+        isOrganizer: true,
         participantState: 'active',
         navigatorReady: false,
         finalizationCanSettle: false,
@@ -109,12 +109,31 @@ describe('raid lifecycle', () => {
     expect(
       getRaidAllowedActions({
         state: 'finalizing',
-        role: 'owner',
+        isOrganizer: true,
         participantState: 'active',
         navigatorReady: false,
         finalizationCanSettle: true,
       }),
     ).toContain('settle-finalization')
+  })
+
+  it('derives raid controls from the raid organizer, not the Kabanda role', () => {
+    expect(
+      getRaidAllowedActions({
+        state: 'draft',
+        isOrganizer: true,
+        participantState: 'accepted',
+        navigatorReady: false,
+      }),
+    ).toContain('open-lobby')
+    expect(
+      getRaidAllowedActions({
+        state: 'draft',
+        isOrganizer: false,
+        participantState: 'accepted',
+        navigatorReady: false,
+      }),
+    ).not.toContain('open-lobby')
   })
 
   it('fails route health closed across lease and pause boundaries', () => {

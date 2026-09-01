@@ -1,0 +1,64 @@
+.route-proto-stage,
+.route-proto {
+  width: 100%;
+  min-width: 320px;
+  height: 100dvh;
+}
+
+.route-proto {
+  position: relative;
+  overflow: hidden;
+  color: #232a35;
+  background: #e9e7e1;
+}
+
+.route-proto-map-wrap,
+.route-proto-map {
+  position: absolute;
+  inset: 0;
+}
+
+.route-proto-map-state {
+  position: absolute;
+  z-index: 5;
+  top: 30%;
+  left: 50%;
+  max-width: min(300px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  border: 1px solid rgb(35 42 53 / 10%);
+  border-radius: 999px;
+  padding: 0.68rem 0.95rem;
+  color: #434b47;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 24px rgb(35 42 53 / 14%);
+  font-size: 0.8rem;
+  font-weight: 720;
+  text-align: center;
+}
+
+.route-proto-map-state--error {
+  color: #9f2d22;
+}
+
+.route-proto-rider {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  transform: translate(-50%, -50%);
+  place-items: center;
+  border: 2px solid rgb(255 255 255 / 94%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 5px 16px rgb(35 42 53 / 32%);
+  pointer-events: none;
+}
+
+.route-proto-rider img {
+  width: 47px;
+  height: 47px;
+  object-fit: contain;
+}

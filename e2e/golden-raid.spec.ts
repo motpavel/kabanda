@@ -70,11 +70,12 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const categorySelect = page.getByLabel('Категория точек')
   await expect(categorySelect).toHaveValue('stores')
   await expect(page.locator('.kb-yandex-marker--stores')).toHaveCount(177)
-  const geolocateButton = page.getByRole('button', { name: 'Определить моё местоположение' })
+  const geolocateButton = page.getByRole('button', { name: 'Показать моё местоположение' })
   await expect(geolocateButton).toBeEnabled()
-  await geolocateButton.click()
   await expect(geolocateButton).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('.kb-yandex-user-location')).toBeVisible()
+  await expect(page.locator('.kb-yandex-zoom > button')).toHaveCount(3)
+  await expect(page.locator('.kb-yandex-geolocate')).toHaveCount(0)
   const [categoryBox, viewSwitchBox] = await Promise.all([
     page.locator('.kb-map-category').boundingBox(),
     page.locator('.kb-map-view-switch').boundingBox(),
@@ -88,12 +89,12 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.locator('.kb-yandex-marker--stores')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Синтетическая точка E2E\./ })).toBeVisible()
   await expect(page.locator('.kb-yandex-marker--attractions')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Определить моё местоположение' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Показать моё местоположение' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('.kb-yandex-user-location')).toBeVisible()
   await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
-  await page.getByRole('button', { name: 'Создать рейд' }).click()
+  await page.getByRole('link', { name: 'Создать рейд', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
   await page.getByLabel('Название').fill('Синтетический золотой рейд')
   await page.getByRole('button', { name: 'Создать рейд' }).click()

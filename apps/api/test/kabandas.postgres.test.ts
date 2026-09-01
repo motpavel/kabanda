@@ -72,6 +72,22 @@ function readiness(online = true) {
   }
 }
 
+async function waitForBlockedQuery(fragment: string, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const blocked = await pool!.query(
+      `SELECT 1 FROM pg_stat_activity
+       WHERE pid <> pg_backend_pid() AND datname = current_database()
+         AND query LIKE $1 AND wait_event_type = 'Lock'
+       LIMIT 1`,
+      [`%${fragment}%`],
+    )
+    if (blocked.rowCount) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`Timed out waiting for blocked query: ${fragment}`)
+}
+
 async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
   await service!.importManifest(
     ownerId,
@@ -128,6 +144,78 @@ async function activeOwnerRaid(ownerId: string, kabandaId: string, suffix: strin
     `acquire-${suffix}`,
   )
   return { acquired, clientInstanceId, leaseId: acquired.raid.navigatorLease!.id }
+}
+
+async function activeMemberOrganizerRaid(suffix: string, ownerJoins = true) {
+  const { ownerId, kabanda } = await ownerAndKabanda(`member-organizer-${suffix}`)
+  await service!.importManifest(
+    ownerId,
+    kabanda.id,
+    `member-organizer-points-${suffix}`,
+    createHash('sha256').update(`member-organizer-points-${suffix}`).digest('hex'),
+    `Точки участника ${suffix}`,
+    manifest,
+  )
+  const organizerId = await user(`member-organizer-${suffix}@example.com`)
+  const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+  const preview = await service!.previewInvite(invite.token, true)
+  await service!.acceptInvite(
+    organizerId,
+    preview.continuation,
+    `member-organizer-membership-${suffix}`,
+  )
+  const created = await raidService!.createDraft(
+    organizerId,
+    kabanda.id,
+    { title: `Рейд участника ${suffix}` },
+    `member-organizer-create-${suffix}`,
+  )
+  await raidService!.command(
+    organizerId,
+    created.raid.id,
+    'open-lobby',
+    { expectedVersion: 1 },
+    `member-organizer-lobby-${suffix}`,
+  )
+  let currentVersion = 2
+  if (ownerJoins) {
+    const accepted = await raidService!.command(
+      ownerId,
+      created.raid.id,
+      'accept',
+      { expectedVersion: currentVersion },
+      `member-organizer-owner-accept-${suffix}`,
+    )
+    currentVersion = accepted.raid.version
+  }
+  await raidService!.command(
+    organizerId,
+    created.raid.id,
+    'assign-navigator',
+    { expectedVersion: currentVersion, navigatorUserId: organizerId },
+    `member-organizer-navigator-${suffix}`,
+  )
+  const ready = await raidService!.command(
+    organizerId,
+    created.raid.id,
+    'ready',
+    { expectedVersion: currentVersion + 1 },
+    `member-organizer-ready-${suffix}`,
+  )
+  await raidService!.reportReadiness(
+    organizerId,
+    created.raid.id,
+    { expectedVersion: ready.raid.version, ...readiness() },
+    `member-organizer-readiness-${suffix}`,
+  )
+  const started = await raidService!.command(
+    organizerId,
+    created.raid.id,
+    'start',
+    { expectedVersion: ready.raid.version },
+    `member-organizer-start-${suffix}`,
+  )
+  return { ownerId, organizerId, kabanda, started }
 }
 
 describePostgres('Kabandas and points PostgreSQL invariants', () => {
@@ -557,7 +645,13 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       'planned-create-operation',
     )
     expect(created.receipt.command).toBe('create-raid')
-    expect(created.raid).toMatchObject({ state: 'planned', version: 1, scheduledAt })
+    expect(created.raid).toMatchObject({
+      state: 'planned',
+      version: 1,
+      scheduledAt,
+      organizerUserId: ownerId,
+      allowedActions: expect.arrayContaining(['open-lobby', 'cancel']),
+    })
     const immediate = await raidService!.createDraft(
       ownerId,
       kabanda.id,
@@ -574,6 +668,286 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       'planned-open-lobby',
     )
     expect(lobby.raid).toMatchObject({ state: 'lobby', version: 2, scheduledAt })
+  })
+
+  it('lets an active member create and organize their own raid', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-member-organizer')
+    const memberId = await user('raid-member-organizer@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(memberId, preview.continuation, 'member-organizer-membership')
+
+    const created = await raidService!.createDraft(
+      memberId,
+      kabanda.id,
+      { title: 'Рейд участника' },
+      'member-organizer-create',
+    )
+    expect(created.raid).toMatchObject({
+      organizerUserId: memberId,
+      state: 'draft',
+      version: 1,
+      allowedActions: expect.arrayContaining(['open-lobby', 'cancel']),
+      participants: [expect.objectContaining({ id: memberId, state: 'accepted' })],
+    })
+
+    const lobby = await raidService!.command(
+      memberId,
+      created.raid.id,
+      'open-lobby',
+      { expectedVersion: 1 },
+      'member-organizer-open-lobby',
+    )
+    expect(lobby.raid).toMatchObject({
+      state: 'lobby',
+      version: 2,
+      organizerUserId: memberId,
+    })
+    expect(lobby.raid.participants).toContainEqual(
+      expect.objectContaining({ id: ownerId, state: 'invited' }),
+    )
+    await expect(
+      raidService!.command(
+        ownerId,
+        created.raid.id,
+        'cancel',
+        { expectedVersion: 2 },
+        'leader-cannot-control-member-raid',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_COMMAND_FORBIDDEN' })
+  })
+
+  it('rejects raid creation by a removed member or non-member', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-create-access')
+    const removedMemberId = await user('raid-create-removed@example.com')
+    const outsiderId = await user('raid-create-outsider@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(
+      removedMemberId,
+      preview.continuation,
+      'raid-create-removed-membership',
+    )
+    await service!.removeMember(ownerId, kabanda.id, removedMemberId)
+
+    await expect(
+      raidService!.createDraft(
+        removedMemberId,
+        kabanda.id,
+        { title: 'Рейд удалённого участника' },
+        'removed-member-raid-create',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+    await expect(
+      raidService!.createDraft(
+        outsiderId,
+        kabanda.id,
+        { title: 'Рейд постороннего' },
+        'outsider-raid-create',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+    expect(
+      Number(
+        (
+          await pool!.query('SELECT count(*) FROM raids WHERE kabanda_id = $1', [kabanda.id])
+        ).rows[0]?.count,
+      ),
+    ).toBe(0)
+  })
+
+  it('keeps a nonterminal raid organizer in the Kabanda without blocking leadership transfer', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('organizer-removal-guard')
+    const organizerId = await user('organizer-removal-guard@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(
+      organizerId,
+      preview.continuation,
+      'organizer-removal-membership',
+    )
+    await raidService!.createDraft(
+      organizerId,
+      kabanda.id,
+      { title: 'Незавершённый рейд' },
+      'organizer-removal-create',
+    )
+
+    for (const removal of [
+      () => service!.removeMember(ownerId, kabanda.id, organizerId),
+      () => service!.leaveKabanda(organizerId, kabanda.id),
+    ]) {
+      await expect(removal()).rejects.toMatchObject({
+        code: 'RAID_ORGANIZER_REMOVAL_BLOCKED',
+        statusCode: 409,
+      })
+    }
+    expect(
+      (
+        await pool!.query(
+          `SELECT role, removed_at FROM kabanda_memberships
+           WHERE kabanda_id = $1 AND user_id = $2`,
+          [kabanda.id, organizerId],
+        )
+      ).rows[0],
+    ).toMatchObject({ role: 'member', removed_at: null })
+
+    await service!.transferLeadership(ownerId, kabanda.id, organizerId)
+    expect((await service!.listKabandas(organizerId))[0]).toMatchObject({ role: 'owner' })
+    expect(
+      (
+        await pool!.query(
+          `SELECT role, removed_at FROM kabanda_memberships
+           WHERE kabanda_id = $1 AND user_id = $2`,
+          [kabanda.id, organizerId],
+        )
+      ).rows[0],
+    ).toMatchObject({ role: 'owner', removed_at: null })
+  })
+
+  it('serializes member raid creation against concurrent membership removal', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('raid-create-remove-race')
+    const organizerId = await user('raid-create-remove-race@example.com')
+    const invite = await service!.createInvite(ownerId, kabanda.id, 1)
+    const preview = await service!.previewInvite(invite.token, true)
+    await service!.acceptInvite(organizerId, preview.continuation, 'race-membership')
+    const blocker = await pool!.connect()
+    await blocker.query('BEGIN')
+    await blocker.query('SELECT pg_advisory_xact_lock(728341)')
+    await pool!.query('DROP TRIGGER IF EXISTS test_block_raid_insert ON raids')
+    await pool!.query('DROP FUNCTION IF EXISTS test_block_raid_insert()')
+    await pool!.query(
+      `CREATE FUNCTION test_block_raid_insert() RETURNS trigger
+       LANGUAGE plpgsql AS $$
+       BEGIN
+         PERFORM pg_advisory_xact_lock(728341);
+         RETURN NEW;
+       END
+       $$`,
+    )
+    await pool!.query(
+      `CREATE TRIGGER test_block_raid_insert
+       BEFORE INSERT ON raids FOR EACH ROW EXECUTE FUNCTION test_block_raid_insert()`,
+    )
+
+    try {
+      const createOutcome = raidService!
+        .createDraft(
+          organizerId,
+          kabanda.id,
+          { title: 'Рейс в гонке' },
+          'race-create-raid',
+        )
+        .then(
+          (value) => ({ status: 'fulfilled' as const, value }),
+          (reason: unknown) => ({ status: 'rejected' as const, reason }),
+        )
+      await waitForBlockedQuery('INSERT INTO raids')
+      const removeOutcome = service!.removeMember(ownerId, kabanda.id, organizerId).then(
+        () => ({ status: 'fulfilled' as const }),
+        (reason: unknown) => ({ status: 'rejected' as const, reason }),
+      )
+      const removalWaitsForCreate = await Promise.race([
+        waitForBlockedQuery('SELECT target.id FROM kabanda_memberships target').then(() => true),
+        removeOutcome.then(() => false),
+      ])
+      await blocker.query('COMMIT')
+
+      const [created, removed] = await Promise.all([createOutcome, removeOutcome])
+      expect(removalWaitsForCreate).toBe(true)
+      expect(created.status).toBe('fulfilled')
+      expect(removed).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'RAID_ORGANIZER_REMOVAL_BLOCKED', statusCode: 409 },
+      })
+      expect(
+        (
+          await pool!.query(
+            `SELECT count(*)::int AS count FROM raids r
+             JOIN kabanda_memberships m
+               ON m.kabanda_id = r.kabanda_id AND m.user_id = r.organizer_user_id
+               AND m.removed_at IS NULL
+             WHERE r.kabanda_id = $1`,
+            [kabanda.id],
+          )
+        ).rows[0]?.count,
+      ).toBe(1)
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined)
+      blocker.release()
+      await pool!.query('DROP TRIGGER IF EXISTS test_block_raid_insert ON raids')
+      await pool!.query('DROP FUNCTION IF EXISTS test_block_raid_insert()')
+    }
+  })
+
+  it('allows organizer membership removal after cancelled and completed raids', async () => {
+    const cancelledSetup = await ownerAndKabanda('organizer-removal-cancelled')
+    const cancelledOrganizerId = await user('organizer-removal-cancelled@example.com')
+    const cancelledInvite = await service!.createInvite(
+      cancelledSetup.ownerId,
+      cancelledSetup.kabanda.id,
+      1,
+    )
+    const cancelledPreview = await service!.previewInvite(cancelledInvite.token, true)
+    await service!.acceptInvite(
+      cancelledOrganizerId,
+      cancelledPreview.continuation,
+      'cancelled-organizer-membership',
+    )
+    const cancelledDraft = await raidService!.createDraft(
+      cancelledOrganizerId,
+      cancelledSetup.kabanda.id,
+      { title: 'Отменяемый рейд' },
+      'cancelled-organizer-create',
+    )
+    await raidService!.command(
+      cancelledOrganizerId,
+      cancelledDraft.raid.id,
+      'cancel',
+      { expectedVersion: 1 },
+      'cancelled-organizer-cancel',
+    )
+    await expect(
+      service!.leaveKabanda(cancelledOrganizerId, cancelledSetup.kabanda.id),
+    ).resolves.toBeUndefined()
+
+    const completed = await activeMemberOrganizerRaid('completed-removal')
+    const finishing = await raidService!.finishRaid(
+      completed.organizerId,
+      completed.started.raid.id,
+      {
+        expectedVersion: completed.started.raid.version,
+        inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 0 },
+        confirmPartial: false,
+      },
+      'completed-organizer-finish',
+    )
+    const settled = await raidService!.settleFinalization(
+      completed.organizerId,
+      completed.started.raid.id,
+      finishing.raid.version,
+      'completed-organizer-settle',
+    )
+    expect(settled.raid.state).toBe('completed')
+    await expect(
+      service!.removeMember(
+        completed.ownerId,
+        completed.kabanda.id,
+        completed.organizerId,
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('does not report a member-organized active raid as current for an unjoined owner', async () => {
+    const { ownerId, organizerId, kabanda, started } =
+      await activeMemberOrganizerRaid('current-scope', false)
+
+    await expect(raidService!.getCurrent(organizerId)).resolves.toMatchObject({
+      id: started.raid.id,
+    })
+    await expect(raidService!.getCurrent(ownerId)).resolves.toBeNull()
+    await expect(raidService!.listActionable(ownerId, kabanda.id)).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: started.raid.id })]),
+    )
   })
 
   it('returns an immutable canonical replay and rejects a reused key or stale version', async () => {
@@ -1281,6 +1655,114 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
         'private-member-accept',
       ),
     ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+  })
+
+  it('binds organizer attestation to the member who created the raid', async () => {
+    const { ownerId, organizerId, started } = await activeMemberOrganizerRaid('attestation')
+    const snapshot = (
+      await pool!.query<{ id: string }>(
+        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        [started.raid.id],
+      )
+    ).rows[0]!
+    const input = {
+      pointSnapshotId: snapshot.id,
+      evidence: {
+        latitude: 56.86,
+        longitude: 53.21,
+        capturedAt: new Date().toISOString(),
+        accuracyMeters: 8,
+      },
+      presentParticipantIds: [ownerId],
+      organizerAttestation: true,
+    }
+
+    const attested = await raidService!.createCheckin(
+      organizerId,
+      started.raid.id,
+      input,
+      'member-organizer-attestation',
+    )
+    expect(attested).toMatchObject({ outcome: 'accepted', reason: null })
+    expect(attested.credits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId: organizerId, source: 'organizer_attestation' }),
+        expect.objectContaining({ userId: ownerId, source: 'organizer_attestation' }),
+      ]),
+    )
+    await expect(
+      raidService!.createCheckin(
+        ownerId,
+        started.raid.id,
+        { ...input, presentParticipantIds: [] },
+        'team-owner-is-not-raid-organizer',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_COMMAND_FORBIDDEN' })
+  })
+
+  it('lets the raid organizer moderate foreign media while preserving team-owner moderation', async () => {
+    const { ownerId, organizerId, kabanda, started } =
+      await activeMemberOrganizerRaid('media-moderation')
+    const regularMemberId = await user('raid-media-regular-member@example.com')
+    await pool!.query(
+      `INSERT INTO kabanda_memberships (kabanda_id, user_id, role)
+       VALUES ($1, $2, 'member')`,
+      [kabanda.id, regularMemberId],
+    )
+    await pool!.query(
+      `INSERT INTO raid_participants (raid_id, user_id, state, accepted_at, active_from)
+       VALUES ($1, $2, 'active', now(), now())`,
+      [started.raid.id, regularMemberId],
+    )
+    const insertReadyMedia = async (uploaderUserId: string, seed: string) => {
+      const mediaId = randomUUID()
+      await pool!.query(
+        `INSERT INTO raid_media
+          (id, raid_id, uploader_user_id, purpose, source_sha256, declared_size_bytes,
+           declared_content_type, upload_capability_hash, upload_expires_at, state,
+           content_bytes, content_type, size_bytes, width, height, content_sha256, ready_at)
+         VALUES ($1, $2, $3, 'gallery', $4, 4, 'image/jpeg', $5,
+           now() + interval '1 minute', 'ready', decode('ffd8ffd9', 'hex'),
+           'image/jpeg', 4, 1, 1, $6, now())`,
+        [
+          mediaId,
+          started.raid.id,
+          uploaderUserId,
+          createHash('sha256').update(`${seed}:source`).digest('hex'),
+          createHash('sha256').update(`${seed}:capability`).digest('hex'),
+          createHash('sha256').update(`${seed}:content`).digest('hex'),
+        ],
+      )
+      return mediaId
+    }
+
+    const ownerMediaId = await insertReadyMedia(ownerId, 'owner-media')
+    await expect(
+      raidService!.tombstoneMedia(
+        regularMemberId,
+        started.raid.id,
+        ownerMediaId,
+        'regular-member-cannot-moderate',
+      ),
+    ).rejects.toMatchObject({ code: 'RAID_NOT_FOUND' })
+    await expect(
+      raidService!.tombstoneMedia(
+        organizerId,
+        started.raid.id,
+        ownerMediaId,
+        'raid-organizer-moderates-media',
+      ),
+    ).resolves.toEqual({ deleted: true })
+
+    const organizerMediaId = await insertReadyMedia(organizerId, 'organizer-media')
+    await expect(
+      raidService!.tombstoneMedia(
+        ownerId,
+        started.raid.id,
+        organizerMediaId,
+        'team-owner-moderates-media',
+      ),
+    ).resolves.toEqual({ deleted: true })
   })
 
   it('freezes field-verified points and issues one idempotent GPS credit', async () => {
