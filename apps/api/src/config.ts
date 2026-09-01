@@ -17,7 +17,7 @@ const environmentSchema = z.object({
   NOMINATIM_BASE_URL: z.url().default('https://nominatim.openstreetmap.org'),
   PWA_DIST_DIR: z.string().min(1).optional(),
   TRUST_PROXY_ADDRESS: z.string().min(1).optional(),
-  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0011_raid_templates.sql'),
+  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0012_raid_template_visibility.sql'),
   DATABASE_URL: z
     .string()
     .min(1)
