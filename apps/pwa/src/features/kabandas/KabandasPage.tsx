@@ -30,8 +30,8 @@ import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-st
 import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
 import { RaidHomeCard } from '../raids/RaidHomeCard'
+import { ProductionRaidsHub } from '../raids/ProductionRaidsHub'
 import { getKabandaProgress } from '../results/api'
-import { RaidHistory } from '../results/RaidHistory'
 import type { KabandaProgress } from '../results/types'
 import type {
   KabandaMember,
@@ -242,7 +242,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         </button>
       </header>
 
-      {activeSection !== 'kabanda' && <section className="kb-heading-row">
+      {activeSection !== 'kabanda' && activeSection !== 'raids' && <section className="kb-heading-row">
         <div><h1>{sectionHeading(activeSection).title}</h1><p>{sectionHeading(activeSection).description}</p></div>
       </section>}
 
@@ -552,10 +552,7 @@ function KabandaWorkspace({
       <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
         <div className="kb-workspace-main kb-workspace-main--wide">
           {notices}
-          <div className="kb-command-grid">
-            <RaidHomeCard identityId={user.id} kabanda={kabanda} />
-            <RaidHistory identityId={user.id} kabandaId={kabanda.id} />
-          </div>
+          <ProductionRaidsHub identityId={user.id} kabanda={kabanda} />
         </div>
       </section>
     )
