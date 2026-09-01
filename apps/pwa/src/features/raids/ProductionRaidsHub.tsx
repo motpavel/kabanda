@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
 import type { KabandaSummary } from '../kabandas/types'
 import { listRaidHistory } from '../results/api'
@@ -12,6 +11,7 @@ import {
   filterProductionHistory,
   historyAchievement,
   participationLabel,
+  shouldUseProductionCache,
   splitActionableRaids,
   type ProductionHistoryFilter,
 } from './production-model'
@@ -70,7 +70,7 @@ export function ProductionRaidsHub({
         setActionable(actionableResult.value)
         setActionableStaleAt(null)
         await Promise.allSettled(actionableResult.value.map((raid) => saveRaidProjection(identityId, raid)))
-      } else if (actionableResult.reason instanceof ApiError && actionableResult.reason.status < 500) {
+      } else if (!shouldUseProductionCache(actionableResult.reason)) {
         setActionable([])
         setActionableStaleAt(null)
       } else {
@@ -85,6 +85,9 @@ export function ProductionRaidsHub({
         setHistory(page.raids)
         setHistoryStaleAt(null)
         await saveRaidHistory(identityId, kabanda.id, page).catch(() => undefined)
+      } else if (!shouldUseProductionCache(historyResult.reason)) {
+        setHistory([])
+        setHistoryStaleAt(null)
       } else {
         const cached = await readRaidHistory(identityId, kabanda.id).catch(() => null)
         setHistory(cached?.page.raids ?? [])

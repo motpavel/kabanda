@@ -1,8 +1,13 @@
+import { ApiError } from '../../lib/http'
 import { selectCurrentRaid } from './state'
 import type { RaidParticipantState, RaidProjection } from './types'
 import type { RaidHistoryItem, RaidMetrics } from '../results/types'
 
 export type ProductionHistoryFilter = 'all' | 'mine'
+
+export function shouldUseProductionCache(reason: unknown): boolean {
+  return !(reason instanceof ApiError && reason.status < 500)
+}
 
 export function splitActionableRaids(raids: RaidProjection[], identityId: string): {
   current: RaidProjection | null

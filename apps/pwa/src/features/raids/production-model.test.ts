@@ -3,8 +3,10 @@ import {
   filterProductionHistory,
   historyAchievement,
   participationLabel,
+  shouldUseProductionCache,
   splitActionableRaids,
 } from './production-model'
+import { ApiError } from '../../lib/http'
 import type { RaidProjection } from './types'
 import type { RaidHistoryItem } from '../results/types'
 
@@ -46,6 +48,14 @@ const history = (overrides: Partial<RaidHistoryItem>): RaidHistoryItem => ({
 })
 
 describe('production raids adapter model', () => {
+  it('fails closed on authoritative client errors instead of exposing cached data', () => {
+    expect(shouldUseProductionCache(new ApiError('AUTH_REQUIRED', 'Войдите', 401))).toBe(false)
+    expect(shouldUseProductionCache(new ApiError('FORBIDDEN', 'Нет доступа', 403))).toBe(false)
+    expect(shouldUseProductionCache(new ApiError('NOT_FOUND', 'Кабанда не найдена', 404))).toBe(false)
+    expect(shouldUseProductionCache(new ApiError('SERVER_ERROR', 'Сервис недоступен', 503))).toBe(true)
+    expect(shouldUseProductionCache(new TypeError('Failed to fetch'))).toBe(true)
+  })
+
   it('keeps the active raid separate and sorts only canonical actionable raids', () => {
     const active = projection({ id: 'active', state: 'active' })
     const later = projection({ id: 'later', title: 'Позже', scheduledAt: '2026-09-03T10:00:00+04:00' })
