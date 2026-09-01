@@ -4,12 +4,18 @@ const DRAFT_PREFIX = 'kabanda.raid-template-draft.v1'
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
+type StoredRaidTemplateDraft = Partial<Omit<RaidTemplateDraft, 'schemaVersion' | 'scope'>> & {
+  schemaVersion?: 1 | 2
+  scope?: RaidTemplateDraft['scope']
+}
+
 export function createRaidTemplateDraft(identityId: string, kabandaId: string, now = new Date().toISOString()): RaidTemplateDraft {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     clientDraftId: randomId(),
     identityId,
     kabandaId,
+    scope: 'kabanda',
     title: '',
     coverImage: null,
     points: [],
@@ -57,13 +63,14 @@ export function draftKey(identityId: string, kabandaId: string): string {
 
 function parseDraft(value: unknown, identityId: string, kabandaId: string): RaidTemplateDraft | null {
   if (!value || typeof value !== 'object') return null
-  const draft = value as Partial<RaidTemplateDraft>
-  const valid = draft.schemaVersion === 1 &&
+  const draft = value as StoredRaidTemplateDraft
+  const valid = (draft.schemaVersion === 1 || draft.schemaVersion === 2) &&
     draft.identityId === identityId &&
     draft.kabandaId === kabandaId &&
     typeof draft.clientDraftId === 'string' &&
     typeof draft.idempotencyKey === 'string' &&
     typeof draft.title === 'string' &&
+    (draft.scope === undefined || draft.scope === 'kabanda' || draft.scope === 'all_authenticated') &&
     (draft.coverImage === null || typeof draft.coverImage === 'string') &&
     Array.isArray(draft.points) &&
     draft.points.length <= 10 &&
@@ -72,10 +79,11 @@ function parseDraft(value: unknown, identityId: string, kabandaId: string): Raid
     typeof draft.updatedAt === 'string'
   if (!valid) return null
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     clientDraftId: draft.clientDraftId!,
     identityId,
     kabandaId,
+    scope: draft.scope === 'all_authenticated' ? 'all_authenticated' : 'kabanda',
     title: draft.title!,
     coverImage: draft.coverImage!,
     points: draft.points!,

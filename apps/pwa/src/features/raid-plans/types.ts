@@ -34,8 +34,7 @@ export interface RaidTemplateCover {
 export interface RaidTemplateSummary {
   id: string
   kabandaId: string
-  scope: 'kabanda'
-  createdByUserId: string
+  scope: 'kabanda' | 'all_authenticated'
   title: string
   version: number
   cover: RaidTemplateCover
@@ -75,10 +74,11 @@ export type DraftRouteEstimate =
   | { status: 'degraded'; distanceMeters: number; failureCode: RaidTemplateFailureCode }
 
 export interface RaidTemplateDraft {
-  schemaVersion: 1
+  schemaVersion: 2
   clientDraftId: string
   identityId: string
   kabandaId: string
+  scope: 'kabanda' | 'all_authenticated'
   title: string
   coverImage: string | null
   points: DraftRaidTemplatePoint[]

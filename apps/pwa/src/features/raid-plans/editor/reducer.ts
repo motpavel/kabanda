@@ -7,6 +7,7 @@ import {
 
 export type RaidTemplateDraftAction =
   | { type: 'set-title'; title: string }
+  | { type: 'set-scope'; scope: RaidTemplateDraft['scope'] }
   | { type: 'set-cover'; coverImage: string | null }
   | { type: 'add-point'; point: DraftRaidTemplatePoint }
   | { type: 'select-point'; pointId: string | null }
@@ -25,6 +26,8 @@ export function raidTemplateDraftReducer(draft: RaidTemplateDraft, action: RaidT
   switch (action.type) {
     case 'set-title':
       return { ...draft, title: action.title, updatedAt }
+    case 'set-scope':
+      return { ...draft, scope: action.scope, updatedAt }
     case 'set-cover':
       return { ...draft, coverImage: action.coverImage, updatedAt }
     case 'add-point':

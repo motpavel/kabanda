@@ -8,7 +8,6 @@ function template(id: string, title: string, createdAt: string): RaidTemplateSum
     id,
     kabandaId: 'kabanda-1',
     scope: 'kabanda',
-    createdByUserId: 'member-1',
     title,
     version: 1,
     cover: { url: `/api/raid-templates/${id}/cover`, sha256: 'sha', width: 1280, height: 720 },

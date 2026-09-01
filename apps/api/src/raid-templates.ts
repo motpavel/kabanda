@@ -32,9 +32,8 @@ export type RaidTemplateCoverProjection = {
 
 export type RaidTemplateSummary = {
   id: string
-  scope: 'kabanda'
+  scope: 'kabanda' | 'all_authenticated'
   kabandaId: string
-  createdByUserId: string
   title: string
   version: number
   cover: RaidTemplateCoverProjection
@@ -88,9 +87,8 @@ export interface RaidTemplateService {
 
 type RaidTemplateRow = {
   id: string
-  scope: 'kabanda'
+  scope: 'kabanda' | 'all_authenticated'
   kabanda_id: string
-  created_by_user_id: string
   title: string
   version: number
   point_count: number
@@ -113,6 +111,7 @@ function requestFingerprint(
     .update(JSON.stringify({
       command: 'create-raid-template',
       kabandaId,
+      scope: input.scope,
       title: input.title,
       coverImage: input.coverImage,
       points: input.points,
@@ -166,7 +165,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
   }
 }
 
-const templateSelect = `SELECT t.id, t.scope, t.kabanda_id, t.created_by_user_id,
+const templateSelect = `SELECT t.id, t.scope, t.kabanda_id,
   t.title, t.version, t.point_count, t.cover_sha256, t.cover_width, t.cover_height,
   t.distance_method, t.estimated_distance_meters, t.created_at, t.updated_at
  FROM raid_templates t`
@@ -204,7 +203,7 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
       const activeTemplateCount = await client.query<{ count: string }>(
         `SELECT count(*)::text AS count
          FROM raid_templates
-         WHERE kabanda_id = $1 AND scope = 'kabanda' AND archived_at IS NULL`,
+         WHERE kabanda_id = $1 AND archived_at IS NULL`,
         [kabandaId],
       )
       if (Number(activeTemplateCount.rows[0]?.count ?? 0) >= maximumActiveTemplatesPerKabanda) {
@@ -228,14 +227,15 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
 
       const inserted = await client.query<{ id: string; created_at: Date }>(
         `INSERT INTO raid_templates
-          (kabanda_id, created_by_user_id, title, point_count,
+          (kabanda_id, scope, created_by_user_id, title, point_count,
            cover_bytes, cover_content_type, cover_size_bytes, cover_width, cover_height,
            cover_sha256, distance_method, estimated_distance_meters)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-           'straight_segments', $11)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+           'straight_segments', $12)
          RETURNING id, created_at`,
         [
           kabandaId,
+          input.scope,
           actorUserId,
           input.title,
           input.points.length,
@@ -300,7 +300,10 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
       if (!membership.rowCount) throw this.notFound()
       const result = await client.query<RaidTemplateRow>(
         `${templateSelect}
-         WHERE t.kabanda_id = $1 AND t.scope = 'kabanda' AND t.archived_at IS NULL
+         JOIN kabandas source_kabanda
+           ON source_kabanda.id = t.kabanda_id AND source_kabanda.archived_at IS NULL
+         WHERE t.archived_at IS NULL
+           AND (t.scope = 'all_authenticated' OR (t.scope = 'kabanda' AND t.kabanda_id = $1))
          ORDER BY t.updated_at DESC, t.id DESC
          LIMIT 100`,
         [kabandaId],
@@ -325,9 +328,15 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
       `SELECT t.cover_bytes, t.cover_content_type, t.cover_sha256
        FROM raid_templates t
        JOIN kabandas k ON k.id = t.kabanda_id AND k.archived_at IS NULL
-       JOIN kabanda_memberships m
-         ON m.kabanda_id = t.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
-       WHERE t.id = $1 AND t.scope = 'kabanda' AND t.archived_at IS NULL`,
+       WHERE t.id = $1 AND t.archived_at IS NULL
+         AND (
+           t.scope = 'all_authenticated'
+           OR EXISTS (
+             SELECT 1 FROM kabanda_memberships m
+             WHERE m.kabanda_id = t.kabanda_id
+               AND m.user_id = $2 AND m.removed_at IS NULL
+           )
+         )`,
       [templateId, actorUserId],
     )
     const cover = result.rows[0]
@@ -384,12 +393,16 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
       `SELECT 1 FROM raid_templates template
        JOIN kabandas kabanda
          ON kabanda.id = template.kabanda_id AND kabanda.archived_at IS NULL
-       JOIN kabanda_memberships membership
-         ON membership.kabanda_id = template.kabanda_id
-           AND membership.user_id = $2 AND membership.removed_at IS NULL
-       WHERE template.id = $1 AND template.scope = 'kabanda'
-         AND template.archived_at IS NULL
-       FOR SHARE OF template, kabanda, membership`,
+       WHERE template.id = $1 AND template.archived_at IS NULL
+         AND (
+           template.scope = 'all_authenticated'
+           OR EXISTS (
+             SELECT 1 FROM kabanda_memberships membership
+             WHERE membership.kabanda_id = template.kabanda_id
+               AND membership.user_id = $2 AND membership.removed_at IS NULL
+           )
+         )
+       FOR SHARE OF template, kabanda`,
       [templateId, actorUserId],
     )
     if (!result.rowCount) throw this.notFound()
@@ -436,9 +449,8 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
   private summary(row: RaidTemplateRow): RaidTemplateSummary {
     return {
       id: row.id,
-      scope: 'kabanda',
+      scope: row.scope,
       kabandaId: row.kabanda_id,
-      createdByUserId: row.created_by_user_id,
       title: row.title,
       version: Number(row.version),
       cover: {

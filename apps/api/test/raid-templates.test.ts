@@ -1,3 +1,4 @@
+import { createRaidTemplateSchema } from '@kabanda/contracts'
 import { describe, expect, it } from 'vitest'
 import { straightSegmentsDistanceMeters } from '../src/raid-templates.js'
 
@@ -22,5 +23,24 @@ describe('raid template distance', () => {
       { name: 'A', address: 'A', comment: '', latitude: 56.85, longitude: 53.2 },
       { name: 'B', address: 'B', comment: '', latitude: 56.85, longitude: 53.2 },
     ])).toBe(0)
+  })
+})
+
+describe('raid template access contract', () => {
+  const legacyRequest = {
+    title: 'Маршрут для своих',
+    coverImage: 'data:image/jpeg;base64,YQ==',
+    points: [
+      { name: 'A', address: 'A', comment: '', latitude: 56.8, longitude: 53.2 },
+      { name: 'B', address: 'B', comment: '', latitude: 56.9, longitude: 53.3 },
+    ],
+  }
+
+  it('defaults a cached old client to Kabanda-only access', () => {
+    expect(createRaidTemplateSchema.parse(legacyRequest).scope).toBe('kabanda')
+  })
+
+  it('rejects an unknown access value', () => {
+    expect(() => createRaidTemplateSchema.parse({ ...legacyRequest, scope: 'anonymous' })).toThrow()
   })
 })

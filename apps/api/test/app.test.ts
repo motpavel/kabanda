@@ -1280,7 +1280,6 @@ describe('API foundation', () => {
       id: templateId,
       scope: 'kabanda',
       kabandaId,
-      createdByUserId: user.id,
       title: 'Набережные и мосты',
       version: 1,
       cover: {
@@ -1372,7 +1371,7 @@ describe('API foundation', () => {
     expect(createTemplate).toHaveBeenCalledWith(
       user.id,
       kabandaId,
-      { ...input, title: 'Набережные и мосты' },
+      { ...input, scope: 'kabanda', title: 'Набережные и мосты' },
       'template-operation',
     )
 

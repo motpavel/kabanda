@@ -18,6 +18,7 @@ import {
   RAID_TEMPLATE_MAX_POINTS,
   type DraftRaidTemplatePoint,
   type DraftRouteEstimate,
+  type RaidTemplateDraft,
 } from '../types'
 import { type BicycleRouteState, type RaidPlanGeoPoint } from '../yandex-adapter'
 import {
@@ -228,6 +229,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
     setSaveState('saving')
     try {
       await createRaidTemplate(kabanda.id, {
+        scope: current.scope,
         title: current.title.trim(),
         coverImage: current.coverImage!,
         points: current.points.map(({ name, address, comment, latitude, longitude }) => ({
@@ -277,6 +279,11 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         <span className="rt-cover__copy"><strong>{coverState === 'processing' ? 'Готовим изображение…' : draft.coverImage ? 'Заменить обложку' : 'Добавить обложку'}</strong><small>JPEG, PNG или WebP · до 12 МБ</small></span>
       </label>
       {coverError && <p className="rt-editor__error" role="alert">{coverError}</p>}
+      <RaidTemplateScopeControl
+        kabandaName={kabanda.name}
+        onChange={(scope) => dispatch({ type: 'set-scope', scope })}
+        scope={draft.scope}
+      />
     </section>
 
     <section className="rt-editor__route" aria-labelledby="rt-route-heading">
@@ -330,6 +337,43 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
       pointNumber={selectedPointNumber}
     />}
   </EditorShell>
+}
+
+export function RaidTemplateScopeControl({
+  kabandaName,
+  onChange,
+  scope,
+}: {
+  kabandaName: string
+  onChange: (scope: RaidTemplateDraft['scope']) => void
+  scope: RaidTemplateDraft['scope']
+}) {
+  return <fieldset className="rt-visibility">
+    <legend>Доступ к маршруту</legend>
+    <div className="rt-visibility__options">
+      <label>
+        <input
+          checked={scope === 'kabanda'}
+          name="raid-template-scope"
+          onChange={() => onChange('kabanda')}
+          type="radio"
+        />
+        <span><strong>Только для своих</strong><small>{kabandaName}</small></span>
+      </label>
+      <label>
+        <input
+          checked={scope === 'all_authenticated'}
+          name="raid-template-scope"
+          onChange={() => onChange('all_authenticated')}
+          type="radio"
+        />
+        <span><strong>Для всех</strong><small>Все пользователи приложения</small></span>
+      </label>
+    </div>
+    <p>{scope === 'all_authenticated'
+      ? 'Обложку, комментарии и координаты увидят все участники приложения.'
+      : 'Маршрут увидят только участники вашей Кабанды.'}</p>
+  </fieldset>
 }
 
 function EditorShell({ kabandaId, children }: { kabandaId: string; children: ReactNode }) {

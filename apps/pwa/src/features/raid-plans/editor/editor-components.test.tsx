@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { DraftRaidTemplatePoint } from '../types'
 import { RaidTemplatePointList } from './RaidTemplatePointList'
 import { RaidTemplatePointSheet, shouldDismissPointSheet } from './RaidTemplatePointSheet'
+import { RaidTemplateScopeControl } from './RaidTemplateEditorPage'
 
 const points: DraftRaidTemplatePoint[] = [
   {
@@ -54,5 +55,26 @@ describe('raid template point controls', () => {
     expect(shouldDismissPointSheet(100, 171)).toBe(false)
     expect(shouldDismissPointSheet(100, 172)).toBe(true)
     expect(shouldDismissPointSheet(100, 40)).toBe(false)
+  })
+})
+
+describe('raid template access control', () => {
+  it('defaults to the Kabanda and explains the public disclosure before saving', () => {
+    const privateMarkup = renderToStaticMarkup(<RaidTemplateScopeControl
+      kabandaName="Кабанда Preview"
+      onChange={() => undefined}
+      scope="kabanda"
+    />)
+    const publicMarkup = renderToStaticMarkup(<RaidTemplateScopeControl
+      kabandaName="Кабанда Preview"
+      onChange={() => undefined}
+      scope="all_authenticated"
+    />)
+
+    expect(privateMarkup).toContain('Только для своих')
+    expect(privateMarkup).toContain('Для всех')
+    expect(privateMarkup).toContain('Маршрут увидят только участники вашей Кабанды')
+    expect(privateMarkup).toMatch(/type="radio"[^>]*checked=""/)
+    expect(publicMarkup).toContain('Обложку, комментарии и координаты увидят все участники приложения')
   })
 })

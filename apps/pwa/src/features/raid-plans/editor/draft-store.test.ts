@@ -34,6 +34,21 @@ describe('raid template local draft', () => {
     expect(readRaidTemplateDraft('member-a', 'kabanda-a', storage)).toBeNull()
   })
 
+  it('migrates an existing draft to private visibility without losing its content', () => {
+    const storage = memoryStorage()
+    const key = draftKey('member-a', 'kabanda-a')
+    const current = createRaidTemplateDraft('member-a', 'kabanda-a')
+    const legacy = { ...current, schemaVersion: 1, title: 'Старый черновик' }
+    delete (legacy as Partial<typeof current>).scope
+    storage.setItem(key, JSON.stringify(legacy))
+
+    expect(readRaidTemplateDraft('member-a', 'kabanda-a', storage)).toMatchObject({
+      schemaVersion: 2,
+      scope: 'kabanda',
+      title: 'Старый черновик',
+    })
+  })
+
   it('scrubs legacy provider estimates in memory without mutating storage during read', () => {
     const storage = memoryStorage()
     const key = draftKey('member-a', 'kabanda-a')

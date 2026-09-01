@@ -12,6 +12,7 @@ describe('raid template API', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await createRaidTemplate('kabanda-1', {
+      scope: 'all_authenticated',
       title: 'Центр',
       coverImage: 'data:image/jpeg;base64,cover',
       points: [
@@ -26,7 +27,7 @@ describe('raid template API', () => {
     expect(init?.method).toBe('POST')
     expect(new Headers(init?.headers).get('Idempotency-Key')).toBe('stable-key')
     expect(String(url)).not.toMatch(/\/raids(?:\/|$)/)
-    expect(Object.keys(JSON.parse(String(init?.body))).sort()).toEqual(['coverImage', 'points', 'title'])
+    expect(JSON.parse(String(init?.body))).toMatchObject({ scope: 'all_authenticated', title: 'Центр' })
   })
 
   it('uses the authenticated reverse-geocode proxy instead of a browser provider call', async () => {

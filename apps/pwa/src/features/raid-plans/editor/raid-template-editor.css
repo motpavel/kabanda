@@ -207,6 +207,92 @@
 
 .rt-cover:focus-within { outline: 3px solid #4d83ff; outline-offset: 2px; }
 
+.rt-visibility {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.rt-visibility legend {
+  margin-bottom: 6px;
+  color: #3e4147;
+  font-size: 11px;
+  font-weight: 730;
+}
+
+.rt-visibility__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  border-radius: 14px;
+  padding: 4px;
+  background: #f2f1f0;
+}
+
+.rt-visibility__options label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.rt-visibility__options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.rt-visibility__options span {
+  display: grid;
+  min-height: 52px;
+  align-content: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  padding: 7px 9px;
+  color: #62656a;
+  background: transparent;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.rt-visibility__options strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-visibility__options small {
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-visibility__options input:checked + span {
+  border-color: rgb(225 50 45 / 14%);
+  color: var(--rt-ink);
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(45 38 35 / 8%);
+}
+
+.rt-visibility__options input:focus-visible + span {
+  outline: 3px solid #4d83ff;
+  outline-offset: 2px;
+}
+
+.rt-visibility > p {
+  margin: 0;
+  color: var(--rt-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .rt-cover__icon {
   display: grid;
   width: 48px;

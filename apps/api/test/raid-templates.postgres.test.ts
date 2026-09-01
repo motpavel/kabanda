@@ -57,6 +57,7 @@ async function addMember(kabandaId: string, label: string): Promise<string> {
 
 function input(title = 'Набережные и мосты'): CreateRaidTemplate {
   return {
+    scope: 'kabanda',
     title,
     coverImage: 'data:image/jpeg;base64,transport-is-never-stored',
     points: [
@@ -109,7 +110,6 @@ describePostgres('raid template PostgreSQL invariants', () => {
     expect(created.template).toMatchObject({
       scope: 'kabanda',
       kabandaId,
-      createdByUserId: memberId,
       title: 'Набережные и мосты',
       version: 1,
       pointCount: 2,
@@ -206,6 +206,45 @@ describePostgres('raid template PostgreSQL invariants', () => {
       statusCode: 409,
     })
     expect(coverProcessor).toHaveBeenCalledOnce()
+  })
+
+  it('shows a public template to another Kabanda but keeps a private template inside its own', async () => {
+    const source = await createKabanda('visibility-source')
+    const target = await createKabanda('visibility-target')
+    const publicTemplate = await raidTemplates!.createTemplate(
+      source.ownerId,
+      source.kabandaId,
+      { ...input('Общий маршрут'), scope: 'all_authenticated' },
+      'public-template-operation',
+    )
+    const privateTemplate = await raidTemplates!.createTemplate(
+      source.ownerId,
+      source.kabandaId,
+      input('Маршрут для своих'),
+      'private-template-operation',
+    )
+
+    await expect(raidTemplates!.listTemplates(target.ownerId, target.kabandaId)).resolves.toEqual([
+      expect.objectContaining({ id: publicTemplate.template.id, scope: 'all_authenticated' }),
+    ])
+    await expect(
+      raidTemplates!.getTemplate(target.ownerId, publicTemplate.template.id),
+    ).resolves.toMatchObject({ id: publicTemplate.template.id, scope: 'all_authenticated' })
+    await expect(
+      raidTemplates!.readCover(target.ownerId, publicTemplate.template.id),
+    ).resolves.toMatchObject({ sha256: normalizedCoverSha256 })
+    await expect(
+      raidTemplates!.getTemplate(target.ownerId, privateTemplate.template.id),
+    ).rejects.toMatchObject({ code: 'RAID_TEMPLATE_NOT_FOUND', statusCode: 404 })
+    await expect(
+      raidTemplates!.readCover(target.ownerId, privateTemplate.template.id),
+    ).rejects.toMatchObject({ code: 'RAID_TEMPLATE_NOT_FOUND', statusCode: 404 })
+
+    await pool!.query('UPDATE kabandas SET archived_at = now() WHERE id = $1', [source.kabandaId])
+    await expect(
+      raidTemplates!.getTemplate(target.ownerId, publicTemplate.template.id),
+    ).rejects.toMatchObject({ code: 'RAID_TEMPLATE_NOT_FOUND', statusCode: 404 })
+    await expect(raidTemplates!.listTemplates(target.ownerId, target.kabandaId)).resolves.toEqual([])
   })
 
   it('caps active templates per Kabanda before processing another cover', async () => {

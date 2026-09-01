@@ -4,10 +4,11 @@ import { raidTemplateDraftErrors, raidTemplateDraftReducer } from './reducer'
 
 function draft(points: DraftRaidTemplatePoint[] = []): RaidTemplateDraft {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     clientDraftId: 'draft-1',
     identityId: 'identity-1',
     kabandaId: 'kabanda-1',
+    scope: 'kabanda',
     title: 'Маршрут',
     coverImage: 'data:image/jpeg;base64,cover',
     points,
@@ -32,6 +33,13 @@ function point(id: string, name = id): DraftRaidTemplatePoint {
 }
 
 describe('raid template editor reducer', () => {
+  it('changes route access without touching the route content', () => {
+    const initial = draft([point('a'), point('b')])
+    const updated = raidTemplateDraftReducer(initial, { type: 'set-scope', scope: 'all_authenticated' })
+
+    expect(updated).toMatchObject({ scope: 'all_authenticated', title: initial.title, points: initial.points })
+  })
+
   it('reorders points both by drag target and accessible step buttons', () => {
     const initial = draft([point('a'), point('b'), point('c')])
     const dragged = raidTemplateDraftReducer(initial, { type: 'reorder-point', activeId: 'a', overId: 'c' })
