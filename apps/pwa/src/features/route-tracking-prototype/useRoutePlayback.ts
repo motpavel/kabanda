@@ -1,42 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
-import { routeDistance, TEST_ROUTE, TEST_ROUTE_DISTANCE_M } from './simulation'
+import { routeDistance, splitRouteAtDistance, type RouteCoordinate } from './simulation'
 
-export function useRoutePlayback() {
+const FRAME_COUNT = 30
+const FRAME_DELAY_MS = 680
+
+export function useRoutePlayback(route: readonly RouteCoordinate[]) {
   const [sampleIndex, setSampleIndex] = useState(0)
-  const [playing, setPlaying] = useState(true)
+
+  useEffect(() => setSampleIndex(0), [route])
 
   useEffect(() => {
-    if (!playing || sampleIndex >= TEST_ROUTE.length - 1) return
+    if (route.length < 2) return
     const timer = window.setTimeout(() => {
-      setSampleIndex((current) => Math.min(current + 1, TEST_ROUTE.length - 1))
-    }, 720)
+      setSampleIndex((current) => current >= FRAME_COUNT ? 0 : current + 1)
+    }, sampleIndex >= FRAME_COUNT ? 1_800 : FRAME_DELAY_MS)
     return () => window.clearTimeout(timer)
-  }, [playing, sampleIndex])
+  }, [route, sampleIndex])
 
-  const traveled = useMemo(() => TEST_ROUTE.slice(0, sampleIndex + 1), [sampleIndex])
-  const traveledDistanceM = useMemo(() => routeDistance(traveled), [traveled])
-  const completed = sampleIndex === TEST_ROUTE.length - 1
+  const totalDistanceM = useMemo(() => routeDistance(route), [route])
+  const progress = Math.min(1, sampleIndex / FRAME_COUNT)
+  const traveledDistanceM = totalDistanceM * progress
+  const split = useMemo(
+    () => splitRouteAtDistance(route, traveledDistanceM),
+    [route, traveledDistanceM],
+  )
+  const completed = sampleIndex >= FRAME_COUNT
 
   return {
     completed,
-    playing: playing && !completed,
-    progress: TEST_ROUTE_DISTANCE_M ? traveledDistanceM / TEST_ROUTE_DISTANCE_M : 0,
-    remainingDistanceM: Math.max(0, TEST_ROUTE_DISTANCE_M - traveledDistanceM),
+    current: split.current,
+    progress,
+    remaining: split.remaining,
+    remainingDistanceM: Math.max(0, totalDistanceM - traveledDistanceM),
     sampleIndex,
-    speedKmh: completed ? 0 : 17 + (sampleIndex % 5),
-    traveled,
+    speedKmh: completed ? 0 : 18 + (sampleIndex % 5),
+    totalDistanceM,
+    traveled: split.traveled,
     traveledDistanceM,
-    toggle() {
-      if (completed) {
-        setSampleIndex(0)
-        setPlaying(true)
-        return
-      }
-      setPlaying((current) => !current)
-    },
-    restart() {
-      setSampleIndex(0)
-      setPlaying(true)
-    },
   }
 }

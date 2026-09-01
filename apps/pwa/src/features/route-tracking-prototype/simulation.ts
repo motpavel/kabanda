@@ -1,7 +1,12 @@
 export type RouteCoordinate = readonly [number, number]
 
+export const ROUTE_START: RouteCoordinate = [56.852903, 53.202193]
+export const ROUTE_DESTINATION: RouteCoordinate = [56.852952, 53.223375]
+
+// Used only as deterministic endpoint data. The visible geometry is requested
+// from Yandex in bicycle mode, so the prototype never invents a line over houses.
 export const TEST_ROUTE: readonly RouteCoordinate[] = [
-  [56.852903, 53.202193],
+  ROUTE_START,
   [56.853041, 53.203167],
   [56.853196, 53.204254],
   [56.853309, 53.205497],
@@ -19,7 +24,7 @@ export const TEST_ROUTE: readonly RouteCoordinate[] = [
   [56.853306, 53.220811],
   [56.853184, 53.221747],
   [56.853089, 53.222481],
-  [56.852952, 53.223375],
+  ROUTE_DESTINATION,
 ] as const
 
 const toRadians = (value: number) => value * Math.PI / 180
@@ -43,3 +48,53 @@ export function routeDistance(coordinates: readonly RouteCoordinate[]) {
 }
 
 export const TEST_ROUTE_DISTANCE_M = routeDistance(TEST_ROUTE)
+
+export function interpolateCoordinate(
+  from: RouteCoordinate,
+  to: RouteCoordinate,
+  progress: number,
+): RouteCoordinate {
+  const safeProgress = Math.min(1, Math.max(0, progress))
+  return [
+    from[0] + (to[0] - from[0]) * safeProgress,
+    from[1] + (to[1] - from[1]) * safeProgress,
+  ]
+}
+
+export function splitRouteAtDistance(
+  coordinates: readonly RouteCoordinate[],
+  requestedDistanceM: number,
+) {
+  if (!coordinates.length) {
+    return { current: null, remaining: [] as RouteCoordinate[], traveled: [] as RouteCoordinate[] }
+  }
+
+  const totalDistanceM = routeDistance(coordinates)
+  const targetDistanceM = Math.min(totalDistanceM, Math.max(0, requestedDistanceM))
+  const first = coordinates[0]!
+
+  if (coordinates.length === 1 || targetDistanceM === 0) {
+    return { current: first, remaining: [...coordinates], traveled: [first] }
+  }
+
+  let traversedDistanceM = 0
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const from = coordinates[index - 1]!
+    const to = coordinates[index]!
+    const segmentDistanceM = distanceMeters(from, to)
+    const nextDistanceM = traversedDistanceM + segmentDistanceM
+
+    if (targetDistanceM <= nextDistanceM && segmentDistanceM > 0) {
+      const progress = (targetDistanceM - traversedDistanceM) / segmentDistanceM
+      const current = interpolateCoordinate(from, to, progress)
+      const traveled = [...coordinates.slice(0, index), current]
+      const remaining = [current, ...coordinates.slice(index)]
+      return { current, remaining, traveled }
+    }
+
+    traversedDistanceM = nextDistanceM
+  }
+
+  const last = coordinates.at(-1)!
+  return { current: last, remaining: [last], traveled: [...coordinates] }
+}
