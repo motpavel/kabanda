@@ -483,13 +483,14 @@
   position: absolute;
   z-index: 4;
   display: block;
-  width: 42px;
-  height: 42px;
+  box-sizing: border-box;
+  width: 46px;
+  height: 46px;
   transform: translate(-50%, -50%);
-  background: url('/brand/kabanda-logo-reference.png') center / contain no-repeat;
-  filter:
-    drop-shadow(0 0 1px rgb(255 255 255 / 100%))
-    drop-shadow(0 1px 3px rgb(35 42 53 / 40%));
+  border: 2px solid rgb(255 255 255 / 96%);
+  border-radius: 50%;
+  background: #fff url('/brand/kabanda-logo-reference.png') center / 40px 40px no-repeat;
+  box-shadow: 0 5px 16px rgb(35 42 53 / 32%), 0 0 0 1px rgb(35 42 53 / 10%);
   pointer-events: none;
 }
 .kb-yandex-zoom {
