@@ -511,25 +511,9 @@
 .kb-yandex-zoom button + button { border-top: 1px solid var(--kb-line); }
 .kb-yandex-zoom button:hover { transform: none; background: rgb(35 42 53 / 6%); }
 .kb-yandex-zoom button:disabled { color: rgb(35 42 53 / 28%); }
-.kb-yandex-geolocate {
-  position: absolute;
-  z-index: 5;
-  bottom: calc(84px + env(safe-area-inset-bottom));
-  left: 12px;
-  display: grid;
-  width: 48px;
-  min-height: 48px;
-  place-items: center;
-  border: 1px solid rgb(73 78 72 / 14%);
-  border-radius: 14px;
-  padding: 0;
-  color: #1677ff;
-  background: rgb(255 253 248 / 96%);
-  box-shadow: 0 6px 18px rgb(32 41 35 / 18%);
-  font: 700 27px/1 Arial, sans-serif;
-  backdrop-filter: blur(14px);
-}
-.kb-yandex-geolocate:hover { transform: none; background: #fff; }
+.kb-yandex-zoom .kb-yandex-locate { color: #1677ff; }
+.kb-yandex-locate svg { width: 21px; height: 21px; fill: currentcolor; }
+.kb-yandex-locate[aria-pressed="true"] { color: #0f5fc7; background: rgb(22 119 255 / 9%); }
 
 .kb-map-geolocation-error {
   position: fixed;
