@@ -94,7 +94,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
-  await page.getByRole('button', { name: 'Создать рейд' }).click()
+  await page.getByRole('link', { name: 'Создать рейд', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
   await page.getByLabel('Название').fill('Синтетический золотой рейд')
   await page.getByRole('button', { name: 'Создать рейд' }).click()
