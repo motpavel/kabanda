@@ -18,7 +18,7 @@ import {
 } from './model'
 import './raids-design.css'
 
-type IconName = 'arrow' | 'bike' | 'calendar' | 'chevron' | 'clock' | 'close' | 'flag' | 'group' | 'home' | 'map' | 'pin' | 'route' | 'send' | 'team'
+type IconName = 'arrow' | 'bike' | 'calendar' | 'chevron' | 'clock' | 'close' | 'flag' | 'group' | 'home' | 'map' | 'pin' | 'route' | 'send' | 'spark' | 'target' | 'team' | 'trophy'
 
 const iconPaths: Record<IconName, ReactNode> = {
   arrow: <path d="m15 18-6-6 6-6" />,
@@ -34,7 +34,10 @@ const iconPaths: Record<IconName, ReactNode> = {
   pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
   route: <><circle cx="6" cy="17" r="2" /><circle cx="18" cy="7" r="2" /><path d="M8 17c6 0 2-10 8-10" /></>,
   send: <><path d="m21 3-8 18-3.5-8.5L1 9Z" /><path d="m9.5 12.5 5-4.5" /></>,
+  spark: <path d="m13 2-7 11h6l-1 9 7-12h-6z" />,
+  target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3" /></>,
   team: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 19c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 14c3.6-.7 5.7 1 6.5 4.5" /></>,
+  trophy: <><path d="M8 4h8v4c0 4-1.5 6-4 6s-4-2-4-6zM10 14v3m4-3v3M8 21h8M10 17h4" /><path d="M8 6H4v2c0 2 1.3 3.5 4 3.5M16 6h4v2c0 2-1.3 3.5-4 3.5" /></>,
 }
 
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
@@ -59,6 +62,88 @@ const routePreviewPoints = [
   'Тихая велодорожка',
   'Городская эспланада',
   'Финиш у набережной',
+]
+
+type HistoryFilter = 'all' | 'mine' | 'routes'
+type HistoryAchievementTone = 'discovery' | 'personal' | 'record'
+
+type HistoryRideData = {
+  achievement: { icon: IconName; label: string; tone: HistoryAchievementTone }
+  avatars: string[]
+  date: string
+  dateTime: string
+  distance: string
+  extraParticipants: number
+  gallery?: Array<{ image: string; position: string }>
+  hasRoute: boolean
+  id: string
+  image: string
+  imagePosition: string
+  mine: boolean
+  participants: string
+  points: string
+  subtitle: string
+  title: string
+}
+
+const historyRides: HistoryRideData[] = [
+  {
+    achievement: { icon: 'trophy', label: 'Новый рекорд', tone: 'record' },
+    avatars: ['П', 'М', 'А'],
+    date: '12 мая 2024 · 19:12',
+    dateTime: '2024-05-12T19:12:00+04:00',
+    distance: '32,7 км',
+    extraParticipants: 20,
+    hasRoute: true,
+    id: 'city-sunset',
+    image: 'brand/kabanda-team-cover.jpg',
+    imagePosition: '50% 38%',
+    mine: true,
+    participants: '23 участника',
+    points: '187 точек',
+    subtitle: 'Закрыли центр и поймали закат',
+    title: 'Центр на закате 🐗',
+  },
+  {
+    achievement: { icon: 'pin', label: '7 новых точек', tone: 'discovery' },
+    avatars: ['Л', 'П', 'М'],
+    date: '4 мая 2024 · 22:47',
+    dateTime: '2024-05-04T22:47:00+04:00',
+    distance: '28,4 км',
+    extraParticipants: 15,
+    gallery: [
+      { image: 'brand/kabanda-team-cover.jpg', position: '18% 50%' },
+      { image: 'brand/kabanda-team-cover.jpg', position: '52% 38%' },
+      { image: 'brand/kabanda-team-cover.jpg', position: '88% 50%' },
+      { image: 'brand/kabanda-login-riders.jpg', position: '50% 78%' },
+    ],
+    hasRoute: true,
+    id: 'embankment-bridges',
+    image: 'brand/kabanda-login-riders.jpg',
+    imagePosition: '38% 48%',
+    mine: false,
+    participants: '18 участников',
+    points: '156 точек',
+    subtitle: 'Ветер, вода и огни города',
+    title: 'Разводные мосты 🌉',
+  },
+  {
+    achievement: { icon: 'spark', label: 'Личный рекорд', tone: 'personal' },
+    avatars: ['М', 'А', 'К'],
+    date: '28 апреля 2024 · 11:03',
+    dateTime: '2024-04-28T11:03:00+04:00',
+    distance: '45,1 км',
+    extraParticipants: 14,
+    hasRoute: false,
+    id: 'forest-ride',
+    image: 'brand/kabanda-team-cover.jpg',
+    imagePosition: '78% 42%',
+    mine: true,
+    participants: '17 участников',
+    points: '203 точки',
+    subtitle: 'Грязь, лес и свобода',
+    title: 'Гравийный замес 🐗',
+  },
 ]
 
 function parseParticipantOrigin(value: string | null): ParticipantOrigin {
@@ -174,13 +259,7 @@ function RaidHub({ newButtonRef, onNew, onPreview, variant }: { newButtonRef: Re
           </div>}
         </section>
 
-        <section aria-labelledby="history-heading" className="rdp-section rdp-section--history">
-          <h2 id="history-heading">История</h2>
-          {isEmpty ? <CompactEmpty icon="flag" text="Первый рейд ещё впереди" /> : <div className="rdp-list-card">
-            <HistoryRow id="embankment-loop" meta="19,4 км · 14 точек" subtitle="17 мая 2025 · 10:30 · 1 ч 32 мин · Вы участвовали · 4 человека" title="Набережная кругом" />
-            <HistoryRow id="industrial-route" meta="22,7 км · 16 точек" subtitle="10 мая 2025 · 11:00 · 1 ч 48 мин · 5 участников" title="Индустриальный маршрут" />
-          </div>}
-        </section>
+        <RaidHistorySection isEmpty={isEmpty} />
       </>}
     </div>
   )
@@ -215,8 +294,59 @@ function UpcomingRow({ action = 'Открыть', avatars = ['П', 'М', '+3'], 
   return <a aria-label={`${action}: ${title}`} className="rdp-row" href={`${appPath('app')}?tab=raids&raid=${id}`}><span className="rdp-row__icon"><Icon name="calendar" /></span><span className="rdp-row__copy"><strong>{title}</strong><small><span>{subtitle}</span>{avatars.length > 0 && <span aria-label={`${avatars.length > 2 ? '5' : avatars.length} участников`} className="rdp-row__avatars">{avatars.map((avatar) => <i aria-hidden="true" key={avatar}>{avatar}</i>)}</span>}</small></span><span className="rdp-row__action"><span className="rdp-row__badge">{places}</span><small>{action}</small><Icon name="chevron" size={19} /></span></a>
 }
 
-function HistoryRow({ id, meta, subtitle, title }: { id: string; meta: string; subtitle: string; title: string }) {
-  return <a aria-label={`Открыть результат: ${title}`} className="rdp-row rdp-row--history" href={`${appPath('app')}?tab=raids&raid=${id}`}><span className="rdp-row__icon rdp-row__icon--history"><Icon name="flag" /></span><span className="rdp-row__copy"><strong>{title}</strong><small>{subtitle}</small></span><span className="rdp-row__meta">{meta}</span><Icon name="chevron" size={19} /></a>
+function RaidHistorySection({ isEmpty }: { isEmpty: boolean }) {
+  const [filter, setFilter] = useState<HistoryFilter>('all')
+  const visibleRides = historyRides.filter((ride) => filter === 'all' || (filter === 'mine' ? ride.mine : ride.hasRoute))
+  const filters: Array<{ id: HistoryFilter; label: string }> = [
+    { id: 'all', label: 'Все' },
+    { id: 'mine', label: 'Мои' },
+    { id: 'routes', label: 'С маршрутами' },
+  ]
+
+  return <section aria-labelledby="history-heading" className="rdp-section rdp-section--history">
+    <h2 id="history-heading">История</h2>
+    {isEmpty ? <CompactEmpty icon="flag" text="Первый рейд ещё впереди" /> : <>
+      <div aria-label="Фильтр истории рейдов" className="rdp-history-filters" role="group">
+        {filters.map((item) => <button aria-pressed={filter === item.id} key={item.id} onClick={() => setFilter(item.id)} type="button">{item.label}</button>)}
+      </div>
+      <span aria-live="polite" className="rdp-history-filter-status">Показано рейдов: {visibleRides.length}</span>
+      <div className="rdp-history-list" data-history-filter={filter}>
+        {visibleRides.map((ride) => <HistoryCard key={ride.id} ride={ride} />)}
+      </div>
+    </>}
+  </section>
+}
+
+function HistoryCard({ ride }: { ride: HistoryRideData }) {
+  return <a aria-label={`Открыть историю рейда: ${ride.title}. ${ride.distance}, ${ride.points}, ${ride.participants}. ${ride.date}`} className="rdp-history-card" href={`${appPath('app')}?tab=raids&raid=${ride.id}`}>
+    <span className="rdp-history-card__hero">
+      <img alt="" decoding="async" loading="lazy" src={appPath(ride.image)} style={{ objectPosition: ride.imagePosition }} />
+      <span className={`rdp-history-achievement rdp-history-achievement--${ride.achievement.tone}`}><Icon name={ride.achievement.icon} size={18} />{ride.achievement.label}</span>
+    </span>
+    <span className="rdp-history-card__body">
+      <span className="rdp-history-card__head">
+        <span className="rdp-history-card__title"><strong>{ride.title}</strong><small>{ride.subtitle}</small></span>
+        <ParticipantStack avatars={ride.avatars} extra={ride.extraParticipants} label={ride.participants} />
+      </span>
+      <span className="rdp-history-card__metrics">
+        <span><Icon name="pin" size={18} />{ride.distance}</span>
+        <span><Icon name="target" size={18} />{ride.points}</span>
+        <span><Icon name="group" size={18} />{ride.participants}</span>
+      </span>
+      <span className="rdp-history-card__date"><Icon name="calendar" size={18} /><time dateTime={ride.dateTime}>{ride.date}</time><Icon name="chevron" size={20} /></span>
+      {ride.gallery && <span aria-label={`${ride.gallery.length + 6} фотографий рейда`} className="rdp-history-gallery">
+        {ride.gallery.map((item) => <span className="rdp-history-gallery__item" key={`${item.image}-${item.position}`}><img alt="" decoding="async" loading="lazy" src={appPath(item.image)} style={{ objectPosition: item.position }} /></span>)}
+        <span aria-hidden="true" className="rdp-history-gallery__item rdp-history-gallery__more"><img alt="" decoding="async" loading="lazy" src={appPath(ride.image)} style={{ objectPosition: ride.imagePosition }} /><b>+6</b></span>
+      </span>}
+    </span>
+  </a>
+}
+
+function ParticipantStack({ avatars, extra, label }: { avatars: string[]; extra: number; label: string }) {
+  return <span aria-label={label} className="rdp-history-avatars">
+    {avatars.map((avatar, index) => <i aria-hidden="true" key={`${avatar}-${index}`}>{avatar}</i>)}
+    <i aria-hidden="true" className="rdp-history-avatars__extra">+{extra}</i>
+  </span>
 }
 
 function RouteCard({ index, noCover = false, onOpen, route }: { index: number; noCover?: boolean; onOpen: () => void; route: RouteCardData }) {
