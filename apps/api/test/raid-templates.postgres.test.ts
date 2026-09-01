@@ -79,6 +79,18 @@ function input(title = 'Набережные и мосты'): CreateRaidTemplate
   }
 }
 
+function legacyFingerprint(kabandaId: string, value: CreateRaidTemplate): string {
+  return createHash('sha256')
+    .update(JSON.stringify({
+      command: 'create-raid-template',
+      kabandaId,
+      title: value.title,
+      coverImage: value.coverImage,
+      points: value.points,
+    }))
+    .digest('hex')
+}
+
 describePostgres('raid template PostgreSQL invariants', () => {
   beforeEach(async () => {
     await pool!.query(
@@ -206,6 +218,35 @@ describePostgres('raid template PostgreSQL invariants', () => {
       statusCode: 409,
     })
     expect(coverProcessor).toHaveBeenCalledOnce()
+  })
+
+  it('replays a private create receipt written before visibility existed', async () => {
+    const { kabandaId } = await createKabanda('legacy-idempotency')
+    const memberId = await addMember(kabandaId, 'legacy-idempotency')
+    const value = input('Старый закрытый маршрут')
+    const operationId = 'legacy-template-operation'
+    const created = await raidTemplates!.createTemplate(memberId, kabandaId, value, operationId)
+    await pool!.query(
+      `UPDATE raid_template_receipts
+       SET request_fingerprint = $1
+       WHERE actor_user_id = $2 AND operation_id = $3`,
+      [legacyFingerprint(kabandaId, value), memberId, operationId],
+    )
+
+    await expect(
+      raidTemplates!.createTemplate(memberId, kabandaId, value, operationId),
+    ).resolves.toEqual(created)
+    await expect(
+      raidTemplates!.createTemplate(
+        memberId,
+        kabandaId,
+        { ...value, title: 'Подменённый маршрут' },
+        operationId,
+      ),
+    ).rejects.toMatchObject({
+      code: 'RAID_TEMPLATE_IDEMPOTENCY_CONFLICT',
+      statusCode: 409,
+    })
   })
 
   it('shows a public template to another Kabanda but keeps a private template inside its own', async () => {

@@ -119,6 +119,21 @@ function requestFingerprint(
     .digest('hex')
 }
 
+function legacyRequestFingerprint(
+  kabandaId: string,
+  input: CreateRaidTemplate,
+): string {
+  return createHash('sha256')
+    .update(JSON.stringify({
+      command: 'create-raid-template',
+      kabandaId,
+      title: input.title,
+      coverImage: input.coverImage,
+      points: input.points,
+    }))
+    .digest('hex')
+}
+
 const maximumActiveTemplatesPerKabanda = 100
 
 const earthRadiusMeters = 6_371_000
@@ -183,12 +198,20 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
     operationId: string,
   ): Promise<CreateRaidTemplateResponse> {
     const fingerprint = requestFingerprint(kabandaId, input)
+    const acceptedReplayFingerprints = input.scope === 'kabanda'
+      ? [fingerprint, legacyRequestFingerprint(kabandaId, input)]
+      : [fingerprint]
     const estimatedDistanceMeters = straightSegmentsDistanceMeters(input.points)
     return transaction(this.pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
         `${actorUserId}:${operationId}`,
       ])
-      const replay = await this.replay(client, actorUserId, operationId, fingerprint)
+      const replay = await this.replay(
+        client,
+        actorUserId,
+        operationId,
+        acceptedReplayFingerprints,
+      )
       if (replay) return replay
 
       const membership = await client.query(
@@ -352,7 +375,7 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
     client: PoolClient,
     actorUserId: string,
     operationId: string,
-    fingerprint: string,
+    acceptedFingerprints: readonly string[],
   ): Promise<CreateRaidTemplateResponse | null> {
     const result = await client.query<{
       request_fingerprint: string
@@ -374,7 +397,7 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
     const receipt = result.rows[0]
     if (!receipt) return null
     if (!receipt.access_active) throw this.notFound()
-    if (receipt.request_fingerprint !== fingerprint) {
+    if (!acceptedFingerprints.includes(receipt.request_fingerprint)) {
       throw new RaidTemplateError(
         'RAID_TEMPLATE_IDEMPOTENCY_CONFLICT',
         409,
