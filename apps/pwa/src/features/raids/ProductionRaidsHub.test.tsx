@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { KabandaSummary } from '../kabandas/types'
-import { InvitationRaidRow, ProductionCreateRaidAction, ProductionRaidsHub } from './ProductionRaidsHub'
+import { InvitationRaidRow, ProductionCreateTemplateAction, ProductionRaidsHub } from './ProductionRaidsHub'
 import type { RaidProjection } from './types'
 
 const kabanda: KabandaSummary = {
@@ -20,19 +20,20 @@ describe('ProductionRaidsHub shell', () => {
 
     expect(markup).toContain('data-testid="production-raids-hub"')
     expect(markup).toContain('aria-busy="true"')
-    expect(markup).not.toContain('data-testid="production-new-raid"')
+    expect(markup).not.toContain('data-testid="production-new-template"')
     expect(markup).not.toContain('Северное кольцо')
     expect(markup).not.toContain('Центр на закате')
   })
 
-  it('offers the canonical create action to any member only when mutations are enabled', () => {
+  it('offers the route-template action to any member only when mutations are enabled', () => {
     const markup = renderToStaticMarkup(
-      <ProductionCreateRaidAction enabled kabandaId={kabanda.id} />,
+      <ProductionCreateTemplateAction enabled kabandaId={kabanda.id} />,
     )
 
-    expect(markup).toContain('data-testid="production-new-raid"')
-    expect(markup).toContain('href="/app?createRaid=kabanda-real-id"')
-    expect(renderToStaticMarkup(<ProductionCreateRaidAction enabled={false} kabandaId={kabanda.id} />)).toBe('')
+    expect(markup).toContain('data-testid="production-new-template"')
+    expect(markup).toContain('href="/app?createRaidTemplate=kabanda-real-id"')
+    expect(markup).toContain('Новый маршрут')
+    expect(renderToStaticMarkup(<ProductionCreateTemplateAction enabled={false} kabandaId={kabanda.id} />)).toBe('')
   })
 
   it('renders a canonical invitation with accessible accept and decline actions', () => {

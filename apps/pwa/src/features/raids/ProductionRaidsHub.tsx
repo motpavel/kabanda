@@ -22,6 +22,7 @@ import {
 } from './production-model'
 import { isStaleConflict, selectPrimaryAction } from './state'
 import type { RaidProjection } from './types'
+import { RaidTemplateCatalog } from '../raid-plans/RaidTemplateCatalog'
 import '../raids-design/raids-design.css'
 import './production-raids.css'
 
@@ -249,7 +250,7 @@ export function ProductionRaidsHub({
     <section className="prd-raids" data-testid="production-raids-hub" aria-busy={resourceState === 'loading'} aria-label="Рейды Кабанды">
       <header className="rdp-heading prd-raids__heading">
         <h1>Рейды</h1>
-        <ProductionCreateRaidAction enabled={canMutate} kabandaId={kabanda.id} />
+        <ProductionCreateTemplateAction enabled={canMutate} kabandaId={kabanda.id} />
       </header>
 
       {resourceState === 'stale' && staleAt && (
@@ -312,30 +313,21 @@ export function ProductionRaidsHub({
 
           <ProductionHistory coverImage={coverImage} createRaidHref={canMutate ? createRaidHref : null} history={history} />
 
-          <section className="rdp-section prd-routes-empty" aria-labelledby="production-routes-heading" data-testid="production-route-catalog-empty">
-            <h2 id="production-routes-heading">Доступные маршруты</h2>
-            <RaidEmptyState
-              detail="Здесь появятся готовые маршруты Кабанды. Пока новый рейд создаётся без шаблона."
-              eyebrow="Скоро"
-              icon="route"
-              image={appPath('brand/kabanda-login-riders.jpg')}
-              title="Каталог маршрутов готовится"
-            />
-          </section>
+          <RaidTemplateCatalog kabandaId={kabanda.id} />
         </>
       )}
     </section>
   )
 }
 
-export function ProductionCreateRaidAction({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
+export function ProductionCreateTemplateAction({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
   if (!enabled) return null
   return <a
     className="rdp-new prd-raids__new"
-    data-testid="production-new-raid"
-    href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
+    data-testid="production-new-template"
+    href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}
   >
-    <span aria-hidden="true">＋</span> Новый рейд
+    <span aria-hidden="true">＋</span> Новый маршрут
   </a>
 }
 

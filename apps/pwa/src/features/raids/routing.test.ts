@@ -16,9 +16,17 @@ describe('raid deep-link routing', () => {
     })
   })
 
+  it('opens the route constructor without creating an operational raid', () => {
+    expect(parseRaidRoute('?createRaidTemplate=33333333-3333-4333-8333-333333333333')).toEqual({
+      kind: 'create-template',
+      kabandaId: '33333333-3333-4333-8333-333333333333',
+    })
+  })
+
   it('rejects malformed locators before an API lookup', () => {
     expect(parseRaidRoute('?raid=../../private')).toEqual({ kind: 'invalid' })
     expect(parseRaidRoute('?createRaid=not-a-uuid')).toEqual({ kind: 'invalid' })
+    expect(parseRaidRoute('?createRaidTemplate=not-a-uuid')).toEqual({ kind: 'invalid' })
     expect(parseRaidRoute('?kabanda=22222222-2222-4222-8222-222222222222')).toEqual({ kind: 'home' })
   })
 })

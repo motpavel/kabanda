@@ -3,9 +3,11 @@ import { DatabaseAuthService } from './auth.js'
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
 import { assertDatabaseReady, createDatabase } from './database.js'
+import { NominatimReverseGeocoder } from './geocoding.js'
 import { SmtpMagicLinkMailer } from './mailer.js'
 import { DatabaseKabandaService } from './kabandas.js'
 import { DatabaseRaidService } from './raids.js'
+import { DatabaseRaidTemplateService } from './raid-templates.js'
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url) })
 
@@ -28,10 +30,18 @@ const kabandas = new DatabaseKabandaService(database, {
   sessionTtlDays: config.SESSION_TTL_DAYS,
 })
 const raids = new DatabaseRaidService(database, config.MEDIA_CAPABILITY_SECRET)
+const raidTemplates = new DatabaseRaidTemplateService(database)
+const geocoding = new NominatimReverseGeocoder({
+  baseUrl: config.NOMINATIM_BASE_URL,
+  appOrigin: config.APP_ORIGIN,
+  userAgent: `KabandaClosedAlpha/${config.API_BUILD_ID} (${config.APP_ORIGIN})`,
+})
 const app = await buildApp({
   auth,
   kabandas,
   raids,
+  raidTemplates,
+  geocoding,
   config,
   readiness: () => assertDatabaseReady(database, config.EXPECTED_MIGRATION),
 })

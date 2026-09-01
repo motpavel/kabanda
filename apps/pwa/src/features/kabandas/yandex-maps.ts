@@ -1,21 +1,28 @@
+/** JavaScript API 2.1 boundary order: [latitude, longitude]. */
 export type YandexCoordinates = readonly [number, number]
 
-type YandexEvent = {
-  get: (name: string) => unknown
+export type YandexEvent = {
+  get: <Value = unknown>(name: string) => Value
   stopPropagation?: () => void
 }
 
-type YandexEventManager = {
-  add: (name: string, handler: (event: YandexEvent) => void) => void
+export type YandexEventHandler = (event: YandexEvent) => void
+
+export type YandexEventManager = {
+  add: (name: string, handler: YandexEventHandler) => void
+  remove?: (name: string, handler: YandexEventHandler) => void
 }
 
-type YandexDataManager = {
+export type YandexDataManager = {
+  get: <Value = unknown>(name: string) => Value
   set: (name: string, value: unknown) => void
 }
 
-type YandexOptionManager = {
+export type YandexOptionManager = {
   set: (name: string, value: unknown) => void
 }
+
+export type YandexMapObject = object
 
 export type YandexPlacemark = {
   events: YandexEventManager
@@ -26,8 +33,8 @@ export type YandexPlacemark = {
 export type YandexMap = {
   events: YandexEventManager
   geoObjects: {
-    add: (object: YandexPlacemark) => void
-    remove: (object: YandexPlacemark) => void
+    add: (object: YandexMapObject) => void
+    remove: (object: YandexMapObject) => void
   }
   getCenter: () => YandexCoordinates
   getZoom: () => number
@@ -37,6 +44,28 @@ export type YandexMap = {
   }) => void
   setZoom: (zoom: number, options?: { duration?: number }) => void
   destroy: () => void
+}
+
+export type YandexPolyline = {
+  geometry: {
+    getCoordinates?: () => unknown
+    setCoordinates: (coordinates: readonly YandexCoordinates[] | YandexCoordinates) => void
+  }
+  editor?: {
+    startEditing: () => void
+    stopEditing: () => void
+  }
+}
+
+export type YandexMultiRouteRoute = {
+  properties: YandexDataManager
+}
+
+export type YandexMultiRoute = {
+  model: {
+    events: YandexEventManager
+  }
+  getActiveRoute: () => YandexMultiRouteRoute | null
 }
 
 export type YandexMapsRuntime = {
@@ -49,6 +78,26 @@ export type YandexMapsRuntime = {
     type?: string
   }, options?: { suppressMapOpenBlock?: boolean }) => YandexMap
   Placemark: new (coordinates: YandexCoordinates, properties?: Record<string, unknown>, options?: Record<string, unknown>) => YandexPlacemark
+  Polyline: new (
+    coordinates: readonly YandexCoordinates[],
+    properties?: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ) => YandexPolyline
+  multiRouter: {
+    MultiRoute: new (model: {
+      referencePoints: readonly YandexCoordinates[]
+      params?: {
+        results?: number
+        reverseGeocoding?: boolean
+        routingMode?: 'auto' | 'masstransit' | 'pedestrian' | 'bicycle'
+      }
+    }, options?: Record<string, unknown>) => YandexMultiRoute
+  }
+  coordSystem: {
+    geo: {
+      getDistance: (from: YandexCoordinates, to: YandexCoordinates) => number
+    }
+  }
   templateLayoutFactory: {
     createClass: (template: string) => unknown
   }

@@ -11,6 +11,7 @@ import {
 import { buildApp, privacySafeOperationRef } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import type { KabandaService } from '../src/kabandas.js'
+import { GeocodingError, type GeocodingService } from '../src/geocoding.js'
 import {
   deriveMediaUploadCapability,
   escapeShareCardXml,
@@ -19,6 +20,11 @@ import {
   type RaidResult,
   type RaidService,
 } from '../src/raids.js'
+import {
+  RaidTemplateError,
+  type RaidTemplateProjection,
+  type RaidTemplateService,
+} from '../src/raid-templates.js'
 
 const user: User = {
   id: '7484a9f8-11dd-45bd-9740-44b52413fa6b',
@@ -107,6 +113,16 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
   }
 }
 
+function createRaidTemplates(overrides: Partial<RaidTemplateService> = {}): RaidTemplateService {
+  return {
+    createTemplate: vi.fn(),
+    listTemplates: vi.fn().mockResolvedValue([]),
+    getTemplate: vi.fn(),
+    readCover: vi.fn(),
+    ...overrides,
+  }
+}
+
 const apps: Array<Awaited<ReturnType<typeof buildApp>>> = []
 const temporaryDirectories: string[] = []
 
@@ -122,12 +138,16 @@ async function createTestApp(
   options: {
     environment?: Record<string, string>
     onDiagnosticSignal?: (signal: Parameters<NonNullable<import('../src/app.js').AppDependencies['onDiagnosticSignal']>>[0]) => void
+    raidTemplates?: RaidTemplateService
+    geocoding?: GeocodingService
   } = {},
 ) {
   const app = await buildApp({
     auth,
     kabandas,
     ...(raids ? { raids } : {}),
+    ...(options.raidTemplates ? { raidTemplates: options.raidTemplates } : {}),
+    ...(options.geocoding ? { geocoding: options.geocoding } : {}),
     config: loadConfig({ NODE_ENV: 'test', ...options.environment }),
     readiness: vi.fn().mockResolvedValue(undefined),
     ...(options.onDiagnosticSignal ? { onDiagnosticSignal: options.onDiagnosticSignal } : {}),
@@ -1251,5 +1271,308 @@ describe('API foundation', () => {
       expect(response.statusCode).toBe(200)
       expect(handler).toHaveBeenCalledWith(user.id, raidId, 9, `operation-${path}`)
     }
+  })
+
+  it('registers the atomic raid-template create, catalog, detail and cover routes', async () => {
+    const kabandaId = 'c0e4f157-6a6d-43aa-a9ba-04aee1ff0f14'
+    const templateId = '49b5f9ca-11fb-4474-a616-ddeec22445a6'
+    const template: RaidTemplateProjection = {
+      id: templateId,
+      scope: 'kabanda',
+      kabandaId,
+      createdByUserId: user.id,
+      title: 'Набережные и мосты',
+      version: 1,
+      cover: {
+        url: `/api/raid-templates/${templateId}/cover`,
+        sha256: 'a'.repeat(64),
+        width: 1_280,
+        height: 720,
+      },
+      pointCount: 2,
+      estimate: {
+        method: 'straight_segments',
+        distanceMeters: 1_269,
+      },
+      points: [
+        {
+          id: '3497db55-dfb9-4820-8fa5-c16932fc3c5c',
+          position: 0,
+          name: 'Старт',
+          address: 'Улица Первая, 1',
+          comment: '',
+          latitude: 56.85,
+          longitude: 53.2,
+        },
+        {
+          id: 'f33da1a3-e7fc-4d10-bcc8-17417c3eb1e1',
+          position: 1,
+          name: 'Финиш',
+          address: 'Улица Вторая, 2',
+          comment: 'Собираемся у входа',
+          latitude: 56.86,
+          longitude: 53.21,
+        },
+      ],
+      createdAt: '2026-09-01T08:01:00.000Z',
+      updatedAt: '2026-09-01T08:01:00.000Z',
+    }
+    const createTemplate = vi.fn().mockResolvedValue({
+      receipt: {
+        operationId: 'template-operation',
+        command: 'create-raid-template',
+        resultingVersion: 1,
+        serverAt: template.createdAt,
+      },
+      template,
+    })
+    const listTemplates = vi.fn().mockResolvedValue([{ ...template, points: undefined }])
+    const getTemplate = vi.fn().mockResolvedValue(template)
+    const readCover = vi.fn().mockResolvedValue({
+      bytes: Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+      contentType: 'image/jpeg',
+      sha256: 'a'.repeat(64),
+    })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      undefined,
+      {
+        raidTemplates: createRaidTemplates({
+          createTemplate,
+          listTemplates,
+          getTemplate,
+          readCover,
+        }),
+      },
+    )
+    const input = {
+      title: ' Набережные и мосты ',
+      coverImage: `data:image/jpeg;base64,${'A'.repeat(140_000)}`,
+      points: template.points.map(({ name, address, comment, latitude, longitude }) => ({
+        name,
+        address,
+        comment,
+        latitude,
+        longitude,
+      })),
+    }
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers: {
+        origin: testOrigin,
+        cookie: 'kabanda_session=session',
+        'idempotency-key': 'template-operation',
+      },
+      payload: input,
+    })
+    expect(created.statusCode).toBe(201)
+    expect(created.headers['cache-control']).toBe('private, no-store')
+    expect(createTemplate).toHaveBeenCalledWith(
+      user.id,
+      kabandaId,
+      { ...input, title: 'Набережные и мосты' },
+      'template-operation',
+    )
+
+    const catalog = await app.inject({
+      method: 'GET',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(catalog.statusCode).toBe(200)
+    expect(catalog.headers['cache-control']).toBe('private, no-store')
+    expect(listTemplates).toHaveBeenCalledWith(user.id, kabandaId)
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/raid-templates/${templateId}`,
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(detail.json()).toEqual({ template })
+    expect(getTemplate).toHaveBeenCalledWith(user.id, templateId)
+
+    const cover = await app.inject({
+      method: 'GET',
+      url: `/api/raid-templates/${templateId}/cover`,
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(cover.statusCode).toBe(200)
+    expect(cover.headers['content-type']).toMatch(/^image\/jpeg/)
+    expect(cover.headers.etag).toBe(`"${'a'.repeat(64)}"`)
+    expect(cover.rawPayload).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0xd9]))
+    expect(readCover).toHaveBeenCalledWith(user.id, templateId)
+  })
+
+  it('bounds raid-template writes and preserves not-found authorization semantics', async () => {
+    const kabandaId = 'c0e4f157-6a6d-43aa-a9ba-04aee1ff0f14'
+    const createTemplate = vi.fn()
+    const listTemplates = vi.fn().mockRejectedValue(
+      new RaidTemplateError('RAID_TEMPLATE_NOT_FOUND', 404, 'Шаблон рейда не найден'),
+    )
+    const service = createRaidTemplates({ createTemplate, listTemplates })
+    const anonymousApp = await createTestApp(createAuth(), createKabandas(), undefined, {
+      raidTemplates: service,
+    })
+    const anonymous = await anonymousApp.inject({
+      method: 'GET',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+    })
+    expect(anonymous.statusCode).toBe(401)
+    expect(listTemplates).not.toHaveBeenCalled()
+
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      undefined,
+      { raidTemplates: service },
+    )
+    const headers = {
+      origin: testOrigin,
+      cookie: 'kabanda_session=session',
+      'idempotency-key': 'template-operation',
+    }
+    const point = {
+      name: 'Точка',
+      address: 'Адрес',
+      comment: '',
+      latitude: 56.85,
+      longitude: 53.2,
+    }
+    const invalid = await app.inject({
+      method: 'POST',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers,
+      payload: {
+        title: 'Слишком много точек',
+        coverImage: 'data:image/jpeg;base64,AAAA',
+        points: Array.from({ length: 11 }, () => point),
+      },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(createTemplate).not.toHaveBeenCalled()
+
+    const legacyClientEstimate = await app.inject({
+      method: 'POST',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers,
+      payload: {
+        title: 'Маршрут без сохраняемой оценки Яндекса',
+        coverImage: 'data:image/jpeg;base64,AAAA',
+        points: [point, { ...point, longitude: 53.21 }],
+        estimate: {
+          status: 'ready',
+          mode: 'bicycle',
+          distanceMeters: 8_400,
+          computedAt: '2026-09-01T08:00:00.000Z',
+        },
+      },
+    })
+    expect(legacyClientEstimate.statusCode).toBe(400)
+    expect(createTemplate).not.toHaveBeenCalled()
+
+    const oversized = await app.inject({
+      method: 'POST',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers,
+      payload: {
+        title: 'Слишком большая обложка',
+        coverImage: `data:image/jpeg;base64,${'A'.repeat(800_000)}`,
+        points: [point, point],
+      },
+    })
+    expect(oversized.statusCode).toBe(413)
+
+    createTemplate.mockRejectedValueOnce(new RaidTemplateError(
+      'RAID_TEMPLATE_LIMIT_REACHED',
+      409,
+      'В Кабанде может быть не больше 100 маршрутов',
+      { maximum: 100 },
+    ))
+    const atLimit = await app.inject({
+      method: 'POST',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers,
+      payload: {
+        title: 'Маршрут 101',
+        coverImage: 'data:image/jpeg;base64,AAAA',
+        points: [point, { ...point, longitude: 53.21 }],
+      },
+    })
+    expect(atLimit.statusCode).toBe(409)
+    expect(atLimit.json()).toMatchObject({
+      error: {
+        code: 'RAID_TEMPLATE_LIMIT_REACHED',
+        message: 'В Кабанде может быть не больше 100 маршрутов',
+        details: { maximum: 100 },
+      },
+    })
+
+    const hidden = await app.inject({
+      method: 'GET',
+      url: `/api/kabandas/${kabandaId}/raid-templates`,
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(hidden.statusCode).toBe(404)
+    expect(hidden.json().error.code).toBe('RAID_TEMPLATE_NOT_FOUND')
+  })
+
+  it('keeps reverse geocoding authenticated, inside Izhevsk and response-bounded', async () => {
+    const reverse = vi.fn().mockResolvedValue({
+      name: 'Ротонда',
+      address: 'Набережная, Ижевск',
+      source: 'openstreetmap',
+    })
+    const anonymousApp = await createTestApp(createAuth(), createKabandas(), undefined, {
+      geocoding: { reverse },
+    })
+    const anonymous = await anonymousApp.inject({
+      method: 'GET',
+      url: '/api/geocoding/reverse?latitude=56.85&longitude=53.2',
+    })
+    expect(anonymous.statusCode).toBe(401)
+    expect(reverse).not.toHaveBeenCalled()
+
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      undefined,
+      { geocoding: { reverse } },
+    )
+    const outsideIzhevsk = await app.inject({
+      method: 'GET',
+      url: '/api/geocoding/reverse?latitude=55.75&longitude=37.62',
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(outsideIzhevsk.statusCode).toBe(400)
+    expect(reverse).not.toHaveBeenCalled()
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/geocoding/reverse?latitude=56.85&longitude=53.2',
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.json()).toEqual({
+      name: 'Ротонда',
+      address: 'Набережная, Ижевск',
+      source: 'openstreetmap',
+    })
+    expect(reverse).toHaveBeenCalledWith(56.85, 53.2)
+
+    reverse.mockRejectedValueOnce(new GeocodingError(
+      'GEOCODING_PROVIDER_UNAVAILABLE',
+      503,
+      'Не удалось определить адрес. Введите его вручную',
+    ))
+    const unavailable = await app.inject({
+      method: 'GET',
+      url: '/api/geocoding/reverse?latitude=56.86&longitude=53.21',
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(unavailable.statusCode).toBe(503)
+    expect(unavailable.json().error.code).toBe('GEOCODING_PROVIDER_UNAVAILABLE')
   })
 })

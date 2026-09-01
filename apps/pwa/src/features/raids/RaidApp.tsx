@@ -59,6 +59,7 @@ import { ActiveRaidPanel } from './recording/ActiveRaidPanel'
 import { FinalizationPanel } from '../results/FinalizationPanel'
 import { ResultPanel } from '../results/ResultPanel'
 import { leaveRaid } from '../results/api'
+import { RaidTemplateEditorRoute } from '../raid-plans/editor/RaidTemplateEditorPage'
 import './raids.css'
 
 type RaidIdentity = { id: string }
@@ -136,6 +137,7 @@ export function RaidApp({ route }: { route: Exclude<RaidRoute, { kind: 'home' }>
   if (session.status === 'unavailable') return <RaidShell><EmptyState title="Не удалось проверить вход" detail="Соединение недоступно, а сохранённой identity на этом устройстве нет. Попробуйте ещё раз онлайн." /></RaidShell>
   if (route.kind === 'invalid') return <RaidShell><EmptyState title="Ссылка на рейд некорректна" detail="Откройте рейд с главной страницы КАБАНДЫ." /></RaidShell>
   if (session.source === 'cached' && route.kind !== 'raid') return <RaidShell><EmptyState title="Доступна только сохранённая копия" detail="Создание рейда требует подтверждённой онлайн-сессии." /></RaidShell>
+  if (route.kind === 'create-template') return <RaidTemplateEditorRoute identityId={session.identity.id} kabandaId={route.kabandaId} />
   if (route.kind === 'create') return <CreateRaidPage identityId={session.identity.id} kabandaId={route.kabandaId} />
   return <RaidDetailPage
     key={raidDetailRemountKey(session.identity.id, route.raidId)}
