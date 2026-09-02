@@ -208,6 +208,15 @@ export async function registerRaidRoutes(
     return { raid: await dependencies.raids.getRaid(user.id, raidId) }
   })
 
+  app.get('/api/raids/:raidId/route/track', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send({ track: await dependencies.raids.getRouteTrack(user.id, raidId) })
+  })
+
   app.get('/api/raids/:raidId/result', async (request, reply) => {
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)

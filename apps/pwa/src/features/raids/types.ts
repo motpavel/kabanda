@@ -119,6 +119,20 @@ export interface RouteBatchResponse {
   serverAt: string
 }
 
+export interface RouteTrackPoint {
+  latitude: number
+  longitude: number
+  capturedAt: string
+}
+
+export interface RouteTrackProjection {
+  segments: RouteTrackPoint[][]
+  pointCount: number
+  truncated: boolean
+  updatedAt: string | null
+  serverAt: string
+}
+
 export interface RouteLeaseResponse {
   receipt: {
     operationId: string

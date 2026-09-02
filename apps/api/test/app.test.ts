@@ -87,6 +87,7 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
     acquireNavigatorLease: vi.fn(),
     recoverNavigatorLease: vi.fn(),
     submitRouteBatch: vi.fn(),
+    getRouteTrack: vi.fn().mockResolvedValue({ segments: [], pointCount: 0, truncated: false, updatedAt: null, serverAt: '2026-08-28T12:00:00.000Z' }),
     getRaid: vi.fn(),
     getCurrent: vi.fn().mockResolvedValue(null),
     listActionable: vi.fn().mockResolvedValue([]),
@@ -1107,6 +1108,34 @@ describe('API foundation', () => {
     )
     expect(JSON.stringify(response.json())).not.toContain('56.85')
     expect(JSON.stringify(response.json())).not.toContain('53.2')
+  })
+
+  it('returns the private no-store route track to an authenticated viewer', async () => {
+    const track = {
+      segments: [[
+        { latitude: 56.85, longitude: 53.2, capturedAt: '2026-08-28T12:00:00.000Z' },
+        { latitude: 56.851, longitude: 53.201, capturedAt: '2026-08-28T12:00:05.000Z' },
+      ]],
+      pointCount: 2,
+      truncated: false,
+      updatedAt: '2026-08-28T12:00:05.000Z',
+      serverAt: '2026-08-28T12:00:06.000Z',
+    }
+    const getRouteTrack = vi.fn().mockResolvedValue(track)
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ getRouteTrack }),
+    )
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/route/track',
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.json()).toEqual({ track })
+    expect(getRouteTrack).toHaveBeenCalledWith(user.id, '81297402-898c-48d6-bc78-c74b6b38205c')
   })
 
   it('registers the canonical route lease acquire endpoint', async () => {

@@ -1295,6 +1295,17 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       'route-batch-fill-gap',
     )
     expect(filled.routeStatus.missingSequenceCount).toBe(0)
+    const track = await raidService!.getRouteTrack(ownerId, acquired.raid.id)
+    expect(track).toMatchObject({ pointCount: 3, truncated: false })
+    expect(track.segments.flat().map(({ latitude, longitude }) => [latitude, longitude])).toEqual([
+      [56.8501, 53.2001],
+      [56.8502, 53.2002],
+      [56.85, 53.2],
+    ])
+    const outsider = await ownerAndKabanda('route-track-outsider')
+    await expect(raidService!.getRouteTrack(outsider.ownerId, acquired.raid.id)).rejects.toMatchObject({
+      code: 'RAID_NOT_FOUND',
+    })
     await expect(
       raidService!.submitRouteBatch(
         ownerId,

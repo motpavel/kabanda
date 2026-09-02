@@ -443,6 +443,57 @@
 .checkin-gallery figcaption { padding: .5rem; font-size: .75rem; color: var(--kb-muted); }
 .route-recorder__secondary { width: 100%; text-align: center; }
 
+.route-live-card {
+  position: relative;
+  min-height: 320px;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--kb-line);
+  border-radius: 18px;
+  background: #e6e8df;
+  box-shadow: 0 8px 26px rgb(35 42 53 / 10%);
+}
+.route-live-map { position: absolute; inset: 0; min-height: 320px; }
+.route-live-map__state {
+  position: absolute;
+  z-index: 6;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  border: 1px solid rgb(35 42 53 / 10%);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--kb-muted);
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 4px 16px rgb(35 42 53 / 12%);
+  font-size: .78rem;
+  font-weight: 680;
+  text-align: center;
+  backdrop-filter: blur(12px);
+}
+.route-live-map__state--error { color: #9d3026; }
+.route-live-map__state--notice { color: #665321; }
+.route-live-map__rider {
+  display: block;
+  box-sizing: border-box;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgb(255 255 255 / 96%);
+  border-radius: 50%;
+  background: #fff url('/brand/kabanda-logo-reference.png') center / 40px 40px no-repeat;
+  box-shadow: 0 5px 16px rgb(35 42 53 / 32%), 0 0 0 1px rgb(35 42 53 / 10%);
+  pointer-events: none;
+}
+
+@media (min-width: 700px) {
+  .route-live-card,
+  .route-live-map { min-height: 420px; }
+}
+
 .raid-auth,
 .raid-empty {
   width: min(100%, 540px);

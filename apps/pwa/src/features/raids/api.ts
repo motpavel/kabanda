@@ -5,6 +5,7 @@ import type {
   RaidProjection,
   RouteBatchInput,
   RouteBatchResponse,
+  RouteTrackProjection,
   RouteLeaseResponse,
   ReadinessReportInput,
   ReadinessReportResponse,
@@ -56,6 +57,13 @@ export function sendRouteBatch(
       body: JSON.stringify(input),
     },
   )
+}
+
+export async function getRouteTrack(raidId: string): Promise<RouteTrackProjection> {
+  const response = await requestJson<{ track: RouteTrackProjection }>(
+    `/api/raids/${encodeURIComponent(raidId)}/route/track`,
+  )
+  return response.track
 }
 
 export async function listActionableRaids(kabandaId: string): Promise<RaidProjection[]> {

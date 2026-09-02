@@ -118,6 +118,20 @@ export type RouteBatchInput = {
   samples: RouteSampleInput[]
 }
 
+export type RouteTrackPoint = {
+  latitude: number
+  longitude: number
+  capturedAt: string
+}
+
+export type RouteTrackProjection = {
+  segments: RouteTrackPoint[][]
+  pointCount: number
+  truncated: boolean
+  updatedAt: string | null
+  serverAt: string
+}
+
 export type RouteStatusProjection = {
   status: RouteStatusCode
   navigatorUserId: string | null
@@ -474,6 +488,7 @@ export interface RaidService {
     input: RouteBatchInput,
     operationId: string,
   ): Promise<RouteBatchResponse>
+  getRouteTrack(actorUserId: string, raidId: string): Promise<RouteTrackProjection>
   getRaid(actorUserId: string, raidId: string): Promise<RaidProjection>
   getCurrent(actorUserId: string): Promise<RaidProjection | null>
   listActionable(actorUserId: string, kabandaId: string): Promise<RaidProjection[]>
@@ -942,6 +957,105 @@ export class DatabaseRaidService implements RaidService {
       })
       return response
     })
+  }
+
+  async getRouteTrack(actorUserId: string, raidId: string): Promise<RouteTrackProjection> {
+    const client = await this.pool.connect()
+    try {
+      const access = await client.query<{
+        state: RaidState
+        role: 'owner' | 'member'
+        participant_state: RaidParticipantState | null
+      }>(
+        `SELECT r.state, m.role, p.state AS participant_state FROM raids r
+         JOIN kabandas k ON k.id = r.kabanda_id AND k.archived_at IS NULL
+         JOIN kabanda_memberships m
+           ON m.kabanda_id = r.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
+         LEFT JOIN raid_participants p ON p.raid_id = r.id AND p.user_id = $2
+         WHERE r.id = $1`,
+        [raidId, actorUserId],
+      )
+      const visibility = access.rows[0]
+      const mayReadActiveTrack = visibility?.role === 'owner' || visibility?.participant_state === 'active'
+      const mayReadCompletedTrack = visibility?.state === 'completed'
+      if (!visibility || (!mayReadActiveTrack && !mayReadCompletedTrack)) throw this.notFound()
+
+      const result = await client.query<{
+        lease_id: string
+        generation: number
+        sequence: string | number
+        captured_at: Date
+        latitude: number
+        longitude: number
+        continues_previous: boolean
+        server_at: Date
+      }>(
+        `WITH ordered AS (
+           SELECT s.lease_id, l.generation, s.sequence, s.captured_at, s.geom, s.accuracy_m,
+             r.state,
+             lag(s.sequence) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_sequence,
+             lag(s.captured_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_at,
+             lag(s.geom) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_geom,
+             lag(s.accuracy_m) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_accuracy,
+             c.max_sequence AS final_sequence
+           FROM raid_route_samples s
+           JOIN raid_navigator_leases l ON l.id = s.lease_id AND l.raid_id = s.raid_id
+           JOIN raids r ON r.id = s.raid_id
+           LEFT JOIN raid_route_finalization_cutoffs c
+             ON c.raid_id = s.raid_id AND c.lease_id = s.lease_id
+           WHERE s.raid_id = $1
+         )
+         SELECT lease_id, generation, sequence, captured_at,
+           ST_Y(geom::geometry) AS latitude,
+           ST_X(geom::geometry) AS longitude,
+           (previous_geom IS NOT NULL
+             AND sequence = previous_sequence + 1
+             AND previous_accuracy <= 50
+             AND extract(epoch FROM (captured_at - previous_at)) BETWEEN 0 AND 120
+             AND ST_Distance(geom, previous_geom) <= 2000
+             AND ST_Distance(geom, previous_geom) /
+               greatest(extract(epoch FROM (captured_at - previous_at)), 0.001) <= 50
+             AND EXISTS (SELECT 1 FROM raid_activity_windows w
+               WHERE w.raid_id = $1 AND previous_at >= w.opened_at
+                 AND captured_at <= coalesce(w.closed_at, clock_timestamp()))) AS continues_previous,
+           clock_timestamp() AS server_at
+         FROM ordered
+         WHERE accuracy_m <= 50
+           AND (state IN ('active', 'paused') OR sequence <= final_sequence)
+           AND EXISTS (SELECT 1 FROM raid_activity_windows w
+             WHERE w.raid_id = $1 AND captured_at >= w.opened_at
+               AND captured_at <= coalesce(w.closed_at, clock_timestamp()))
+         ORDER BY generation, sequence
+         LIMIT 10001`,
+        [raidId],
+      )
+      const rows = result.rows.slice(0, 10_000)
+      const segments: RouteTrackPoint[][] = []
+      let current: RouteTrackPoint[] = []
+      let previousLeaseId: string | null = null
+      for (const row of rows) {
+        const point: RouteTrackPoint = {
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          capturedAt: row.captured_at.toISOString(),
+        }
+        if (!row.continues_previous || row.lease_id !== previousLeaseId) {
+          current = []
+          segments.push(current)
+        }
+        current.push(point)
+        previousLeaseId = row.lease_id
+      }
+      return {
+        segments,
+        pointCount: rows.length,
+        truncated: result.rows.length > rows.length,
+        updatedAt: rows.at(-1)?.captured_at.toISOString() ?? null,
+        serverAt: result.rows[0]?.server_at.toISOString() ?? new Date().toISOString(),
+      }
+    } finally {
+      client.release()
+    }
   }
 
   async nearbyCheckins(
