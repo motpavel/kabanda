@@ -134,7 +134,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   await waitForServiceWorkerControl(page)
   await expect(page.getByLabel(/Активный рейд Offline recovery raid/)).toBeVisible({ timeout: 30_000 })
   await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
-  await expect(page.getByLabel('Подтверждение точки')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
 
   const serverBaseline = fixture<RaidCounts>('inspect-raid', raid.id)

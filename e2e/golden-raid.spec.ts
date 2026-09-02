@@ -112,6 +112,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Все здесь — начать рейд' }).click()
 
   await expect(page.getByLabel(/Активный рейд Синтетический золотой рейд/)).toBeVisible()
+  await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { status: string } } }>(
       page,
@@ -120,7 +121,6 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     )
     return response.raid.routeStatus.status
   }, { timeout: 30_000 }).toBe('fresh')
-  await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { acceptedSampleCount: number } } }>(
       page,
@@ -141,7 +141,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   }, { timeout: 30_000 }).toBeGreaterThan(1)
   await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByLabel('Моё положение')).toBeVisible()
-  await expect(page.getByLabel('Подтверждение точки')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
   await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
