@@ -4,6 +4,7 @@ import {
   checkInAttentionState,
   participantSelectionAfterPresenceRefresh,
   participantSelectionKey,
+  participantSelectionScopeKey,
   selectCheckInPrimary,
 } from './state'
 
@@ -39,6 +40,15 @@ describe('organizer participant attestation', () => {
   it('uses a stable key for the exact selected participant set', () => {
     expect(participantSelectionKey(['user-b', 'user-a', 'user-b'])).toBe('user-a:user-b')
     expect(participantSelectionKey(['user-a'])).not.toBe(participantSelectionKey(['user-a', 'user-b']))
+  })
+
+  it('keeps one manual selection scope when the nearby point changes or disappears', () => {
+    expect(participantSelectionScopeKey('organizer', 'point-a', 'operation-a')).toBe(
+      participantSelectionScopeKey('organizer', '', 'operation-a'),
+    )
+    expect(participantSelectionScopeKey('organizer', 'point-a', null)).not.toBe(
+      participantSelectionScopeKey('organizer', 'point-b', null),
+    )
   })
 
   it('drops departed participants before a check-in payload is built', () => {

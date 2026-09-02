@@ -4,6 +4,16 @@ export function participantSelectionKey(participantIds: readonly string[]): stri
   return Array.from(new Set(participantIds)).sort().join(':')
 }
 
+export function participantSelectionScopeKey(
+  identityId: string,
+  selectedPointId: string,
+  manualOperationId: string | null,
+): string {
+  return manualOperationId
+    ? `manual:${identityId}:${manualOperationId}`
+    : `point:${identityId}:${selectedPointId}`
+}
+
 export function activeParticipantSelection(
   identityId: string,
   selectedParticipantIds: readonly string[],

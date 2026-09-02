@@ -21,6 +21,7 @@ import {
   checkInAttentionState,
   participantSelectionAfterPresenceRefresh,
   participantSelectionKey,
+  participantSelectionScopeKey,
   selectCheckInPrimary,
 } from './state'
 import {
@@ -93,7 +94,7 @@ export function CheckInPanel({
   const senderTabId = useRef(tabId()).current
   const actionKeys = useRef(new Map<string, string>())
   const manualParticipantChoices = useRef(new Map<string, boolean>())
-  const restoredManualAttemptKey = useRef<string | null>(null)
+  const initializedParticipantScopeKey = useRef<string | null>(null)
   const replaying = useRef(false)
   const replayRequested = useRef(false)
   const { setUnsyncedCheckInWork } = useRecordingRuntime()
@@ -107,7 +108,11 @@ export function CheckInPanel({
   ) ?? null
   const manualResponse = manualAttempt?.response as CheckInResponse | null
   const manualAttemptOperationId = manualAttempt?.operationId ?? null
-  const manualAttemptRestoreKey = manualAttempt ? `${identityId}:${manualAttempt.operationId}` : null
+  const participantScopeKey = participantSelectionScopeKey(
+    identityId,
+    selectedPointId,
+    manualAttemptOperationId,
+  )
   const reservedFallback = manualAttempt?.fallbackSubmission ?? null
   const fallbackMedia = local?.media.find((draft) =>
     draft.status === 'accepted' && draft.purpose === 'fallback' &&
@@ -137,13 +142,6 @@ export function CheckInPanel({
   }, [nearbyPoints])
 
   useEffect(() => {
-    setSelectedParticipants([identityId])
-    setNearbyParticipantIds([])
-    setAttestedParticipantKey(null)
-    manualParticipantChoices.current.clear()
-  }, [identityId, selectedPointId])
-
-  useEffect(() => {
     for (const participantId of manualParticipantChoices.current.keys()) {
       if (!activeParticipantIds.has(participantId)) manualParticipantChoices.current.delete(participantId)
     }
@@ -152,24 +150,15 @@ export function CheckInPanel({
   }, [activeParticipantIds, identityId])
 
   useEffect(() => {
-    if (!manualAttempt) {
-      const hadManualAttempt = restoredManualAttemptKey.current !== null
-      restoredManualAttemptKey.current = null
-      if (hadManualAttempt) {
-        manualParticipantChoices.current.clear()
-        setSelectedParticipants([identityId])
-      }
-      return
-    }
-    if (restoredManualAttemptKey.current === manualAttemptRestoreKey) return
-    restoredManualAttemptKey.current = manualAttemptRestoreKey
+    if (initializedParticipantScopeKey.current === participantScopeKey) return
+    initializedParticipantScopeKey.current = participantScopeKey
     manualParticipantChoices.current.clear()
-    setSelectedParticipants(activeParticipantSelection(
-      identityId,
-      manualAttempt.presentParticipantIds,
-      activeParticipantIds,
-    ))
-  }, [activeParticipantIds, identityId, manualAttempt, manualAttemptRestoreKey])
+    setNearbyParticipantIds([])
+    setAttestedParticipantKey(null)
+    setSelectedParticipants(manualAttempt
+      ? activeParticipantSelection(identityId, manualAttempt.presentParticipantIds, activeParticipantIds)
+      : [identityId])
+  }, [activeParticipantIds, identityId, manualAttempt, participantScopeKey])
 
   useEffect(() => {
     if (!viewerIsOrganizer || raid.state !== 'active' || !selectedPointId || !navigator.onLine) return
