@@ -16,7 +16,12 @@ import {
 import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, validateMediaFile } from './platform'
 import { replayOneCheckInOrMedia } from './replay'
 import { loadCheckInExtras } from './refresh'
-import { selectCheckInPrimary } from './state'
+import {
+  activeParticipantSelection,
+  checkInAttentionState,
+  participantSelectionKey,
+  selectCheckInPrimary,
+} from './state'
 import {
   enqueueCheckIn,
   getCheckInLocalState,
@@ -58,6 +63,7 @@ export function CheckInPanel({
   nearbyPoints,
   presentation = 'card',
   onPendingChange,
+  onAttentionChange,
 }: {
   identityId: string
   raid: RaidProjection
@@ -67,12 +73,13 @@ export function CheckInPanel({
   nearbyPoints?: NearbyPoint[]
   presentation?: 'card' | 'map-sheet'
   onPendingChange?: (count: number) => void
+  onAttentionChange?: (state: { count: number; key: string }) => void
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState('')
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([identityId])
   const [nearbyParticipantIds, setNearbyParticipantIds] = useState<string[]>([])
-  const [organizerAttestation, setOrganizerAttestation] = useState(false)
+  const [attestedParticipantKey, setAttestedParticipantKey] = useState<string | null>(null)
   const [claims, setClaims] = useState<CheckInClaim[]>([])
   const [fallbacks, setFallbacks] = useState<CheckInFallback[]>([])
   const [media, setMedia] = useState<RaidMedia[]>([])
@@ -90,6 +97,7 @@ export function CheckInPanel({
   const { setUnsyncedCheckInWork } = useRecordingRuntime()
   const viewerIsOrganizer = raid.organizerUserId === identityId
   const participants = useMemo(() => activeParticipants(raid), [raid])
+  const activeParticipantIds = useMemo(() => new Set(participants.map(({ id }) => id)), [participants])
   const pendingClaim = claims[0] ?? null
   const pendingFallback = fallbacks[0] ?? null
   const manualAttempt = local?.needsAction.find(
@@ -103,6 +111,18 @@ export function CheckInPanel({
   ) ?? null
   const canMutate = raid.state === 'active' && !staleProjection
   const effectiveNearby = nearbyPoints ?? nearby
+  const validSelectedParticipants = activeParticipantSelection(
+    identityId,
+    selectedParticipants,
+    activeParticipantIds,
+  )
+  const selectedParticipantKey = participantSelectionKey(validSelectedParticipants)
+  const organizerAttestation = attestedParticipantKey === selectedParticipantKey &&
+    validSelectedParticipants.some((id) => id !== identityId)
+
+  useEffect(() => {
+    setAttestedParticipantKey(null)
+  }, [selectedParticipantKey])
 
   useEffect(() => {
     if (!nearbyPoints) return
@@ -115,9 +135,26 @@ export function CheckInPanel({
   useEffect(() => {
     setSelectedParticipants([identityId])
     setNearbyParticipantIds([])
-    setOrganizerAttestation(false)
+    setAttestedParticipantKey(null)
     manualParticipantChoices.current.clear()
   }, [identityId, selectedPointId])
+
+  useEffect(() => {
+    for (const participantId of manualParticipantChoices.current.keys()) {
+      if (!activeParticipantIds.has(participantId)) manualParticipantChoices.current.delete(participantId)
+    }
+    setNearbyParticipantIds((current) => current.filter((id) => activeParticipantIds.has(id)))
+    setSelectedParticipants((current) => activeParticipantSelection(identityId, current, activeParticipantIds))
+  }, [activeParticipantIds, identityId])
+
+  useEffect(() => {
+    if (!manualAttempt) return
+    setSelectedParticipants(activeParticipantSelection(
+      identityId,
+      manualAttempt.presentParticipantIds,
+      activeParticipantIds,
+    ))
+  }, [activeParticipantIds, identityId, manualAttempt])
 
   useEffect(() => {
     if (!viewerIsOrganizer || raid.state !== 'active' || !selectedPointId || !navigator.onLine) return
@@ -127,7 +164,7 @@ export function CheckInPanel({
         const response = await getRaidPointPresence(raid.id, selectedPointId)
         if (!active) return
         const nearbyIds = response.participants
-          .filter(({ status }) => status === 'nearby')
+          .filter(({ id, status }) => status === 'nearby' && activeParticipantIds.has(id))
           .map(({ id }) => id)
         setNearbyParticipantIds(nearbyIds)
         const manualIds = Array.from(manualParticipantChoices.current)
@@ -147,11 +184,22 @@ export function CheckInPanel({
       active = false
       window.clearInterval(timer)
     }
-  }, [raid.id, raid.state, selectedPointId, viewerIsOrganizer])
+  }, [activeParticipantIds, identityId, raid.id, raid.state, selectedPointId, viewerIsOrganizer])
 
   useEffect(() => {
     onPendingChange?.(local?.unsynced ?? 0)
   }, [local?.unsynced, onPendingChange])
+
+  const attention = checkInAttentionState({
+    claimIds: claims.map(({ id }) => id),
+    fallbackIds: fallbacks.map(({ id }) => id),
+    manualOperationId: manualAttempt?.operationId ?? null,
+    unsynced: local?.unsynced ?? 0,
+  })
+
+  useEffect(() => {
+    onAttentionChange?.(attention)
+  }, [attention.count, attention.key, onAttentionChange])
 
   const refreshLocal = useCallback(async () => {
     const next = await getCheckInLocalState(identityId, raid.id)
@@ -207,6 +255,9 @@ export function CheckInPanel({
   useEffect(() => {
     void refreshLocal().then(() => void flush())
     void refreshCanonicalExtras().catch(() => undefined)
+    const refreshTimer = window.setInterval(() => {
+      void refreshCanonicalExtras().catch(() => undefined)
+    }, 5_000)
     const resume = () => {
       if (document.visibilityState === 'visible') {
         void refreshLocal().then(() => void flush())
@@ -219,6 +270,7 @@ export function CheckInPanel({
     document.addEventListener('visibilitychange', resume)
     return () => {
       setUnsyncedCheckInWork(0)
+      window.clearInterval(refreshTimer)
       window.removeEventListener('online', resume)
       window.removeEventListener('focus', resume)
       window.removeEventListener('pageshow', resume)
@@ -252,7 +304,7 @@ export function CheckInPanel({
       const record = await enqueueCheckIn(identityId, raid.kabandaId, raid.id, {
         pointSnapshotId: selectedPointId,
         evidence,
-        presentParticipantIds: Array.from(new Set([identityId, ...selectedParticipants])),
+        presentParticipantIds: validSelectedParticipants,
         organizerAttestation: viewerIsOrganizer && organizerAttestation,
       })
       if (!record) throw new Error('IDENTITY_CHANGED')
@@ -345,7 +397,7 @@ export function CheckInPanel({
         attemptId: manualResponse.attemptId,
         mediaId: fallbackMedia.mediaId,
         verifierUserId: selectedVerifierId,
-        presentParticipantIds: Array.from(new Set([identityId, ...selectedParticipants])),
+        presentParticipantIds: validSelectedParticipants,
         reason: fallbackReason.trim().slice(0, 240),
       })
       if (!submission) throw new Error('FALLBACK_ATTEMPT_MISSING')
@@ -422,16 +474,16 @@ export function CheckInPanel({
 
       {(selectedPointId || manualResponse) && viewerIsOrganizer && (
         <fieldset className="checkin-participants"><legend>Кто остановился у точки</legend>{participants.map((participant) => (
-          <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || selectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : ''}</span></label>
+          <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || validSelectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : ''}</span></label>
         ))}<small>Тех, чья свежая геопозиция попала в радиус 50 м, приложение отметило само. Остальных организатор может добавить вручную.</small></fieldset>
       )}
 
-      {!viewerIsOrganizer && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+      {!viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
         <p className="kb-muted">Выбранные участники получат личный claim. Credit появится только после их подтверждения.</p>
       )}
 
-      {viewerIsOrganizer && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
-        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setOrganizerAttestation(event.target.checked)} /><span><strong>Подтверждаю как организатор</strong><small>Отмеченные участники получат посещение этой точки.</small></span></label>
+      {viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setAttestedParticipantKey(event.target.checked ? selectedParticipantKey : null)} /><span><strong>Подтверждаю как организатор</strong><small>Подтверждение действует только для этого состава. При изменении списка его нужно поставить заново.</small></span></label>
       )}
 
       {manualResponse && (

@@ -41,6 +41,10 @@ export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude
   }
 }
 
+export function userMarkerCoordinate(location: OneShotCoordinate | null): readonly [number, number] | null {
+  return location ? [location.latitude, location.longitude] : null
+}
+
 export function RaidRouteMap({
   raidId,
   live,
@@ -203,12 +207,12 @@ export function RaidRouteMap({
     if (riderRef.current) map.geoObjects.remove(riderRef.current)
     riderRef.current = null
 
-    const current = location ?? track?.segments.flat().at(-1) ?? null
-    if (!current) return
+    const markerCoordinate = userMarkerCoordinate(location)
+    if (!markerCoordinate) return
     const riderLayout = runtime.templateLayoutFactory.createClass(
       '<span class="route-live-map__rider" aria-label="Моё положение"></span>',
     )
-    const rider = new runtime.Placemark([current.latitude, current.longitude], {}, {
+    const rider = new runtime.Placemark(markerCoordinate, {}, {
       iconLayout: riderLayout,
       iconShape: { type: 'Circle', coordinates: [0, 0], radius: 23 },
       hasBalloon: false,
@@ -226,7 +230,7 @@ export function RaidRouteMap({
       firstLocationApplied.current = true
       firstViewApplied.current = true
     }
-  }, [location, providerState, track])
+  }, [location, providerState])
 
   const changeZoom = (delta: number) => {
     const map = mapRef.current

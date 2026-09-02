@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { routeTrackView } from './RaidRouteMap'
+import { routeTrackView, userMarkerCoordinate } from './RaidRouteMap'
 
 describe('live raid route map', () => {
   it('centres a short track tightly around the traveled points', () => {
@@ -20,5 +20,15 @@ describe('live raid route map', () => {
     expect(view.center[0]).toBeCloseTo(56.85)
     expect(view.center[1]).toBeCloseTo(53.195)
     expect(view.zoom).toBe(13)
+  })
+
+  it('never labels the team track endpoint as the viewer location', () => {
+    expect(userMarkerCoordinate(null)).toBeNull()
+    expect(userMarkerCoordinate({
+      latitude: 56.85,
+      longitude: 53.2,
+      accuracyMeters: 8,
+      capturedAt: '2026-08-28T12:00:00.000Z',
+    })).toEqual([56.85, 53.2])
   })
 })

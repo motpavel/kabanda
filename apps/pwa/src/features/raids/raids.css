@@ -763,6 +763,27 @@
 .raid-active-map__header small { display: block; color: #69716d; font-size: .72rem; font-weight: 680; }
 .raid-active-map__header strong { display: block; overflow: hidden; font-size: .98rem; text-overflow: ellipsis; white-space: nowrap; }
 
+.raid-active-map__notice {
+  position: absolute;
+  z-index: 23;
+  top: calc(max(12px, env(safe-area-inset-top)) + 76px);
+  right: 72px;
+  left: 12px;
+  display: grid;
+  gap: 8px;
+  width: min(488px, calc(100% - 84px));
+  margin: 0 auto;
+  border: 1px solid rgb(28 32 34 / 10%);
+  border-radius: 16px;
+  padding: 10px;
+  background: rgb(255 253 248 / 97%);
+  box-shadow: 0 8px 24px rgb(26 31 34 / 18%);
+  backdrop-filter: blur(14px);
+}
+
+.raid-active-map__notice p { margin: 0; }
+.raid-active-map__notice .route-recorder__secondary { min-height: 42px; }
+
 .raid-map-controls {
   position: absolute;
   z-index: 18;

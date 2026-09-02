@@ -500,6 +500,8 @@ function RaidDetailPage({
         onServerPrimary={() => void handlePrimary()}
         onCanonicalRefresh={resource.refresh}
         onApplyRaid={resource.applyRaid}
+        pageMessage={message}
+        resourceError={resource.error}
       />
     </RaidShell>
   }

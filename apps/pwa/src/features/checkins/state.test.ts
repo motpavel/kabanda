@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { selectCheckInPrimary } from './state'
+import {
+  activeParticipantSelection,
+  checkInAttentionState,
+  participantSelectionKey,
+  selectCheckInPrimary,
+} from './state'
 
 const base = {
   hasPendingClaim: false,
@@ -26,5 +31,34 @@ describe('mobile check-in primary action', () => {
     expect(selectCheckInPrimary(base)).toBe('locate')
     expect(selectCheckInPrimary({ ...base, hasSelectedPoint: true })).toBe('check_in')
     expect(selectCheckInPrimary({ ...base, viewerCanCoordinate: false })).toBeNull()
+  })
+})
+
+describe('organizer participant attestation', () => {
+  it('uses a stable key for the exact selected participant set', () => {
+    expect(participantSelectionKey(['user-b', 'user-a', 'user-b'])).toBe('user-a:user-b')
+    expect(participantSelectionKey(['user-a'])).not.toBe(participantSelectionKey(['user-a', 'user-b']))
+  })
+
+  it('drops departed participants before a check-in payload is built', () => {
+    expect(activeParticipantSelection(
+      'organizer',
+      ['organizer', 'still-here', 'departed'],
+      new Set(['organizer', 'still-here']),
+    )).toEqual(['organizer', 'still-here'])
+  })
+})
+
+describe('check-in attention outside point proximity', () => {
+  it('keeps server claims, fallback verification, and local needs-action discoverable', () => {
+    expect(checkInAttentionState({
+      claimIds: ['claim-a'],
+      fallbackIds: ['fallback-b'],
+      manualOperationId: 'operation-c',
+      unsynced: 0,
+    })).toEqual({
+      count: 3,
+      key: 'claim:claim-a|fallback:fallback-b|manual:operation-c',
+    })
   })
 })
