@@ -14,6 +14,36 @@ export function activeParticipantSelection(
   return Array.from(new Set(selected))
 }
 
+export function participantSelectionAfterPresenceRefresh(input: {
+  identityId: string
+  selectedParticipantIds: readonly string[]
+  nearbyParticipantIds: readonly string[]
+  manualParticipantChoices: ReadonlyMap<string, boolean>
+  activeParticipantIds: ReadonlySet<string>
+  freezeSuggestions: boolean
+}): string[] {
+  const current = activeParticipantSelection(
+    input.identityId,
+    input.selectedParticipantIds,
+    input.activeParticipantIds,
+  )
+  if (input.freezeSuggestions) return current
+
+  const manuallySelected = Array.from(input.manualParticipantChoices)
+    .filter(([id, selected]) => selected && input.activeParticipantIds.has(id))
+    .map(([id]) => id)
+  const suggested = input.nearbyParticipantIds.filter(
+    (id) => id !== input.identityId &&
+      input.activeParticipantIds.has(id) &&
+      !input.manualParticipantChoices.has(id),
+  )
+  return activeParticipantSelection(
+    input.identityId,
+    [input.identityId, ...manuallySelected, ...suggested],
+    input.activeParticipantIds,
+  )
+}
+
 export function checkInAttentionState(input: {
   claimIds: readonly string[]
   fallbackIds: readonly string[]

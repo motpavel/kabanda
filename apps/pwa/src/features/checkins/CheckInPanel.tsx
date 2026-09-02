@@ -19,6 +19,7 @@ import { loadCheckInExtras } from './refresh'
 import {
   activeParticipantSelection,
   checkInAttentionState,
+  participantSelectionAfterPresenceRefresh,
   participantSelectionKey,
   selectCheckInPrimary,
 } from './state'
@@ -92,6 +93,7 @@ export function CheckInPanel({
   const senderTabId = useRef(tabId()).current
   const actionKeys = useRef(new Map<string, string>())
   const manualParticipantChoices = useRef(new Map<string, boolean>())
+  const restoredManualAttemptKey = useRef<string | null>(null)
   const replaying = useRef(false)
   const replayRequested = useRef(false)
   const { setUnsyncedCheckInWork } = useRecordingRuntime()
@@ -104,6 +106,8 @@ export function CheckInPanel({
     ({ fallbackSubmission }) => fallbackSubmission?.status !== 'submitted',
   ) ?? null
   const manualResponse = manualAttempt?.response as CheckInResponse | null
+  const manualAttemptOperationId = manualAttempt?.operationId ?? null
+  const manualAttemptRestoreKey = manualAttempt ? `${identityId}:${manualAttempt.operationId}` : null
   const reservedFallback = manualAttempt?.fallbackSubmission ?? null
   const fallbackMedia = local?.media.find((draft) =>
     draft.status === 'accepted' && draft.purpose === 'fallback' &&
@@ -148,13 +152,24 @@ export function CheckInPanel({
   }, [activeParticipantIds, identityId])
 
   useEffect(() => {
-    if (!manualAttempt) return
+    if (!manualAttempt) {
+      const hadManualAttempt = restoredManualAttemptKey.current !== null
+      restoredManualAttemptKey.current = null
+      if (hadManualAttempt) {
+        manualParticipantChoices.current.clear()
+        setSelectedParticipants([identityId])
+      }
+      return
+    }
+    if (restoredManualAttemptKey.current === manualAttemptRestoreKey) return
+    restoredManualAttemptKey.current = manualAttemptRestoreKey
+    manualParticipantChoices.current.clear()
     setSelectedParticipants(activeParticipantSelection(
       identityId,
       manualAttempt.presentParticipantIds,
       activeParticipantIds,
     ))
-  }, [activeParticipantIds, identityId, manualAttempt])
+  }, [activeParticipantIds, identityId, manualAttempt, manualAttemptRestoreKey])
 
   useEffect(() => {
     if (!viewerIsOrganizer || raid.state !== 'active' || !selectedPointId || !navigator.onLine) return
@@ -167,13 +182,14 @@ export function CheckInPanel({
           .filter(({ id, status }) => status === 'nearby' && activeParticipantIds.has(id))
           .map(({ id }) => id)
         setNearbyParticipantIds(nearbyIds)
-        const manualIds = Array.from(manualParticipantChoices.current)
-          .filter(([, selected]) => selected)
-          .map(([id]) => id)
-        const suggestedIds = nearbyIds.filter(
-          (id) => id !== identityId && !manualParticipantChoices.current.has(id),
-        )
-        setSelectedParticipants(Array.from(new Set([identityId, ...manualIds, ...suggestedIds])))
+        setSelectedParticipants((current) => participantSelectionAfterPresenceRefresh({
+          identityId,
+          selectedParticipantIds: current,
+          nearbyParticipantIds: nearbyIds,
+          manualParticipantChoices: manualParticipantChoices.current,
+          activeParticipantIds,
+          freezeSuggestions: Boolean(manualAttemptOperationId),
+        }))
       } catch {
         // Manual participant selection remains available when live presence cannot refresh.
       }
@@ -184,7 +200,15 @@ export function CheckInPanel({
       active = false
       window.clearInterval(timer)
     }
-  }, [activeParticipantIds, identityId, raid.id, raid.state, selectedPointId, viewerIsOrganizer])
+  }, [
+    activeParticipantIds,
+    identityId,
+    manualAttemptOperationId,
+    raid.id,
+    raid.state,
+    selectedPointId,
+    viewerIsOrganizer,
+  ])
 
   useEffect(() => {
     onPendingChange?.(local?.unsynced ?? 0)

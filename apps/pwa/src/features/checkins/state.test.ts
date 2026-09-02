@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activeParticipantSelection,
   checkInAttentionState,
+  participantSelectionAfterPresenceRefresh,
   participantSelectionKey,
   selectCheckInPrimary,
 } from './state'
@@ -46,6 +47,46 @@ describe('organizer participant attestation', () => {
       ['organizer', 'still-here', 'departed'],
       new Set(['organizer', 'still-here']),
     )).toEqual(['organizer', 'still-here'])
+  })
+
+  it('freezes a manual fallback participant set across later presence refreshes', () => {
+    expect(participantSelectionAfterPresenceRefresh({
+      identityId: 'organizer',
+      selectedParticipantIds: ['organizer', 'original-rider'],
+      nearbyParticipantIds: ['newly-nearby-rider'],
+      manualParticipantChoices: new Map(),
+      activeParticipantIds: new Set(['organizer', 'original-rider', 'newly-nearby-rider']),
+      freezeSuggestions: true,
+    })).toEqual(['organizer', 'original-rider'])
+
+    expect(participantSelectionAfterPresenceRefresh({
+      identityId: 'organizer',
+      selectedParticipantIds: ['organizer', 'original-rider'],
+      nearbyParticipantIds: ['original-rider'],
+      manualParticipantChoices: new Map(),
+      activeParticipantIds: new Set(['organizer', 'newly-nearby-rider']),
+      freezeSuggestions: true,
+    })).toEqual(['organizer'])
+  })
+
+  it('keeps applying live suggestions before a manual fallback exists', () => {
+    expect(participantSelectionAfterPresenceRefresh({
+      identityId: 'organizer',
+      selectedParticipantIds: ['organizer', 'previously-nearby'],
+      nearbyParticipantIds: ['currently-nearby', 'manually-excluded'],
+      manualParticipantChoices: new Map([
+        ['manual-rider', true],
+        ['manually-excluded', false],
+      ]),
+      activeParticipantIds: new Set([
+        'organizer',
+        'previously-nearby',
+        'currently-nearby',
+        'manual-rider',
+        'manually-excluded',
+      ]),
+      freezeSuggestions: false,
+    })).toEqual(['organizer', 'manual-rider', 'currently-nearby'])
   })
 })
 
