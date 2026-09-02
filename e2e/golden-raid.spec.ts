@@ -108,10 +108,19 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
   await page.getByRole('button', { name: 'Я готов' }).click()
   await page.getByRole('button', { name: 'Проверить телефон' }).click()
-  await page.getByRole('button', { name: 'Начать рейд' }).click()
+  await expect(page.getByText('Все готовы', { exact: true })).toBeVisible({ timeout: 15_000 })
+  await page.getByRole('button', { name: 'Все здесь — начать рейд' }).click()
 
-  await expect(page.getByText('fresh', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByLabel(/Активный рейд Синтетический золотой рейд/)).toBeVisible()
   await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
+  await expect.poll(async () => {
+    const response = await api<{ raid: { routeStatus: { status: string } } }>(
+      page,
+      'GET',
+      `/api/raids/${raid.id}`,
+    )
+    return response.raid.routeStatus.status
+  }, { timeout: 30_000 }).toBe('fresh')
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { acceptedSampleCount: number } } }>(
       page,
@@ -122,9 +131,21 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   }, { timeout: 30_000 }).toBeGreaterThan(0)
 
   await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
-  await page.getByRole('button', { name: 'Найти точку рядом' }).click()
-  await expect(page.getByText('Синтетическая точка E2E')).toBeVisible()
+  await expect.poll(async () => {
+    const response = await api<{ track: { pointCount: number } }>(
+      page,
+      'GET',
+      `/api/raids/${raid.id}/route/track`,
+    )
+    return response.track.pointCount
+  }, { timeout: 30_000 }).toBeGreaterThan(1)
+  await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toHaveCount(1, { timeout: 10_000 })
+  await expect(page.getByLabel('Моё положение')).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
   await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
+  await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
   await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
 
@@ -136,14 +157,12 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     )
     return nearby.points[0]?.creditedByTeam ?? false
   }, { timeout: 30_000 }).toBe(true)
-  await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
-  await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
-
   await expect.poll(async () => {
     const gallery = await api<{ media: unknown[] }>(page, 'GET', `/api/raids/${raid.id}/media`)
     return gallery.media.length
   }, { timeout: 30_000 }).toBe(1)
 
+  await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await page.getByRole('button', { name: 'Зафиксировать итог' }).click()
   await expect(page.getByText('Канонический итог')).toBeVisible()

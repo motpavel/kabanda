@@ -119,6 +119,56 @@ export interface RouteBatchResponse {
   serverAt: string
 }
 
+export interface RouteTrackPoint {
+  latitude: number
+  longitude: number
+  capturedAt: string
+}
+
+export interface RouteTrackProjection {
+  segments: RouteTrackPoint[][]
+  pointCount: number
+  truncated: boolean
+  updatedAt: string | null
+  serverAt: string
+}
+
+export interface RaidMapPoint {
+  id: string
+  sourcePointId: string
+  name: string
+  latitude: number
+  longitude: number
+  position: number
+  visitedByMe: boolean
+  visitedByTeam: boolean
+}
+
+export interface RaidPresenceRoster {
+  radiusMeters: 50
+  maxAgeSeconds: 30
+  allReady: boolean
+  participants: Array<{
+    id: string
+    displayName: string
+    avatarUrl: string | null
+    status: 'nearby' | 'manual' | 'waiting'
+    observedAt: string | null
+  }>
+  serverAt: string
+}
+
+export interface RaidPointPresenceRoster {
+  pointSnapshotId: string
+  radiusMeters: 50
+  participants: Array<{
+    id: string
+    status: 'nearby' | 'waiting'
+    observedAt: string | null
+  }>
+  serverAt: string
+}
+
 export interface RouteLeaseResponse {
   receipt: {
     operationId: string

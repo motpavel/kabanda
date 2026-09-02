@@ -51,6 +51,7 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
     type MapEvent = { get: (name: string) => unknown }
     type MapHandler = (event: MapEvent) => void
     type PlacemarkHandler = (event: { stopPropagation: () => void }) => void
+    type MockMapObject = MockPlacemark | MockPolyline
 
     class MockPlacemark {
       element: HTMLElement | null = null
@@ -94,25 +95,58 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
       }
     }
 
+    class MockPolyline {
+      element: HTMLElement | null = null
+      private coordinates: readonly (readonly [number, number])[]
+      readonly settings: Record<string, unknown>
+      readonly geometry = {
+        getCoordinates: () => this.coordinates,
+        setCoordinates: (coordinates: readonly (readonly [number, number])[]) => {
+          this.coordinates = coordinates
+        },
+      }
+
+      constructor(
+        coordinates: readonly (readonly [number, number])[],
+        _properties: Record<string, unknown> = {},
+        options: Record<string, unknown> = {},
+      ) {
+        this.coordinates = coordinates
+        this.settings = { ...options }
+      }
+    }
+
     class MockYandexMap {
       private center: readonly [number, number]
       private zoom: number
       private readonly handlers: Record<string, MapHandler[]> = {}
-      private readonly objects = new Set<MockPlacemark>()
+      private readonly objects = new Set<MockMapObject>()
       readonly events = {
         add: (name: string, handler: MapHandler) => {
           this.handlers[name] = [...(this.handlers[name] ?? []), handler]
         },
       }
       readonly geoObjects = {
-        add: (placemark: MockPlacemark) => {
-          this.objects.add(placemark)
+        add: (object: MockMapObject) => {
+          this.objects.add(object)
+          if (object instanceof MockPolyline) {
+            const element = document.createElement('span')
+            element.dataset.yandexPolyline = 'true'
+            const strokeColor = object.settings.strokeColor
+            if (typeof strokeColor === 'string') element.dataset.strokeColor = strokeColor
+            object.element = element
+            this.container.append(element)
+            return
+          }
+          const placemark = object
           const markerClass = placemark.values.markerClass
+          const iconLayout = placemark.settings.iconLayout
+          const rider = typeof iconLayout === 'string' && iconLayout.includes('route-live-map__rider')
           const element = document.createElement(typeof markerClass === 'string' ? 'button' : 'span')
           if (element instanceof HTMLButtonElement) element.type = 'button'
           if (typeof markerClass !== 'string') {
-            element.className = 'kb-yandex-user-location'
-            element.setAttribute('aria-label', 'Моё местоположение')
+            element.className = rider ? 'route-live-map__rider' : 'kb-yandex-user-location'
+            element.setAttribute('aria-label', rider ? 'Моё положение' : 'Моё местоположение')
           }
           placemark.element = element
           placemark.syncElement()
@@ -123,10 +157,10 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
           })
           this.container.append(element)
         },
-        remove: (placemark: MockPlacemark) => {
-          this.objects.delete(placemark)
-          placemark.element?.remove()
-          placemark.element = null
+        remove: (object: MockMapObject) => {
+          this.objects.delete(object)
+          object.element?.remove()
+          object.element = null
         },
       }
 
@@ -157,7 +191,7 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
         this.emitBoundsChange()
       }
       destroy() {
-        for (const placemark of this.objects) placemark.element?.remove()
+        for (const object of this.objects) object.element?.remove()
         this.objects.clear()
       }
     }
@@ -166,6 +200,7 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
       ready: (success: () => void) => success(),
       Map: MockYandexMap,
       Placemark: MockPlacemark,
+      Polyline: MockPolyline,
       templateLayoutFactory: { createClass: (template: string) => template },
     }
     ;(window as unknown as { ymaps: typeof ymaps }).ymaps = ymaps

@@ -2,9 +2,13 @@ import { requestJson } from '../../lib/http'
 import type {
   CreateRaidInput,
   RaidAllowedAction,
+  RaidMapPoint,
+  RaidPointPresenceRoster,
+  RaidPresenceRoster,
   RaidProjection,
   RouteBatchInput,
   RouteBatchResponse,
+  RouteTrackProjection,
   RouteLeaseResponse,
   ReadinessReportInput,
   ReadinessReportResponse,
@@ -55,6 +59,55 @@ export function sendRouteBatch(
       headers: { 'Idempotency-Key': batchId },
       body: JSON.stringify(input),
     },
+  )
+}
+
+export async function getRouteTrack(raidId: string): Promise<RouteTrackProjection> {
+  const response = await requestJson<{ track: RouteTrackProjection }>(
+    `/api/raids/${encodeURIComponent(raidId)}/route/track`,
+  )
+  return response.track
+}
+
+export async function getRaidMapPoints(raidId: string): Promise<RaidMapPoint[]> {
+  const response = await requestJson<{ points: RaidMapPoint[] }>(
+    `/api/raids/${encodeURIComponent(raidId)}/map-points`,
+  )
+  return response.points
+}
+
+export function getRaidPresence(raidId: string): Promise<RaidPresenceRoster> {
+  return requestJson<RaidPresenceRoster>(`/api/raids/${encodeURIComponent(raidId)}/presence`)
+}
+
+export function reportRaidPresence(
+  raidId: string,
+  evidence: { latitude: number; longitude: number; capturedAt: string; accuracyMeters: number },
+): Promise<RaidPresenceRoster> {
+  return requestJson<RaidPresenceRoster>(`/api/raids/${encodeURIComponent(raidId)}/presence/me`, {
+    method: 'PUT',
+    body: JSON.stringify(evidence),
+  })
+}
+
+export function setManualRaidPresence(
+  raidId: string,
+  participantId: string,
+  present: boolean,
+): Promise<RaidPresenceRoster> {
+  return requestJson<RaidPresenceRoster>(`/api/raids/${encodeURIComponent(raidId)}/presence/${encodeURIComponent(participantId)}/manual`, {
+    method: 'PUT',
+    body: JSON.stringify({ present }),
+  })
+}
+
+export function getRaidPointPresence(
+  raidId: string,
+  pointSnapshotId: string,
+): Promise<RaidPointPresenceRoster> {
+  const query = new URLSearchParams({ pointSnapshotId })
+  return requestJson<RaidPointPresenceRoster>(
+    `/api/raids/${encodeURIComponent(raidId)}/check-ins/presence?${query}`,
   )
 }
 

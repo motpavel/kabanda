@@ -76,6 +76,13 @@ const nearbySchema = z.object({
   longitude: z.coerce.number().min(53).max(53.4),
   limit: z.coerce.number().int().min(1).max(5).default(5),
 })
+const presenceSchema = z.object({
+  latitude: z.coerce.number().min(56.7).max(57),
+  longitude: z.coerce.number().min(53).max(53.4),
+  capturedAt: z.iso.datetime({ offset: true }),
+  accuracyMeters: z.coerce.number().min(0).max(50),
+})
+const manualPresenceSchema = z.object({ present: z.boolean() })
 const presentParticipantIdsSchema = z.array(z.uuid()).max(20).default([])
 const checkinSchema = z.object({
   pointSnapshotId: z.uuid(),
@@ -206,6 +213,69 @@ export async function registerRaidRoutes(
     if (!user) return authRequired(reply)
     const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
     return { raid: await dependencies.raids.getRaid(user.id, raidId) }
+  })
+
+  app.get('/api/raids/:raidId/route/track', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send({ track: await dependencies.raids.getRouteTrack(user.id, raidId) })
+  })
+
+  app.get('/api/raids/:raidId/map-points', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.getMapPoints(user.id, raidId))
+  })
+
+  app.get('/api/raids/:raidId/presence', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.getPresenceRoster(user.id, raidId))
+  })
+
+  app.get('/api/raids/:raidId/check-ins/presence', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const pointSnapshotId = resourceIdSchema.parse(
+      (request.query as { pointSnapshotId?: string }).pointSnapshotId,
+    )
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.getPointPresence(user.id, raidId, pointSnapshotId))
+  })
+
+  app.put('/api/raids/:raidId/presence/me', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.reportPresence(user.id, raidId, presenceSchema.parse(request.body)))
+  })
+
+  app.put('/api/raids/:raidId/presence/:participantId/manual', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const { raidId, participantId } = request.params as { raidId: string; participantId: string }
+    const input = manualPresenceSchema.parse(request.body)
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .send(await dependencies.raids.setManualPresence(
+        user.id,
+        resourceIdSchema.parse(raidId),
+        resourceIdSchema.parse(participantId),
+        input.present,
+      ))
   })
 
   app.get('/api/raids/:raidId/result', async (request, reply) => {

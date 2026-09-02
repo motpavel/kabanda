@@ -118,6 +118,63 @@ export type RouteBatchInput = {
   samples: RouteSampleInput[]
 }
 
+export type RouteTrackPoint = {
+  latitude: number
+  longitude: number
+  capturedAt: string
+}
+
+export type RouteTrackProjection = {
+  segments: RouteTrackPoint[][]
+  pointCount: number
+  truncated: boolean
+  updatedAt: string | null
+  serverAt: string
+}
+
+export type RaidMapPointProjection = {
+  id: string
+  sourcePointId: string
+  name: string
+  latitude: number
+  longitude: number
+  position: number
+  visitedByMe: boolean
+  visitedByTeam: boolean
+}
+
+export type RaidPresenceEvidence = {
+  latitude: number
+  longitude: number
+  capturedAt: string
+  accuracyMeters: number
+}
+
+export type RaidPresenceRoster = {
+  radiusMeters: 50
+  maxAgeSeconds: 30
+  allReady: boolean
+  participants: Array<{
+    id: string
+    displayName: string
+    avatarUrl: string | null
+    status: 'nearby' | 'manual' | 'waiting'
+    observedAt: string | null
+  }>
+  serverAt: string
+}
+
+export type RaidPointPresenceRoster = {
+  pointSnapshotId: string
+  radiusMeters: 50
+  participants: Array<{
+    id: string
+    status: 'nearby' | 'waiting'
+    observedAt: string | null
+  }>
+  serverAt: string
+}
+
 export type RouteStatusProjection = {
   status: RouteStatusCode
   navigatorUserId: string | null
@@ -474,6 +531,12 @@ export interface RaidService {
     input: RouteBatchInput,
     operationId: string,
   ): Promise<RouteBatchResponse>
+  getRouteTrack(actorUserId: string, raidId: string): Promise<RouteTrackProjection>
+  getMapPoints(actorUserId: string, raidId: string): Promise<{ points: RaidMapPointProjection[] }>
+  reportPresence(actorUserId: string, raidId: string, evidence: RaidPresenceEvidence): Promise<RaidPresenceRoster>
+  getPresenceRoster(actorUserId: string, raidId: string): Promise<RaidPresenceRoster>
+  setManualPresence(actorUserId: string, raidId: string, participantId: string, present: boolean): Promise<RaidPresenceRoster>
+  getPointPresence(actorUserId: string, raidId: string, pointSnapshotId: string): Promise<RaidPointPresenceRoster>
   getRaid(actorUserId: string, raidId: string): Promise<RaidProjection>
   getCurrent(actorUserId: string): Promise<RaidProjection | null>
   listActionable(actorUserId: string, kabandaId: string): Promise<RaidProjection[]>
@@ -944,12 +1007,356 @@ export class DatabaseRaidService implements RaidService {
     })
   }
 
+  async getRouteTrack(actorUserId: string, raidId: string): Promise<RouteTrackProjection> {
+    const client = await this.pool.connect()
+    try {
+      const access = await client.query<{
+        state: RaidState
+        role: 'owner' | 'member'
+        participant_state: RaidParticipantState | null
+      }>(
+        `SELECT r.state, m.role, p.state AS participant_state FROM raids r
+         JOIN kabandas k ON k.id = r.kabanda_id AND k.archived_at IS NULL
+         JOIN kabanda_memberships m
+           ON m.kabanda_id = r.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
+         LEFT JOIN raid_participants p ON p.raid_id = r.id AND p.user_id = $2
+         WHERE r.id = $1`,
+        [raidId, actorUserId],
+      )
+      const visibility = access.rows[0]
+      const mayReadActiveTrack = visibility?.role === 'owner' || visibility?.participant_state === 'active'
+      const mayReadCompletedTrack = visibility?.state === 'completed'
+      if (!visibility || (!mayReadActiveTrack && !mayReadCompletedTrack)) throw this.notFound()
+
+      const result = await client.query<{
+        lease_id: string
+        generation: number
+        sequence: string | number
+        captured_at: Date
+        latitude: number
+        longitude: number
+        continues_previous: boolean
+        server_at: Date
+      }>(
+        `WITH ordered AS (
+           SELECT s.lease_id, l.generation, s.sequence, s.captured_at, s.geom, s.accuracy_m,
+             r.state,
+             lag(s.sequence) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_sequence,
+             lag(s.captured_at) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_at,
+             lag(s.geom) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_geom,
+             lag(s.accuracy_m) OVER (PARTITION BY s.lease_id ORDER BY s.sequence) AS previous_accuracy,
+             c.max_sequence AS final_sequence
+           FROM raid_route_samples s
+           JOIN raid_navigator_leases l ON l.id = s.lease_id AND l.raid_id = s.raid_id
+           JOIN raids r ON r.id = s.raid_id
+           LEFT JOIN raid_route_finalization_cutoffs c
+             ON c.raid_id = s.raid_id AND c.lease_id = s.lease_id
+           WHERE s.raid_id = $1
+         )
+         SELECT lease_id, generation, sequence, captured_at,
+           ST_Y(geom::geometry) AS latitude,
+           ST_X(geom::geometry) AS longitude,
+           (previous_geom IS NOT NULL
+             AND sequence = previous_sequence + 1
+             AND previous_accuracy <= 50
+             AND extract(epoch FROM (captured_at - previous_at)) BETWEEN 0 AND 120
+             AND ST_Distance(geom, previous_geom) <= 2000
+             AND ST_Distance(geom, previous_geom) /
+               greatest(extract(epoch FROM (captured_at - previous_at)), 0.001) <= 50
+             AND EXISTS (SELECT 1 FROM raid_activity_windows w
+               WHERE w.raid_id = $1 AND previous_at >= w.opened_at
+                 AND captured_at <= coalesce(w.closed_at, clock_timestamp()))) AS continues_previous,
+           clock_timestamp() AS server_at
+         FROM ordered
+         WHERE accuracy_m <= 50
+           AND (state IN ('active', 'paused') OR sequence <= final_sequence)
+           AND EXISTS (SELECT 1 FROM raid_activity_windows w
+             WHERE w.raid_id = $1 AND captured_at >= w.opened_at
+               AND captured_at <= coalesce(w.closed_at, clock_timestamp()))
+         ORDER BY generation, sequence
+         LIMIT 10001`,
+        [raidId],
+      )
+      const rows = result.rows.slice(0, 10_000)
+      const segments: RouteTrackPoint[][] = []
+      let current: RouteTrackPoint[] = []
+      let previousLeaseId: string | null = null
+      for (const row of rows) {
+        const point: RouteTrackPoint = {
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          capturedAt: row.captured_at.toISOString(),
+        }
+        if (!row.continues_previous || row.lease_id !== previousLeaseId) {
+          current = []
+          segments.push(current)
+        }
+        current.push(point)
+        previousLeaseId = row.lease_id
+      }
+      return {
+        segments,
+        pointCount: rows.length,
+        truncated: result.rows.length > rows.length,
+        updatedAt: rows.at(-1)?.captured_at.toISOString() ?? null,
+        serverAt: result.rows[0]?.server_at.toISOString() ?? new Date().toISOString(),
+      }
+    } finally {
+      client.release()
+    }
+  }
+
+  async getMapPoints(
+    actorUserId: string,
+    raidId: string,
+  ): Promise<{ points: RaidMapPointProjection[] }> {
+    const client = await this.pool.connect()
+    try {
+      const access = await client.query<{
+        state: RaidState
+        role: 'owner' | 'member'
+        participant_state: RaidParticipantState | null
+      }>(
+        `SELECT r.state, m.role, p.state AS participant_state FROM raids r
+         JOIN kabandas k ON k.id = r.kabanda_id AND k.archived_at IS NULL
+         JOIN kabanda_memberships m
+           ON m.kabanda_id = r.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
+         LEFT JOIN raid_participants p ON p.raid_id = r.id AND p.user_id = $2
+         WHERE r.id = $1`,
+        [raidId, actorUserId],
+      )
+      const visibility = access.rows[0]
+      const mayReadLive = visibility?.role === 'owner' || visibility?.participant_state === 'active'
+      const mayReadCompleted = visibility?.state === 'completed'
+      if (!visibility || (!mayReadLive && !mayReadCompleted)) throw this.notFound()
+
+      const result = await client.query<{
+        id: string
+        source_point_id: string
+        name: string
+        latitude: number
+        longitude: number
+        position: number
+        visited_by_me: boolean
+        visited_by_team: boolean
+      }>(
+        `SELECT s.id, s.source_point_id, s.name,
+           ST_Y(s.location::geometry) AS latitude,
+           ST_X(s.location::geometry) AS longitude,
+           s.position,
+           EXISTS (SELECT 1 FROM raid_point_credits c
+             WHERE c.raid_id = s.raid_id AND c.point_snapshot_id = s.id
+               AND c.user_id = $2) AS visited_by_me,
+           EXISTS (SELECT 1 FROM raid_point_credits c
+             WHERE c.raid_id = s.raid_id AND c.point_snapshot_id = s.id) AS visited_by_team
+         FROM raid_point_snapshots s
+         WHERE s.raid_id = $1
+         ORDER BY s.position, s.id
+         LIMIT 500`,
+        [raidId, actorUserId],
+      )
+      return {
+        points: result.rows.map((row) => ({
+          id: row.id,
+          sourcePointId: row.source_point_id,
+          name: row.name,
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          position: Number(row.position),
+          visitedByMe: row.visited_by_me,
+          visitedByTeam: row.visited_by_team,
+        })),
+      }
+    } finally {
+      client.release()
+    }
+  }
+
+  async reportPresence(
+    actorUserId: string,
+    raidId: string,
+    evidence: RaidPresenceEvidence,
+  ): Promise<RaidPresenceRoster> {
+    return transaction(this.pool, async (client) => {
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      const mayReportInLobby = raid.state === 'lobby' && ['accepted', 'ready'].includes(raid.participant_state ?? '')
+      const mayReportInRaid = raid.state === 'active' && raid.participant_state === 'active'
+      if (!mayReportInLobby && !mayReportInRaid) {
+        throw this.forbiddenCommand()
+      }
+      const capturedAt = new Date(evidence.capturedAt)
+      if (!Number.isFinite(capturedAt.getTime())) {
+        throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
+      }
+      const freshness = await client.query<{ fresh: boolean }>(
+        `SELECT $1::timestamptz >= clock_timestamp() - interval '30 seconds'
+           AND $1::timestamptz <= clock_timestamp() + interval '10 seconds' AS fresh`,
+        [capturedAt],
+      )
+      if (!freshness.rows[0]?.fresh) {
+        throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
+      }
+      await client.query(
+        `INSERT INTO raid_presence_reports
+          (raid_id, user_id, location, captured_at, accuracy_meters, expires_at, updated_at)
+         VALUES ($1, $2, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography,
+           $5, $6, $5::timestamptz + interval '30 seconds', clock_timestamp())
+         ON CONFLICT (raid_id, user_id) DO UPDATE SET
+           location = excluded.location,
+           captured_at = excluded.captured_at,
+           accuracy_meters = excluded.accuracy_meters,
+           expires_at = excluded.expires_at,
+           updated_at = excluded.updated_at
+         WHERE excluded.captured_at > raid_presence_reports.captured_at`,
+        [raid.id, actorUserId, evidence.latitude, evidence.longitude, capturedAt, evidence.accuracyMeters],
+      )
+      return this.projectPresenceRoster(client, raid)
+    })
+  }
+
+  async getPresenceRoster(actorUserId: string, raidId: string): Promise<RaidPresenceRoster> {
+    return transaction(this.pool, async (client) => {
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      if (raid.state !== 'lobby') throw this.forbiddenCommand()
+      return this.projectPresenceRoster(client, raid)
+    })
+  }
+
+  async setManualPresence(
+    actorUserId: string,
+    raidId: string,
+    participantId: string,
+    present: boolean,
+  ): Promise<RaidPresenceRoster> {
+    return transaction(this.pool, async (client) => {
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireOrganizer(raid, actorUserId)
+      if (raid.state !== 'lobby') throw this.forbiddenCommand()
+      if (participantId === actorUserId) throw this.forbiddenCommand()
+      const result = await client.query(
+        `UPDATE raid_participants SET
+           presence_override_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END,
+           presence_override_by = CASE WHEN $4 THEN $2 ELSE NULL END,
+           updated_at = clock_timestamp()
+         WHERE raid_id = $1 AND user_id = $3 AND state IN ('accepted', 'ready')`,
+        [raid.id, actorUserId, participantId, present],
+      )
+      if (!result.rowCount) throw this.notFound()
+      return this.projectPresenceRoster(client, raid)
+    })
+  }
+
+  async getPointPresence(
+    actorUserId: string,
+    raidId: string,
+    pointSnapshotId: string,
+  ): Promise<RaidPointPresenceRoster> {
+    return transaction(this.pool, async (client) => {
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireOrganizer(raid, actorUserId)
+      if (raid.state !== 'active') throw this.forbiddenCommand()
+      const point = await client.query<{ id: string }>(
+        'SELECT id FROM raid_point_snapshots WHERE id = $1 AND raid_id = $2',
+        [pointSnapshotId, raid.id],
+      )
+      if (!point.rowCount) throw this.notFound()
+      const result = await client.query<{
+        id: string
+        status: 'nearby' | 'waiting'
+        observed_at: Date | null
+        server_at: Date
+      }>(
+        `SELECT p.user_id AS id,
+           CASE WHEN report.expires_at > clock_timestamp()
+             AND report.accuracy_meters <= 50
+             AND ST_DWithin(report.location, snapshot.location, 50)
+             THEN 'nearby' ELSE 'waiting' END AS status,
+           CASE WHEN report.expires_at > clock_timestamp()
+             AND report.accuracy_meters <= 50
+             AND ST_DWithin(report.location, snapshot.location, 50)
+             THEN report.captured_at ELSE NULL END AS observed_at,
+           clock_timestamp() AS server_at
+         FROM raid_participants p
+         CROSS JOIN raid_point_snapshots snapshot
+         LEFT JOIN raid_presence_reports report
+           ON report.raid_id = p.raid_id AND report.user_id = p.user_id
+         WHERE p.raid_id = $1 AND p.state = 'active'
+           AND snapshot.id = $2 AND snapshot.raid_id = p.raid_id
+         ORDER BY p.invited_at, p.user_id`,
+        [raid.id, pointSnapshotId],
+      )
+      return {
+        pointSnapshotId,
+        radiusMeters: 50,
+        participants: result.rows.map((row) => ({
+          id: row.id,
+          status: row.status,
+          observedAt: row.observed_at?.toISOString() ?? null,
+        })),
+        serverAt: result.rows[0]?.server_at.toISOString() ?? new Date().toISOString(),
+      }
+    })
+  }
+
+  private async projectPresenceRoster(
+    client: PoolClient,
+    raid: RaidRow,
+  ): Promise<RaidPresenceRoster> {
+    const result = await client.query<{
+      id: string
+      display_name: string
+      avatar_url: string | null
+      status: 'nearby' | 'manual' | 'waiting'
+      observed_at: Date | null
+      server_at: Date
+    }>(
+      `WITH organizer AS (
+         SELECT location FROM raid_presence_reports
+         WHERE raid_id = $1 AND user_id = $2 AND expires_at > clock_timestamp()
+           AND accuracy_meters <= 50
+       )
+       SELECT u.id,
+         coalesce(u.display_name, u.username::text, split_part(u.email::text, '@', 1)) AS display_name,
+         u.avatar_url,
+         CASE
+           WHEN p.presence_override_at IS NOT NULL THEN 'manual'
+           WHEN own.expires_at > clock_timestamp() AND own.accuracy_meters <= 50
+             AND EXISTS (SELECT 1 FROM organizer o WHERE ST_DWithin(own.location, o.location, 50))
+             THEN 'nearby'
+           ELSE 'waiting'
+         END AS status,
+         CASE WHEN p.presence_override_at IS NOT NULL THEN p.presence_override_at
+           WHEN own.expires_at > clock_timestamp() THEN own.captured_at ELSE NULL END AS observed_at,
+         clock_timestamp() AS server_at
+       FROM raid_participants p
+       JOIN users u ON u.id = p.user_id
+       LEFT JOIN raid_presence_reports own ON own.raid_id = p.raid_id AND own.user_id = p.user_id
+       WHERE p.raid_id = $1 AND p.state IN ('accepted', 'ready')
+       ORDER BY p.invited_at, p.user_id`,
+      [raid.id, raid.organizer_user_id],
+    )
+    const participants = result.rows.map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      avatarUrl: row.avatar_url,
+      status: row.status,
+      observedAt: row.observed_at?.toISOString() ?? null,
+    }))
+    return {
+      radiusMeters: 50,
+      maxAgeSeconds: 30,
+      allReady: participants.length > 0 && participants.every(({ status }) => status !== 'waiting'),
+      participants,
+      serverAt: result.rows[0]?.server_at.toISOString() ?? new Date().toISOString(),
+    }
+  }
+
   async nearbyCheckins(
     actorUserId: string,
     raidId: string,
     input: NearbyCheckinInput,
   ): Promise<{
-    policy: { version: 'v1'; radiusMeters: 75; maxAgeSeconds: 60; maxAccuracyMeters: 50 }
+    policy: { version: 'v1'; radiusMeters: 50; maxAgeSeconds: 60; maxAccuracyMeters: 50 }
     points: Array<{
       pointSnapshotId: string
       sourcePointId: string
@@ -986,12 +1393,12 @@ export class DatabaseRaidService implements RaidService {
              WHERE c.raid_id = s.raid_id AND c.point_snapshot_id = s.id) AS credited_by_team
          FROM raid_point_snapshots s
          CROSS JOIN (SELECT ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography AS location) q
-         WHERE s.raid_id = $1 AND ST_DWithin(s.location, q.location, 75)
+         WHERE s.raid_id = $1 AND ST_DWithin(s.location, q.location, 50)
          ORDER BY distance_meters, s.position, s.id LIMIT $5`,
         [raid.id, actorUserId, input.latitude, input.longitude, input.limit],
       )
       return {
-        policy: { version: 'v1', radiusMeters: 75, maxAgeSeconds: 60, maxAccuracyMeters: 50 },
+        policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 },
         points: result.rows.map((row) => ({
           pointSnapshotId: row.id,
           sourcePointId: row.source_point_id,
@@ -1053,7 +1460,7 @@ export class DatabaseRaidService implements RaidService {
       let reason: CheckinResponse['reason'] = null
       if (ageMs > 60_000 || ageMs < -30_000) reason = 'location_expired'
       else if (input.evidence.accuracyMeters > 50) reason = 'accuracy_insufficient'
-      else if (distanceMeters > 75) reason = 'too_far'
+      else if (distanceMeters > 50) reason = 'too_far'
       const accepted = reason === null
       const attemptResult = await client.query<{ id: string }>(
         `INSERT INTO raid_checkin_attempts
@@ -2291,6 +2698,10 @@ export class DatabaseRaidService implements RaidService {
           [raid.id, raid.navigator_user_id, raid.kabanda_id],
         )
         if (!navigator.rowCount) throw this.forbiddenCommand()
+        const presence = await this.projectPresenceRoster(client, raid)
+        if (!presence.allReady) {
+          throw new RaidError('RAID_PARTICIPANTS_NOT_PRESENT', 409, 'Подтвердите, что вся стая на месте')
+        }
         const snapshots = await client.query(
           `INSERT INTO raid_point_snapshots
             (raid_id, source_point_id, collection_id, name, location, position)
@@ -2332,6 +2743,7 @@ export class DatabaseRaidService implements RaidService {
         await this.openActivityWindow(client, raid.id, nextVersion)
         if (!raid.navigator_user_id) throw this.forbiddenCommand()
         await this.createUnclaimedLease(client, raid.id, raid.navigator_user_id)
+        await client.query('DELETE FROM raid_presence_reports WHERE raid_id = $1', [raid.id])
         return
       }
       case 'pause':
@@ -2354,6 +2766,7 @@ export class DatabaseRaidService implements RaidService {
         await client.query(`UPDATE raids SET state = 'cancelled', cancelled_at = now() WHERE id = $1`, [
           raid.id,
         ])
+        await client.query('DELETE FROM raid_presence_reports WHERE raid_id = $1', [raid.id])
         return
     }
   }
