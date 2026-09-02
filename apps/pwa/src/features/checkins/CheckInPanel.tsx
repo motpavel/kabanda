@@ -396,6 +396,7 @@ export function CheckInPanel({
         <div><p className="kb-kicker">Точка рейда</p><h2>{manualResponse ? 'Нужна ручная проверка' : 'Кто сейчас здесь?'}</h2></div>
         {local?.unsynced ? <span className="checkin-pending">Локально: {local.unsynced}</span> : null}
       </div>
+      {presentation === 'map-sheet' && local?.unsynced ? <span className="checkin-pending">Локально: {local.unsynced}</span> : null}
       {presentation !== 'map-sheet' && <p className="kb-muted">{serverTailOnly ? 'В finalizing доступны только уже созданные server-side подтверждения.' : 'Для каждой попытки берём отдельную координату. Маршрут навигатора не используется как evidence.'}</p>}
 
       {pendingClaim && <div className="kb-notice"><strong>Вас отметил участник рейда.</strong><p>Подтвердите только своё присутствие или отклоните claim.</p></div>}

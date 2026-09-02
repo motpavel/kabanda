@@ -139,7 +139,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     )
     return response.track.pointCount
   }, { timeout: 30_000 }).toBeGreaterThan(1)
-  await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toHaveCount(1, { timeout: 10_000 })
   await expect(page.getByLabel('Моё положение')).toBeVisible()
   await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()

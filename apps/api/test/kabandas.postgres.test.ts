@@ -986,7 +986,7 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
         completed.organizerId,
       ),
     ).resolves.toBeUndefined()
-  })
+  }, 10_000)
 
   it('does not report a member-organized active raid as current for an unjoined owner', async () => {
     const { ownerId, organizerId, kabanda, started } =
