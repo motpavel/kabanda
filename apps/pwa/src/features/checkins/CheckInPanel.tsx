@@ -73,7 +73,7 @@ export function CheckInPanel({
   nearbyPoints?: NearbyPoint[]
   presentation?: 'card' | 'map-sheet'
   onPendingChange?: (count: number) => void
-  onAttentionChange?: (state: { count: number; key: string }) => void
+  onAttentionChange?: (state: { count: number; key: string; actionKey: string }) => void
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState('')
@@ -199,7 +199,7 @@ export function CheckInPanel({
 
   useEffect(() => {
     onAttentionChange?.(attention)
-  }, [attention.count, attention.key, onAttentionChange])
+  }, [attention.actionKey, attention.count, attention.key, onAttentionChange])
 
   const refreshLocal = useCallback(async () => {
     const next = await getCheckInLocalState(identityId, raid.id)

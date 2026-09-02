@@ -59,6 +59,16 @@ describe('check-in attention outside point proximity', () => {
     })).toEqual({
       count: 3,
       key: 'claim:claim-a|fallback:fallback-b|manual:operation-c',
+      actionKey: 'claim:claim-a|fallback:fallback-b|manual:operation-c',
     })
+  })
+
+  it('keeps offline work visible without reopening a sheet the user collapsed', () => {
+    expect(checkInAttentionState({
+      claimIds: [],
+      fallbackIds: [],
+      manualOperationId: null,
+      unsynced: 2,
+    })).toEqual({ count: 2, key: 'unsynced:2', actionKey: '' })
   })
 })

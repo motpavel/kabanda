@@ -19,17 +19,18 @@ export function checkInAttentionState(input: {
   fallbackIds: readonly string[]
   manualOperationId: string | null
   unsynced: number
-}): { count: number; key: string } {
-  const keys = [
+}): { count: number; key: string; actionKey: string } {
+  const actionKeys = [
     ...input.claimIds.map((id) => `claim:${id}`),
     ...input.fallbackIds.map((id) => `fallback:${id}`),
     ...(input.manualOperationId ? [`manual:${input.manualOperationId}`] : []),
-    ...(input.unsynced > 0 ? [`unsynced:${input.unsynced}`] : []),
   ]
+  const keys = [...actionKeys, ...(input.unsynced > 0 ? [`unsynced:${input.unsynced}`] : [])]
   return {
     count: input.claimIds.length + input.fallbackIds.length +
       (input.manualOperationId ? 1 : 0) + input.unsynced,
     key: keys.join('|'),
+    actionKey: actionKeys.join('|'),
   }
 }
 

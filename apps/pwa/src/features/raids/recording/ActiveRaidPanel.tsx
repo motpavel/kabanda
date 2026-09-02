@@ -38,7 +38,7 @@ export function ActiveRaidPanel({
   const [sheetOpen, setSheetOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [pendingCheckIns, setPendingCheckIns] = useState(0)
-  const [checkInAttention, setCheckInAttention] = useState({ count: 0, key: '' })
+  const [checkInAttention, setCheckInAttention] = useState({ count: 0, key: '', actionKey: '' })
   const lastPresentedPoint = useRef<string | null>(null)
   const lastPresentedAttention = useRef('')
   const activePoint = proximity.nearby.find(({ creditedByTeam }) => !creditedByTeam) ?? null
@@ -71,12 +71,12 @@ export function ActiveRaidPanel({
   }, [activePoint])
 
   useEffect(() => {
-    if (!checkInAttention.key) {
+    if (!checkInAttention.actionKey) {
       lastPresentedAttention.current = ''
       return
     }
-    if (checkInAttention.key === lastPresentedAttention.current) return
-    lastPresentedAttention.current = checkInAttention.key
+    if (checkInAttention.actionKey === lastPresentedAttention.current) return
+    lastPresentedAttention.current = checkInAttention.actionKey
     setSheetOpen(true)
   }, [checkInAttention])
 
@@ -117,7 +117,7 @@ export function ActiveRaidPanel({
 
     {arrivalAvailable && !sheetOpen && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button">
       <span aria-hidden="true" />
-      <span><strong>{activePoint ? 'Вы рядом с точкой' : 'Нужно закончить отметку'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : pendingCheckIns > 0 ? `${pendingCheckIns} действий ждут синхронизации` : 'Есть подтверждение или ручная проверка'}</small></span>
+      <span><strong>{activePoint ? 'Вы рядом с точкой' : pendingCheckIns > 0 ? 'Сохранено без сети' : 'Нужно закончить отметку'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : pendingCheckIns > 0 ? `${pendingCheckIns} действий ждут синхронизации` : 'Есть подтверждение или ручная проверка'}</small></span>
       <b>{activePoint ? 'Отметиться' : 'Открыть'}</b>
     </button>}
 
