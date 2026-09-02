@@ -86,6 +86,7 @@ export function CheckInPanel({
   const actionKeys = useRef(new Map<string, string>())
   const autoSuggestedParticipants = useRef(new Set<string>())
   const replaying = useRef(false)
+  const replayRequested = useRef(false)
   const { setUnsyncedCheckInWork } = useRecordingRuntime()
   const viewerIsOrganizer = raid.organizerUserId === identityId
   const participants = useMemo(() => activeParticipants(raid), [raid])
@@ -170,25 +171,32 @@ export function CheckInPanel({
   }, [raid.id])
 
   const flush = useCallback(async () => {
-    if (replaying.current || !canMutate || !navigator.onLine) return
+    if (!canMutate || !navigator.onLine) return
+    if (replaying.current) {
+      replayRequested.current = true
+      return
+    }
     replaying.current = true
     try {
-      for (let index = 0; index < 4; index += 1) {
-        const result = await replayOneCheckInOrMedia({
-          identityId,
-          raidId: raid.id,
-          holderTabId: senderTabId,
-          online: navigator.onLine,
-        })
-        if (result.kind === 'idle' || result.kind === 'retryable' || result.kind === 'fence_lost') break
-        if (result.kind === 'terminal') {
-          setMessage(`Сервер отклонил локальную операцию: ${result.code}.`)
-          break
+      do {
+        replayRequested.current = false
+        for (let index = 0; index < 4; index += 1) {
+          const result = await replayOneCheckInOrMedia({
+            identityId,
+            raidId: raid.id,
+            holderTabId: senderTabId,
+            online: navigator.onLine,
+          })
+          if (result.kind === 'idle' || result.kind === 'retryable' || result.kind === 'fence_lost') break
+          if (result.kind === 'terminal') {
+            setMessage(`Сервер отклонил локальную операцию: ${result.code}.`)
+            break
+          }
         }
-      }
-      await refreshLocal()
-      await refreshCanonicalExtras().catch(() => undefined)
-      await onCanonicalRefresh()
+        await refreshLocal()
+        await refreshCanonicalExtras().catch(() => undefined)
+        await onCanonicalRefresh()
+      } while (replayRequested.current && canMutate && navigator.onLine)
     } finally {
       replaying.current = false
     }

@@ -169,7 +169,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
   await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
-  await expect(page.getByText('Локально: 2', { exact: true }).first()).toBeVisible()
+  await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)
     return [counts.checkInPending, counts.mediaPending]
@@ -177,7 +177,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: /Сохранено без сети/ }).click()
-  await expect(page.getByText('Локально: 2', { exact: true }).first()).toBeVisible()
+  await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)
     return [counts.checkInPending, counts.mediaPending]
