@@ -84,7 +84,7 @@ export function CheckInPanel({
   const [verifierId, setVerifierId] = useState('')
   const senderTabId = useRef(tabId()).current
   const actionKeys = useRef(new Map<string, string>())
-  const autoSuggestedParticipants = useRef(new Set<string>())
+  const manualParticipantChoices = useRef(new Map<string, boolean>())
   const replaying = useRef(false)
   const replayRequested = useRef(false)
   const { setUnsyncedCheckInWork } = useRecordingRuntime()
@@ -116,7 +116,7 @@ export function CheckInPanel({
     setSelectedParticipants([identityId])
     setNearbyParticipantIds([])
     setOrganizerAttestation(false)
-    autoSuggestedParticipants.current.clear()
+    manualParticipantChoices.current.clear()
   }, [identityId, selectedPointId])
 
   useEffect(() => {
@@ -130,11 +130,13 @@ export function CheckInPanel({
           .filter(({ status }) => status === 'nearby')
           .map(({ id }) => id)
         setNearbyParticipantIds(nearbyIds)
-        const additions = nearbyIds.filter((id) => !autoSuggestedParticipants.current.has(id))
-        for (const id of additions) autoSuggestedParticipants.current.add(id)
-        if (additions.length > 0) {
-          setSelectedParticipants((current) => Array.from(new Set([...current, ...additions])))
-        }
+        const manualIds = Array.from(manualParticipantChoices.current)
+          .filter(([, selected]) => selected)
+          .map(([id]) => id)
+        const suggestedIds = nearbyIds.filter(
+          (id) => id !== identityId && !manualParticipantChoices.current.has(id),
+        )
+        setSelectedParticipants(Array.from(new Set([identityId, ...manualIds, ...suggestedIds])))
       } catch {
         // Manual participant selection remains available when live presence cannot refresh.
       }
@@ -365,9 +367,11 @@ export function CheckInPanel({
   }
 
   const toggleParticipant = (participantId: string) => {
-    setSelectedParticipants((current) => current.includes(participantId)
-      ? current.filter((id) => id !== participantId)
-      : [...current, participantId])
+    setSelectedParticipants((current) => {
+      const selected = !current.includes(participantId)
+      manualParticipantChoices.current.set(participantId, selected)
+      return selected ? [...current, participantId] : current.filter((id) => id !== participantId)
+    })
   }
 
   const selectedPrimaryKind = selectCheckInPrimary({

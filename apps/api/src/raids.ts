@@ -1185,21 +1185,29 @@ export class DatabaseRaidService implements RaidService {
         throw this.forbiddenCommand()
       }
       const capturedAt = new Date(evidence.capturedAt)
-      const ageMs = Date.now() - capturedAt.getTime()
-      if (!Number.isFinite(capturedAt.getTime()) || ageMs > 30_000 || ageMs < -10_000) {
+      if (!Number.isFinite(capturedAt.getTime())) {
+        throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
+      }
+      const freshness = await client.query<{ fresh: boolean }>(
+        `SELECT $1::timestamptz >= clock_timestamp() - interval '30 seconds'
+           AND $1::timestamptz <= clock_timestamp() + interval '10 seconds' AS fresh`,
+        [capturedAt],
+      )
+      if (!freshness.rows[0]?.fresh) {
         throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
       }
       await client.query(
         `INSERT INTO raid_presence_reports
           (raid_id, user_id, location, captured_at, accuracy_meters, expires_at, updated_at)
          VALUES ($1, $2, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography,
-           $5, $6, clock_timestamp() + interval '30 seconds', clock_timestamp())
+           $5, $6, $5::timestamptz + interval '30 seconds', clock_timestamp())
          ON CONFLICT (raid_id, user_id) DO UPDATE SET
            location = excluded.location,
            captured_at = excluded.captured_at,
            accuracy_meters = excluded.accuracy_meters,
            expires_at = excluded.expires_at,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE excluded.captured_at > raid_presence_reports.captured_at`,
         [raid.id, actorUserId, evidence.latitude, evidence.longitude, capturedAt, evidence.accuracyMeters],
       )
       return this.projectPresenceRoster(client, raid)

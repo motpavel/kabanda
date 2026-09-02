@@ -686,6 +686,55 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     )).rows[0]?.count)).toBe(0)
   })
 
+  it('expires presence from capture time and ignores an older in-flight report', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('presence-ordering')
+    const ready = await readyRaid(ownerId, kabanda.id, 'presence-ordering')
+    const freshCapturedAt = new Date()
+    await raidService!.reportPresence(ownerId, ready.raid.id, {
+      latitude: 56.85,
+      longitude: 53.2,
+      capturedAt: freshCapturedAt.toISOString(),
+      accuracyMeters: 8,
+    })
+    await raidService!.reportPresence(ownerId, ready.raid.id, {
+      latitude: 57,
+      longitude: 54,
+      capturedAt: new Date(freshCapturedAt.getTime() - 5_000).toISOString(),
+      accuracyMeters: 8,
+    })
+    const stored = await pool!.query<{
+      captured_at: Date
+      expiry_seconds: number
+      longitude: number
+    }>(
+      `SELECT captured_at,
+         extract(epoch FROM expires_at - captured_at) AS expiry_seconds,
+         ST_X(location::geometry) AS longitude
+       FROM raid_presence_reports WHERE raid_id = $1 AND user_id = $2`,
+      [ready.raid.id, ownerId],
+    )
+    expect(stored.rows[0]?.captured_at.toISOString()).toBe(freshCapturedAt.toISOString())
+    expect(Number(stored.rows[0]?.expiry_seconds)).toBe(30)
+    expect(Number(stored.rows[0]?.longitude)).toBe(53.2)
+
+    await pool!.query('DELETE FROM raid_presence_reports WHERE raid_id = $1', [ready.raid.id])
+    const almostExpiredAt = new Date(Date.now() - 20_000)
+    await raidService!.reportPresence(ownerId, ready.raid.id, {
+      latitude: 56.85,
+      longitude: 53.2,
+      capturedAt: almostExpiredAt.toISOString(),
+      accuracyMeters: 8,
+    })
+    const remaining = await pool!.query<{ remaining_seconds: number }>(
+      `SELECT extract(epoch FROM expires_at - clock_timestamp()) AS remaining_seconds
+       FROM raid_presence_reports WHERE raid_id = $1 AND user_id = $2`,
+      [ready.raid.id, ownerId],
+    )
+    expect(Number(stored.rows[0]?.expiry_seconds)).toBe(30)
+    expect(Number(remaining.rows[0]?.remaining_seconds)).toBeGreaterThan(5)
+    expect(Number(remaining.rows[0]?.remaining_seconds)).toBeLessThan(15)
+  })
+
   it('creates a future scheduled raid as planned and opens its lobby', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('raid-planned')
     const scheduledAt = '2099-08-28T12:00:00.000Z'
