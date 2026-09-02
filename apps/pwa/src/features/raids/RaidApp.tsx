@@ -56,6 +56,7 @@ import type {
   ReadinessStatus,
 } from './types'
 import { ActiveRaidPanel } from './recording/ActiveRaidPanel'
+import { RaidPresenceGate } from './RaidPresenceGate'
 import { FinalizationPanel } from '../results/FinalizationPanel'
 import { ResultPanel } from '../results/ResultPanel'
 import { leaveRaid } from '../results/api'
@@ -316,6 +317,7 @@ function RaidDetailPage({
   } | null>(null)
   const [navigatorId, setNavigatorId] = useState('')
   const [handoffNavigatorId, setHandoffNavigatorId] = useState('')
+  const [presenceReady, setPresenceReady] = useState(false)
   const operationKeys = useRef(new Map<string, string>())
   const pendingReadiness = useRef<{
     key: string
@@ -457,7 +459,7 @@ function RaidDetailPage({
     if (primary.kind === 'refresh') return resource.refresh()
     if (primary.kind === 'readiness') return runReadiness()
     if (primary.kind === 'navigate') return
-    if (primary.command === 'start' && !window.confirm('Начать один канонический рейд сейчас?')) return
+    if (primary.command === 'start' && !window.confirm('Все здесь — начинаем рейд?')) return
     await applyCommand(primary.command)
   }
 
@@ -485,6 +487,22 @@ function RaidDetailPage({
         ? 'warn'
         : 'pass'
       : 'unknown'
+
+  if (raid.state === 'active' || raid.state === 'paused') {
+    return <RaidShell active>
+      <ActiveRaidPanel
+        backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}
+        identityId={user.id}
+        raid={raid}
+        staleProjection={resource.stale}
+        serverPrimary={primary}
+        operationPending={Boolean(operation)}
+        onServerPrimary={() => void handlePrimary()}
+        onCanonicalRefresh={resource.refresh}
+        onApplyRaid={resource.applyRaid}
+      />
+    </RaidShell>
+  }
 
   return (
     <RaidShell>
@@ -518,28 +536,18 @@ function RaidDetailPage({
         </section>
       )}
 
-      {(raid.state === 'draft' || raid.state === 'planned' || raid.state === 'lobby') && (viewerIsNavigator || raid.navigatorUserId) && (
+      {raid.state === 'lobby' && (raid.organizerUserId === user.id || viewerParticipant?.state === 'accepted' || viewerParticipant?.state === 'ready') && (
+        <RaidPresenceGate identityId={user.id} onReadyChange={setPresenceReady} raid={raid} stale={resource.stale} />
+      )}
+
+      {(raid.state === 'draft' || raid.state === 'planned' || raid.state === 'lobby') && viewerIsNavigator && (
         <section className="kb-card raid-readiness">
           <div className="kb-section-head"><div><p className="kb-kicker">Перед стартом</p><h2>Готов ли телефон?</h2></div><span className={`readiness-pill readiness-pill--${readinessStatus}`}>{readinessStatus}</span></div>
           <p className="kb-muted">Проверяем только измеримое. КАБАНДА не обещает запись при выключенном экране.</p>
           {readinessRows.length > 0 && <ul>{readinessRows.map((row) => <li key={row.id} data-status={row.status}><span aria-hidden="true">{statusIcon(row.status)}</span><div><strong>{row.label}</strong><small>{row.detail}</small></div></li>)}</ul>}
           {raid.navigatorBlockers.length ? <div className="kb-error"><strong>Сервер блокирует старт:</strong><ul>{raid.navigatorBlockers.map((blocker) => <li key={blocker}>{readinessCodeLabel(blocker)}</li>)}</ul></div> : null}
           {raid.navigatorWarnings.length ? <div className="kb-notice"><strong>Предупреждения:</strong><ul>{raid.navigatorWarnings.map((warning) => <li key={warning}>{readinessCodeLabel(warning)}</li>)}</ul></div> : null}
-          {!viewerIsNavigator && <p className="kb-notice">Проверку должен отправить {navigatorParticipant?.displayName ?? 'выбранный навигатор'} со своего устройства.</p>}
         </section>
-      )}
-
-      {(raid.state === 'active' || raid.state === 'paused') && (
-        <ActiveRaidPanel
-          identityId={user.id}
-          raid={raid}
-          staleProjection={resource.stale}
-          serverPrimary={primary}
-          operationPending={Boolean(operation)}
-          onServerPrimary={() => void handlePrimary()}
-          onCanonicalRefresh={resource.refresh}
-          onApplyRaid={resource.applyRaid}
-        />
       )}
 
       {raid.state === 'finalizing' && (
@@ -585,8 +593,8 @@ function RaidDetailPage({
         </section>
       )}
 
-      {primary && raid.state !== 'active' && raid.state !== 'paused' && raid.state !== 'finalizing' && (
-        <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && !navigator.onLine)} onClick={handlePrimary}>{operation ? 'Подтверждаем…' : primary.label}</button>
+      {primary && raid.state !== 'finalizing' && (
+        <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && (!navigator.onLine || !presenceReady))} onClick={handlePrimary}>{operation ? 'Подтверждаем…' : primary.kind === 'command' && primary.command === 'start' ? presenceReady ? 'Все здесь — начать рейд' : 'Ждём всю стаю' : primary.label}</button>
       )}
       {allowed.has('cancel') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'cancel'} onClick={() => window.confirm('Отменить рейд для всей команды?') && applyCommand('cancel')}>Отменить рейд</button>}
       {allowed.has('leave') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'leave' || !navigator.onLine} onClick={leaveCurrentRaid}>{operation === 'leave' ? 'Выходим…' : 'Выйти из рейда'}</button>}
@@ -598,8 +606,8 @@ function ParticipantList({ participants, navigatorId }: { participants: RaidPart
   return <ul className="raid-participants">{participants.map((participant) => <li key={participant.id}><span className="raid-avatar">{participant.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{participant.displayName}</strong><small>{participant.id === navigatorId ? 'Навигатор · ' : ''}{participantStateLabel(participant.state)}</small></div><span className={`participant-state participant-state--${participant.state}`}>{participantStateLabel(participant.state)}</span></li>)}</ul>
 }
 
-function RaidShell({ children }: { children: ReactNode }) {
-  return <main className="kb-shell raid-shell"><a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>{children}</main>
+function RaidShell({ children, active = false }: { children: ReactNode; active?: boolean }) {
+  return <main className={`kb-shell raid-shell${active ? ' raid-shell--active' : ''}`}><a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>{children}</main>
 }
 
 function EmptyState({ title, detail }: { title: string; detail: string }) {

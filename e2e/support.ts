@@ -146,7 +146,7 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
           if (element instanceof HTMLButtonElement) element.type = 'button'
           if (typeof markerClass !== 'string') {
             element.className = rider ? 'route-live-map__rider' : 'kb-yandex-user-location'
-            element.setAttribute('aria-label', rider ? 'Положение навигатора рейда' : 'Моё местоположение')
+            element.setAttribute('aria-label', rider ? 'Моё положение' : 'Моё местоположение')
           }
           placemark.element = element
           placemark.syncElement()

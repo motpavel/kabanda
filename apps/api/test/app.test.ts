@@ -88,6 +88,11 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
     recoverNavigatorLease: vi.fn(),
     submitRouteBatch: vi.fn(),
     getRouteTrack: vi.fn().mockResolvedValue({ segments: [], pointCount: 0, truncated: false, updatedAt: null, serverAt: '2026-08-28T12:00:00.000Z' }),
+    getMapPoints: vi.fn().mockResolvedValue({ points: [] }),
+    reportPresence: vi.fn().mockResolvedValue({ radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: '2026-08-28T12:00:00.000Z' }),
+    getPresenceRoster: vi.fn().mockResolvedValue({ radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: '2026-08-28T12:00:00.000Z' }),
+    setManualPresence: vi.fn().mockResolvedValue({ radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: '2026-08-28T12:00:00.000Z' }),
+    getPointPresence: vi.fn().mockResolvedValue({ pointSnapshotId: '00000000-0000-4000-8000-000000000001', radiusMeters: 50, participants: [], serverAt: '2026-08-28T12:00:00.000Z' }),
     getRaid: vi.fn(),
     getCurrent: vi.fn().mockResolvedValue(null),
     listActionable: vi.fn().mockResolvedValue([]),
@@ -1138,6 +1143,96 @@ describe('API foundation', () => {
     expect(getRouteTrack).toHaveBeenCalledWith(user.id, '81297402-898c-48d6-bc78-c74b6b38205c')
   })
 
+  it('returns private raid map points to an authenticated viewer', async () => {
+    const points = [{
+      id: '9ad92175-8a47-4131-86ad-10ed765f8168',
+      sourcePointId: '631eb45d-dc73-4f21-aad2-ee179b6a17fd',
+      name: 'Точка у старта',
+      latitude: 56.85,
+      longitude: 53.2,
+      position: 0,
+      visitedByMe: false,
+      visitedByTeam: false,
+    }]
+    const getMapPoints = vi.fn().mockResolvedValue({ points })
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ getMapPoints }),
+    )
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/map-points',
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.json()).toEqual({ points })
+    expect(getMapPoints).toHaveBeenCalledWith(user.id, '81297402-898c-48d6-bc78-c74b6b38205c')
+  })
+
+  it('accepts fresh pre-start presence without returning coordinates', async () => {
+    const roster = {
+      radiusMeters: 50,
+      maxAgeSeconds: 30,
+      allReady: true,
+      participants: [{ id: user.id, displayName: 'Павел', avatarUrl: null, status: 'nearby', observedAt: '2026-08-28T12:00:00.000Z' }],
+      serverAt: '2026-08-28T12:00:01.000Z',
+    }
+    const reportPresence = vi.fn().mockResolvedValue(roster)
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ reportPresence }),
+    )
+    const evidence = {
+      latitude: 56.85,
+      longitude: 53.2,
+      capturedAt: '2026-08-28T12:00:00.000Z',
+      accuracyMeters: 8,
+    }
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/presence/me',
+      headers: { origin: testOrigin, cookie: 'kabanda_session=session' },
+      payload: evidence,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.json()).toEqual(roster)
+    expect(JSON.stringify(response.json())).not.toContain('56.85')
+    expect(JSON.stringify(response.json())).not.toContain('53.2')
+    expect(reportPresence).toHaveBeenCalledWith(user.id, '81297402-898c-48d6-bc78-c74b6b38205c', evidence)
+  })
+
+  it('returns point proximity statuses to the raid organizer without coordinates', async () => {
+    const pointSnapshotId = '9ad92175-8a47-4131-86ad-10ed765f8168'
+    const roster = {
+      pointSnapshotId,
+      radiusMeters: 50,
+      participants: [{ id: user.id, status: 'nearby', observedAt: '2026-08-28T12:00:00.000Z' }],
+      serverAt: '2026-08-28T12:00:01.000Z',
+    }
+    const getPointPresence = vi.fn().mockResolvedValue(roster)
+    const app = await createTestApp(
+      createAuth({ getUser: vi.fn().mockResolvedValue(user) }),
+      createKabandas(),
+      createRaids({ getPointPresence }),
+    )
+    const raidId = '81297402-898c-48d6-bc78-c74b6b38205c'
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/raids/${raidId}/check-ins/presence?pointSnapshotId=${pointSnapshotId}`,
+      headers: { cookie: 'kabanda_session=session' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.json()).toEqual(roster)
+    expect(JSON.stringify(response.json())).not.toContain('56.85')
+    expect(JSON.stringify(response.json())).not.toContain('53.2')
+    expect(getPointPresence).toHaveBeenCalledWith(user.id, raidId, pointSnapshotId)
+  })
+
   it('registers the canonical route lease acquire endpoint', async () => {
     const acquireNavigatorLease = vi.fn().mockResolvedValue({
       receipt: {
@@ -1179,7 +1274,7 @@ describe('API foundation', () => {
 
   it('registers bounded nearby and actor-owned pending inbox routes', async () => {
     const nearbyCheckins = vi.fn().mockResolvedValue({
-      policy: { version: 'v1', radiusMeters: 75, maxAgeSeconds: 60, maxAccuracyMeters: 50 },
+      policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 },
       points: [],
     })
     const listPendingClaims = vi.fn().mockResolvedValue({ claims: [] })

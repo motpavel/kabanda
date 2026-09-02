@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
+import { getRaidPointPresence } from '../raids/api'
 import type { RaidParticipant, RaidProjection } from '../raids/types'
 import { useRecordingRuntime } from '../raids/recording/runtime'
 import {
@@ -54,16 +55,23 @@ export function CheckInPanel({
   staleProjection,
   onCanonicalRefresh,
   serverTailOnly = false,
+  nearbyPoints,
+  presentation = 'card',
+  onPendingChange,
 }: {
   identityId: string
   raid: RaidProjection
   staleProjection: boolean
   onCanonicalRefresh: () => Promise<unknown>
   serverTailOnly?: boolean
+  nearbyPoints?: NearbyPoint[]
+  presentation?: 'card' | 'map-sheet'
+  onPendingChange?: (count: number) => void
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState('')
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([identityId])
+  const [nearbyParticipantIds, setNearbyParticipantIds] = useState<string[]>([])
   const [organizerAttestation, setOrganizerAttestation] = useState(false)
   const [claims, setClaims] = useState<CheckInClaim[]>([])
   const [fallbacks, setFallbacks] = useState<CheckInFallback[]>([])
@@ -76,10 +84,10 @@ export function CheckInPanel({
   const [verifierId, setVerifierId] = useState('')
   const senderTabId = useRef(tabId()).current
   const actionKeys = useRef(new Map<string, string>())
+  const autoSuggestedParticipants = useRef(new Set<string>())
   const replaying = useRef(false)
   const { setUnsyncedCheckInWork } = useRecordingRuntime()
-  const viewerIsNavigator = raid.navigatorUserId === identityId
-  const viewerIsOwner = raid.organizerUserId === identityId
+  const viewerIsOrganizer = raid.organizerUserId === identityId
   const participants = useMemo(() => activeParticipants(raid), [raid])
   const pendingClaim = claims[0] ?? null
   const pendingFallback = fallbacks[0] ?? null
@@ -93,6 +101,54 @@ export function CheckInPanel({
     draft.attemptId === manualResponse?.attemptId && draft.mediaId,
   ) ?? null
   const canMutate = raid.state === 'active' && !staleProjection
+  const effectiveNearby = nearbyPoints ?? nearby
+
+  useEffect(() => {
+    if (!nearbyPoints) return
+    const eligible = nearbyPoints.filter(({ creditedByTeam }) => !creditedByTeam)
+    setSelectedPointId((current) => eligible.some(({ pointSnapshotId }) => pointSnapshotId === current)
+      ? current
+      : eligible[0]?.pointSnapshotId ?? '')
+  }, [nearbyPoints])
+
+  useEffect(() => {
+    setSelectedParticipants([identityId])
+    setNearbyParticipantIds([])
+    setOrganizerAttestation(false)
+    autoSuggestedParticipants.current.clear()
+  }, [identityId, selectedPointId])
+
+  useEffect(() => {
+    if (!viewerIsOrganizer || raid.state !== 'active' || !selectedPointId || !navigator.onLine) return
+    let active = true
+    const refresh = async () => {
+      try {
+        const response = await getRaidPointPresence(raid.id, selectedPointId)
+        if (!active) return
+        const nearbyIds = response.participants
+          .filter(({ status }) => status === 'nearby')
+          .map(({ id }) => id)
+        setNearbyParticipantIds(nearbyIds)
+        const additions = nearbyIds.filter((id) => !autoSuggestedParticipants.current.has(id))
+        for (const id of additions) autoSuggestedParticipants.current.add(id)
+        if (additions.length > 0) {
+          setSelectedParticipants((current) => Array.from(new Set([...current, ...additions])))
+        }
+      } catch {
+        // Manual participant selection remains available when live presence cannot refresh.
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 5_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [raid.id, raid.state, selectedPointId, viewerIsOrganizer])
+
+  useEffect(() => {
+    onPendingChange?.(local?.unsynced ?? 0)
+  }, [local?.unsynced, onPendingChange])
 
   const refreshLocal = useCallback(async () => {
     const next = await getCheckInLocalState(identityId, raid.id)
@@ -187,7 +243,7 @@ export function CheckInPanel({
         pointSnapshotId: selectedPointId,
         evidence,
         presentParticipantIds: Array.from(new Set([identityId, ...selectedParticipants])),
-        organizerAttestation: viewerIsOwner && organizerAttestation,
+        organizerAttestation: viewerIsOrganizer && organizerAttestation,
       })
       if (!record) throw new Error('IDENTITY_CHANGED')
       await refreshLocal()
@@ -315,7 +371,7 @@ export function CheckInPanel({
       (reservedFallback?.input.verifierUserId ?? verifierId) &&
       (reservedFallback?.input.verifierUserId ?? verifierId) !== identityId,
     ),
-    viewerIsNavigator,
+    viewerCanCoordinate: viewerIsOrganizer,
     hasSelectedPoint: Boolean(selectedPointId),
   })
   const primaryKind = serverTailOnly && selectedPrimaryKind !== 'claim' && selectedPrimaryKind !== 'verify_fallback'
@@ -329,40 +385,40 @@ export function CheckInPanel({
         ? { label: 'Отправить на ручную проверку', action: submitFallback }
         : primaryKind === 'check_in'
           ? { label: 'Отметиться у точки', action: submit }
-          : primaryKind === 'locate'
+            : primaryKind === 'locate' && presentation !== 'map-sheet'
             ? { label: 'Найти точку рядом', action: locate }
             : null
-  const primaryRequiresOnline = Boolean(pendingClaim || pendingFallback || manualResponse || (viewerIsNavigator && !selectedPointId))
+  const primaryRequiresOnline = Boolean(pendingClaim || pendingFallback || manualResponse || (viewerIsOrganizer && !selectedPointId))
 
   return (
-    <section className="kb-card checkin-panel">
+    <section className={`${presentation === 'map-sheet' ? 'checkin-panel checkin-panel--map' : 'kb-card checkin-panel'}`}>
       <div className="kb-section-head">
         <div><p className="kb-kicker">Точка рейда</p><h2>{manualResponse ? 'Нужна ручная проверка' : 'Кто сейчас здесь?'}</h2></div>
         {local?.unsynced ? <span className="checkin-pending">Локально: {local.unsynced}</span> : null}
       </div>
-      <p className="kb-muted">{serverTailOnly ? 'В finalizing доступны только уже созданные server-side подтверждения.' : 'Для каждой попытки берём отдельную координату. Маршрут навигатора не используется как evidence.'}</p>
+      {presentation !== 'map-sheet' && <p className="kb-muted">{serverTailOnly ? 'В finalizing доступны только уже созданные server-side подтверждения.' : 'Для каждой попытки берём отдельную координату. Маршрут навигатора не используется как evidence.'}</p>}
 
       {pendingClaim && <div className="kb-notice"><strong>Вас отметил участник рейда.</strong><p>Подтвердите только своё присутствие или отклоните claim.</p></div>}
       {pendingFallback && <div className="kb-notice"><strong>Вас выбрали verifier.</strong><p>Подтверждение будет отдельным от автора попытки.</p></div>}
 
-      {!manualResponse && nearby.length > 0 && (
-        <fieldset className="checkin-points"><legend>Eligible точки рядом</legend>{nearby.map((point) => (
+      {!manualResponse && effectiveNearby.length > 0 && (
+        <fieldset className="checkin-points"><legend>{presentation === 'map-sheet' ? 'Точка рядом' : 'Eligible точки рядом'}</legend>{effectiveNearby.filter(({ creditedByTeam }) => presentation !== 'map-sheet' || !creditedByTeam).map((point) => (
           <label key={point.pointSnapshotId}><input type="radio" name="nearby-point" checked={selectedPointId === point.pointSnapshotId} onChange={() => setSelectedPointId(point.pointSnapshotId)} /><span><strong>{point.name}</strong><small>{Math.round(point.distanceMeters)} м · {point.creditedByTeam ? 'команда уже была' : 'новая для команды'}</small></span></label>
         ))}</fieldset>
       )}
 
-      {(selectedPointId || manualResponse) && viewerIsNavigator && (
+      {(selectedPointId || manualResponse) && viewerIsOrganizer && (
         <fieldset className="checkin-participants"><legend>Кто остановился у точки</legend>{participants.map((participant) => (
-          <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || selectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : ''}</span></label>
-        ))}</fieldset>
+          <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || selectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : ''}</span></label>
+        ))}<small>Тех, чья свежая геопозиция попала в радиус 50 м, приложение отметило само. Остальных организатор может добавить вручную.</small></fieldset>
       )}
 
-      {!viewerIsOwner && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+      {!viewerIsOrganizer && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
         <p className="kb-muted">Выбранные участники получат личный claim. Credit появится только после их подтверждения.</p>
       )}
 
-      {viewerIsOwner && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
-        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setOrganizerAttestation(event.target.checked)} /><span><strong>Подтверждаю как вожак</strong><small>Без этого выбранные участники получат personal claim, но не credit.</small></span></label>
+      {viewerIsOrganizer && selectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setOrganizerAttestation(event.target.checked)} /><span><strong>Подтверждаю как организатор</strong><small>Отмеченные участники получат посещение этой точки.</small></span></label>
       )}
 
       {manualResponse && (

@@ -697,3 +697,264 @@
   .raid-shell > .kb-brand { margin-bottom: 18px; }
   .raid-hero { gap: 8px; }
 }
+
+/* Active raid is an immersive map task, separate from the planning shell. */
+.raid-shell--active {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+
+.raid-shell--active > .kb-brand { display: none; }
+
+.raid-active-map {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  overflow: hidden;
+  color: #202426;
+  background: #e4e7df;
+}
+
+.route-live-map-shell,
+.raid-active-map .route-live-map {
+  position: absolute;
+  min-height: 0;
+  inset: 0;
+}
+
+.raid-active-map__header {
+  position: absolute;
+  z-index: 20;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  left: 12px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 9px;
+  width: min(560px, calc(100% - 24px));
+  margin: 0 auto;
+  border: 1px solid rgb(28 32 34 / 10%);
+  border-radius: 19px;
+  padding: 7px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 26px rgb(26 31 34 / 18%);
+  backdrop-filter: blur(14px);
+}
+
+.raid-active-map__header > a,
+.raid-active-map__header > button {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 0;
+  border-radius: 14px;
+  color: #202426;
+  background: #f0f1ed;
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.raid-active-map__header > div { min-width: 0; }
+.raid-active-map__header small { display: block; color: #69716d; font-size: .72rem; font-weight: 680; }
+.raid-active-map__header strong { display: block; overflow: hidden; font-size: .98rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.raid-map-controls {
+  position: absolute;
+  z-index: 18;
+  top: calc(max(12px, env(safe-area-inset-top)) + 84px);
+  right: 14px;
+  display: grid;
+  overflow: hidden;
+  border: 1px solid rgb(28 32 34 / 10%);
+  border-radius: 15px;
+  background: rgb(255 255 255 / 95%);
+  box-shadow: 0 7px 20px rgb(26 31 34 / 16%);
+}
+
+.raid-map-controls button {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 0;
+  border-bottom: 1px solid rgb(28 32 34 / 9%);
+  color: #202426;
+  background: transparent;
+  font: inherit;
+  font-size: 1.35rem;
+}
+
+.raid-map-controls button:last-child { border-bottom: 0; font-size: 1.15rem; }
+.raid-map-controls button:disabled { color: #a5aaa6; }
+
+.raid-live-point {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 27px;
+  height: 27px;
+  transform: translate(-50%, -50%);
+  border: 7px solid #ea3e35;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 3px 10px rgb(23 27 29 / 28%);
+}
+
+.raid-live-point--visited {
+  border-color: #8c928f;
+  background: #d8dbd8;
+  box-shadow: 0 2px 6px rgb(23 27 29 / 18%);
+  opacity: .75;
+}
+
+.raid-live-point--nearby {
+  width: 35px;
+  height: 35px;
+  border-width: 9px;
+  animation: raid-point-attention 900ms ease-in-out infinite alternate;
+}
+
+.raid-arrival-pill,
+.raid-proximity-status {
+  position: absolute;
+  z-index: 22;
+  right: 12px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: 12px;
+  width: min(560px, calc(100% - 24px));
+  margin: 0 auto;
+  border: 1px solid rgb(28 32 34 / 10%);
+  border-radius: 20px;
+  color: #202426;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 10px 30px rgb(26 31 34 / 22%);
+  backdrop-filter: blur(14px);
+}
+
+.raid-arrival-pill {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 11px 13px;
+  text-align: left;
+}
+
+.raid-arrival-pill > span:first-child,
+.raid-arrival-sheet__pulse {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ef4338;
+  box-shadow: 0 0 0 7px rgb(239 67 56 / 18%);
+  animation: raid-arrival-pulse 760ms ease-in-out infinite alternate;
+}
+
+.raid-arrival-pill > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.raid-arrival-pill strong { font-size: .9rem; }
+.raid-arrival-pill small { overflow: hidden; color: #68706c; font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.raid-arrival-pill b { color: #c62f27; font-size: .78rem; }
+
+.raid-proximity-status {
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  padding: 10px 14px;
+  color: #5f6863;
+  font-size: .78rem;
+  font-weight: 680;
+  text-align: center;
+}
+
+.raid-proximity-status--blocked { color: #9c342d; }
+
+.raid-arrival-sheet {
+  position: absolute;
+  z-index: 25;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: min(620px, 100%);
+  max-height: min(76vh, 680px);
+  margin: 0 auto;
+  overflow: auto;
+  border-radius: 26px 26px 0 0;
+  padding: 8px 18px calc(18px + env(safe-area-inset-bottom));
+  background: #fffdf8;
+  box-shadow: 0 -14px 36px rgb(26 31 34 / 24%);
+  overscroll-behavior: contain;
+}
+
+.raid-arrival-sheet[hidden] { display: none; }
+
+.raid-arrival-sheet__collapse {
+  display: grid;
+  width: 100%;
+  min-height: 32px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+}
+
+.raid-arrival-sheet__collapse span { width: 44px; height: 5px; border-radius: 999px; background: #d1d4d0; }
+.raid-arrival-sheet__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 2px 2px 12px; }
+.raid-arrival-sheet__heading div { min-width: 0; }
+.raid-arrival-sheet__heading small { color: #c6342d; font-size: .75rem; font-weight: 760; }
+.raid-arrival-sheet__heading h2 { margin: 3px 0 0; overflow: hidden; font-size: 1.22rem; text-overflow: ellipsis; white-space: nowrap; }
+.raid-arrival-sheet__waiting { margin: 0 0 8px; border-radius: 14px; padding: 14px; background: #f1f2ee; color: #5f6863; }
+
+.checkin-panel--map { gap: .65rem; }
+.checkin-panel--map > .kb-section-head { display: none; }
+.checkin-panel--map .checkin-points { display: none; }
+.checkin-panel--map .raid-primary { position: sticky; bottom: 0; min-height: 50px; }
+
+.raid-active-map__actions {
+  position: absolute;
+  z-index: 30;
+  top: calc(max(12px, env(safe-area-inset-top)) + 76px);
+  right: 12px;
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 104px - env(safe-area-inset-bottom));
+  overflow: auto;
+  border-radius: 19px;
+  padding: 14px;
+  background: #fffdf8;
+  box-shadow: 0 12px 36px rgb(26 31 34 / 24%);
+}
+
+.raid-active-map__actions-close { width: 100%; min-height: 44px; border: 0; color: #5f6863; background: transparent; text-align: right; }
+
+.raid-presence-gate { display: grid; gap: 12px; margin-top: 12px; }
+.raid-presence-gate__summary { align-self: start; border-radius: 999px; padding: 6px 9px; color: #6f6251; background: #f2eee5; font-size: .72rem; font-style: normal; font-weight: 760; white-space: nowrap; }
+.raid-presence-gate__summary.is-ready { color: #176047; background: #e2f4eb; }
+.raid-presence-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.raid-presence-list li { display: grid; grid-template-columns: 36px minmax(0, 1fr) 28px; align-items: center; gap: 9px; min-height: 58px; border-top: 1px solid var(--kb-line); padding: 8px 0; }
+.raid-presence-list li > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.raid-presence-list li strong { overflow: hidden; font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
+.raid-presence-list li small { color: var(--kb-muted); font-size: .72rem; }
+.raid-presence-list li > i { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; color: #8d9691; background: #eceeeb; font-style: normal; font-weight: 800; }
+.raid-presence-list li[data-status='nearby'] > i,
+.raid-presence-list li[data-status='manual'] > i { color: #fff; background: #26815f; }
+.raid-presence-list li > button { grid-column: 2 / -1; justify-self: start; min-height: 38px; border: 0; border-radius: 10px; padding: 0 11px; color: #8d3028; background: #fff0ed; font: inherit; font-size: .74rem; font-weight: 720; }
+.raid-presence-gate__hint { margin: 0; color: var(--kb-muted); font-size: .78rem; }
+
+@keyframes raid-point-attention {
+  from { box-shadow: 0 0 0 4px rgb(239 67 56 / 20%), 0 3px 10px rgb(23 27 29 / 28%); transform: translate(-50%, -50%) scale(.96); }
+  to { box-shadow: 0 0 0 18px rgb(239 67 56 / 4%), 0 5px 14px rgb(23 27 29 / 32%); transform: translate(-50%, -50%) scale(1.08); }
+}
+
+@keyframes raid-arrival-pulse {
+  from { box-shadow: 0 0 0 5px rgb(239 67 56 / 15%); transform: scale(.92); }
+  to { box-shadow: 0 0 0 10px rgb(239 67 56 / 3%); transform: scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .raid-live-point--nearby,
+  .raid-arrival-pill > span:first-child,
+  .raid-arrival-sheet__pulse { animation: none; }
+}

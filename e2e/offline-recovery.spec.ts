@@ -3,6 +3,7 @@ import {
   api,
   fixture,
   installSyntheticSession,
+  installYandexMapsMock,
   operationId,
   type FixtureIdentity,
   waitForServiceWorkerControl,
@@ -62,6 +63,7 @@ async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
 
 test('offline route, check-in and photo survive reload and replay once', async ({ context, page }) => {
   const identity = fixture<FixtureIdentity>('prepare')
+  await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
 
   const kabanda = await api<{ kabanda: { id: string } }>(page, 'POST', '/api/kabandas', {
@@ -114,6 +116,12 @@ test('offline route, check-in and photo survive reload and replay once', async (
     },
     operationId('readiness'),
   )).raid
+  await api(page, 'PUT', `/api/raids/${raid.id}/presence/me`, {
+    latitude: identity.point.latitude,
+    longitude: identity.point.longitude,
+    capturedAt: new Date().toISOString(),
+    accuracyMeters: 8,
+  })
   raid = (await api<{ raid: typeof raid }>(
     page,
     'POST',
@@ -124,10 +132,10 @@ test('offline route, check-in and photo survive reload and replay once', async (
 
   await page.goto(`/app?raid=${raid.id}`)
   await waitForServiceWorkerControl(page)
-  await expect(page.getByText('fresh', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByLabel(/Активный рейд Offline recovery raid/)).toBeVisible({ timeout: 30_000 })
   await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
-  await page.getByRole('button', { name: 'Найти точку рядом' }).click()
-  await expect(page.getByText('Синтетическая точка E2E')).toBeVisible()
+  await expect(page.getByLabel('Подтверждение точки')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
 
   const serverBaseline = fixture<RaidCounts>('inspect-raid', raid.id)
   const localBaseline = await localCounts(page, raid.id)
@@ -157,10 +165,10 @@ test('offline route, check-in and photo survive reload and replay once', async (
       })),
     })
   }, { latitude: 56.86015, longitude: 53.21015, accuracy: 8 })
-  await page.getByRole('button', { name: 'Отметиться у точки' }).click()
-  await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
+  await page.getByRole('button', { name: 'Отметиться у точки' }).click()
+  await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
   await expect(page.getByText('Локально: 2', { exact: true })).toBeVisible()
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)
@@ -168,6 +176,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   }).toEqual([1, 1])
 
   await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: /Сохранено без сети/ }).click()
   await expect(page.getByText('Локально: 2', { exact: true })).toBeVisible()
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)
@@ -199,8 +208,9 @@ test('offline route, check-in and photo survive reload and replay once', async (
     const gallery = await api<{ media: unknown[] }>(page, 'GET', `/api/raids/${raid.id}/media`)
     return gallery.media.length
   }, { timeout: 45_000 }).toBe(1)
+  await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Поставить на паузу' }).click()
-  await expect(page.getByText('Пауза', { exact: true })).toBeVisible()
+  await expect(page.getByText('Рейд на паузе', { exact: true })).toBeVisible()
 
   const acceptedBeforeReload = fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence))
   expect(acceptedBeforeReload.routeSamples).toBeGreaterThan(serverBaseline.routeSamples)

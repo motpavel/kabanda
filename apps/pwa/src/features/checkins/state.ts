@@ -6,7 +6,7 @@ export function selectCheckInPrimary(input: {
   hasManualAttempt: boolean
   hasAcceptedFallbackMedia: boolean
   hasOtherVerifier: boolean
-  viewerIsNavigator: boolean
+  viewerCanCoordinate: boolean
   hasSelectedPoint: boolean
 }): CheckInPrimaryKind {
   if (input.hasPendingClaim) return 'claim'
@@ -14,6 +14,6 @@ export function selectCheckInPrimary(input: {
   if (input.hasManualAttempt) {
     return input.hasAcceptedFallbackMedia && input.hasOtherVerifier ? 'submit_fallback' : null
   }
-  if (!input.viewerIsNavigator) return null
+  if (!input.viewerCanCoordinate) return null
   return input.hasSelectedPoint ? 'check_in' : 'locate'
 }

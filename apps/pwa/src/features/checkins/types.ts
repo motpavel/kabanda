@@ -1,6 +1,6 @@
 export interface CheckInPolicy {
   version: 'v1'
-  radiusMeters: 75
+  radiusMeters: 50
   maxAgeSeconds: 60
   maxAccuracyMeters: 50
 }

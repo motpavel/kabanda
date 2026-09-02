@@ -81,7 +81,7 @@ describe('raid primary CTA', () => {
     ).toBeNull()
   })
 
-  it('makes every accepted participant ready before navigator device readiness', () => {
+  it('keeps the explicit phone-readiness step only for the selected navigator', () => {
     const acceptedNavigator = selectPrimaryAction(
       { ...raid, allowedActions: ['ready'] },
       {
@@ -104,7 +104,7 @@ describe('raid primary CTA', () => {
       },
     )
     expect(acceptedNavigator).toEqual({ kind: 'command', command: 'ready', label: 'Я готов' })
-    expect(acceptedMember).toEqual({ kind: 'command', command: 'ready', label: 'Я готов' })
+    expect(acceptedMember).toBeNull()
   })
 
   it('checks the selected navigator device only after participant ready', () => {

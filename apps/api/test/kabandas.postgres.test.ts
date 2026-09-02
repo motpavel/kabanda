@@ -119,6 +119,12 @@ async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
     { expectedVersion: 3 },
     `ready-${suffix}`,
   )
+  await raidService!.reportPresence(ownerId, raidId, {
+    latitude: 56.85,
+    longitude: 53.2,
+    capturedAt: new Date().toISOString(),
+    accuracyMeters: 8,
+  })
   return raidService!.reportReadiness(
     ownerId,
     raidId,
@@ -208,6 +214,20 @@ async function activeMemberOrganizerRaid(suffix: string, ownerJoins = true) {
     { expectedVersion: ready.raid.version, ...readiness() },
     `member-organizer-readiness-${suffix}`,
   )
+  await raidService!.reportPresence(organizerId, created.raid.id, {
+    latitude: 56.85,
+    longitude: 53.2,
+    capturedAt: new Date().toISOString(),
+    accuracyMeters: 8,
+  })
+  if (ownerJoins) {
+    await raidService!.reportPresence(ownerId, created.raid.id, {
+      latitude: 56.8501,
+      longitude: 53.2001,
+      capturedAt: new Date().toISOString(),
+      accuracyMeters: 8,
+    })
+  }
   const started = await raidService!.command(
     organizerId,
     created.raid.id,
@@ -633,6 +653,37 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     )
     expect(cancelled.raid).toMatchObject({ state: 'cancelled', version: 8 })
     await expect(raidService!.getCurrent(ownerId)).resolves.toBeNull()
+  })
+
+  it('blocks start until every accepted participant is nearby or manually confirmed', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('presence-gate')
+    const ready = await readyRaid(ownerId, kabanda.id, 'presence-gate')
+    await pool!.query('DELETE FROM raid_presence_reports WHERE raid_id = $1', [ready.raid.id])
+    await expect(raidService!.command(
+      ownerId,
+      ready.raid.id,
+      'start',
+      { expectedVersion: ready.raid.version },
+      'presence-gate-blocked',
+    )).rejects.toMatchObject({ code: 'RAID_PARTICIPANTS_NOT_PRESENT' })
+    const present = await raidService!.reportPresence(ownerId, ready.raid.id, {
+      latitude: 56.85,
+      longitude: 53.2,
+      capturedAt: new Date().toISOString(),
+      accuracyMeters: 8,
+    })
+    expect(present).toMatchObject({ allReady: true, participants: [{ id: ownerId, status: 'nearby' }] })
+    await expect(raidService!.command(
+      ownerId,
+      ready.raid.id,
+      'start',
+      { expectedVersion: ready.raid.version },
+      'presence-gate-started',
+    )).resolves.toMatchObject({ raid: { state: 'active' } })
+    expect(Number((await pool!.query(
+      'SELECT count(*) FROM raid_presence_reports WHERE raid_id = $1',
+      [ready.raid.id],
+    )).rows[0]?.count)).toBe(0)
   })
 
   it('creates a future scheduled raid as planned and opens its lobby', async () => {
@@ -1530,6 +1581,18 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
       { expectedVersion: 5, ...readiness() },
       'handoff-route-readiness',
     )
+    await raidService!.reportPresence(ownerId, created.raid.id, {
+      latitude: 56.85,
+      longitude: 53.2,
+      capturedAt: new Date().toISOString(),
+      accuracyMeters: 8,
+    })
+    await raidService!.reportPresence(memberId, created.raid.id, {
+      latitude: 56.8501,
+      longitude: 53.2001,
+      capturedAt: new Date().toISOString(),
+      accuracyMeters: 8,
+    })
     const started = await raidService!.command(
       ownerId,
       created.raid.id,

@@ -46,7 +46,7 @@ export function selectPrimaryAction(
 
   const allowed = new Set(raid.allowedActions)
   if (allowed.has('accept')) return { kind: 'command', command: 'accept', label: 'Принять приглашение' }
-  if (context.viewerParticipantState === 'accepted' && allowed.has('ready')) {
+  if (context.viewerIsNavigator && context.viewerParticipantState === 'accepted' && allowed.has('ready')) {
     return { kind: 'command', command: 'ready', label: 'Я готов' }
   }
   if (

@@ -7,7 +7,7 @@ const base = {
   hasManualAttempt: false,
   hasAcceptedFallbackMedia: false,
   hasOtherVerifier: false,
-  viewerIsNavigator: true,
+  viewerCanCoordinate: true,
   hasSelectedPoint: false,
 }
 
@@ -22,9 +22,9 @@ describe('mobile check-in primary action', () => {
     expect(selectCheckInPrimary({ ...base, hasManualAttempt: true, hasAcceptedFallbackMedia: true, hasOtherVerifier: true })).toBe('submit_fallback')
   })
 
-  it('keeps navigator flow to exactly locate or check-in', () => {
+  it('keeps organizer flow to exactly locate or check-in', () => {
     expect(selectCheckInPrimary(base)).toBe('locate')
     expect(selectCheckInPrimary({ ...base, hasSelectedPoint: true })).toBe('check_in')
-    expect(selectCheckInPrimary({ ...base, viewerIsNavigator: false })).toBeNull()
+    expect(selectCheckInPrimary({ ...base, viewerCanCoordinate: false })).toBeNull()
   })
 })
