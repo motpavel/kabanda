@@ -8,7 +8,7 @@
 .kb-home svg { width: 21px; height: 21px; flex-shrink: 0; }
 .kb-home h3 { margin: 0; font-size: 1.02rem; font-weight: 700; letter-spacing: -.02em; }
 .kb-home-hero { overflow: hidden; border-radius: 20px; background: #fff; }
-.kb-home-hero > img { display: block; width: 100%; height: 260px; object-fit: cover; object-position: center 48%; }
+.kb-home-hero > img { display: block; width: 100%; height: auto; }
 .kb-home-hero-copy { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px 25px; }
 .kb-home .kb-home-hero h1 { margin: 0; font-size: clamp(1.6rem, 3.4vw, 2.2rem); line-height: 1.14; font-weight: 720; }
 .kb-home-hero-copy p { margin: 0; color: var(--home-muted); font-size: .85rem; line-height: 1.6; }
@@ -71,7 +71,6 @@
   .kb-home-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .kb-home-next { grid-row: auto; }
   .kb-home-hero { border-radius: 18px; }
-  .kb-home-hero > img { height: 172px; }
   .kb-home-hero-copy { padding: 16px; gap: 10px; }
   .kb-home .kb-home-hero h1 { font-size: 1.45rem; }
   .kb-home-hero-copy p { font-size: .75rem; line-height: 1.5; max-width: 16ch; }

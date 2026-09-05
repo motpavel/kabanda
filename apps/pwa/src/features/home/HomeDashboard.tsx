@@ -21,7 +21,7 @@ export function HomeDashboard({ identityId, kabanda, members, progress, notices 
 
   return <section className="kb-home" aria-label="Главная">
     <article className="kb-home-hero">
-      <img src={appPath('brand/kabanda-home-ride-v1.jpg')} width="1774" height="887" alt="Пятеро кабанов в велошлемах едут вместе вдоль набережной" fetchPriority="high" decoding="async" />
+      <img src={appPath('brand/kabanda-home-ride-v2.jpg')} width="2048" height="768" alt="Кабаны на велосипедах над городом. Больше чем игра. Хорошие маршруты делают лучших людей." fetchPriority="high" decoding="async" />
       <div className="kb-home-hero-copy">
         <h1>Город — ваш<br />общий маршрут.</h1>
         <p>Знакомые лица. Новые места.<br />Ещё одна история вместе.</p>
