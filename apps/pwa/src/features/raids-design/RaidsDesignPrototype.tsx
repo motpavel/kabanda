@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import '@fontsource-variable/manrope'
 import { appPath } from '../../lib/paths'
-import { FreeHuntCover } from '../raids/FreeHuntCover'
+import { FreeHuntCover, RouteRaidCover } from '../raids/FreeHuntCover'
 import {
   parseRaidsDesignScreen,
   parseRaidsDesignVariant,
@@ -413,6 +413,7 @@ function ParticipantPicker({ designState, onBack, onDone, origin, route }: { des
   return <div className="rdp-page rdp-detail rdp-participants">
     <header className="rdp-subhead"><button aria-label="Назад" onClick={onBack} type="button"><Icon name="arrow" /></button><strong>Участники</strong><span /></header>
     {origin === 'quick' && <FreeHuntCover />}
+    {origin === 'route' && <RouteRaidCover />}
     <section className="rdp-participants__intro"><p className="rdp-eyebrow">{source}</p><h1>{origin === 'schedule' ? 'Кто поедет?' : 'Кто сегодня едет?'}</h1><p>Отметьте участников и подтвердите состав перед стартом.</p></section>
     {hasError && <div className="rdp-inline-alert" role="alert"><strong>Не удалось создать рейд</strong><span>Выбор сохранён. Проверьте сеть и нажмите «Повторить».</span></div>}
     {permissionDenied && <div className="rdp-inline-alert" role="alert"><strong>Недостаточно прав</strong><span>Начать этот рейд может только вожак Кабанды.</span></div>}

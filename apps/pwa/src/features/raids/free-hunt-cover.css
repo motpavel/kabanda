@@ -1,3 +1,4 @@
 .raid-free-hunt-cover { position: relative; overflow: hidden; margin: 12px 0 16px; border-radius: 14px; background: #252521; }
 .raid-free-hunt-cover img { display: block; width: 100%; height: clamp(170px, 40vw, 240px); object-fit: cover; object-position: 50% 43%; }
+.raid-route-cover img { object-position: 50% 28%; }
 .raid-free-hunt-cover figcaption { position: absolute; right: 0; bottom: 0; left: 0; padding: 30px 14px 12px; background: linear-gradient(transparent, rgb(0 0 0 / 82%)); color: #fff; font-size: 1rem; font-weight: 650; }

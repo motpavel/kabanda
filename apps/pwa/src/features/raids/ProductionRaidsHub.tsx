@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
-import { freeHuntCoverUrl } from './FreeHuntCover'
+import { freeHuntCoverUrl, routeRaidCoverUrl } from './FreeHuntCover'
 import type { KabandaSummary } from '../kabandas/types'
 import { listRaidHistory } from '../results/api'
 import { readRaidHistory, saveRaidHistory, newestFirst } from '../results/cache'
@@ -277,7 +277,7 @@ export function ProductionRaidsHub({
           {current && (
             <section className="rdp-section" aria-labelledby="production-now-heading" data-testid="production-current-raid">
               <h2 id="production-now-heading">Сейчас</h2>
-              <CurrentRaidCard coverImage={coverImage} kabanda={kabanda} raid={current} stale={resourceState === 'stale'} onRefresh={() => void refresh()} />
+              <CurrentRaidCard kabanda={kabanda} raid={current} stale={resourceState === 'stale'} onRefresh={() => void refresh()} />
             </section>
           )}
 
@@ -415,13 +415,11 @@ function ProductionLoading() {
 }
 
 function CurrentRaidCard({
-  coverImage,
   kabanda,
   raid,
   stale,
   onRefresh,
 }: {
-  coverImage: string
   kabanda: KabandaSummary
   raid: RaidProjection
   stale: boolean
@@ -435,7 +433,7 @@ function CurrentRaidCard({
   return <article className="rdp-active prd-current-raid">
     <div className="rdp-active__top"><span className="rdp-live"><i /> {stateLabel(raid.state)}</span><span className="rdp-pill">{kabanda.name}</span></div>
     <div className="rdp-active__intro">
-      <img alt="" decoding="async" src={raid.routeTemplateId ? coverImage : freeHuntCoverUrl} />
+      <img alt="" decoding="async" src={raid.routeTemplateId ? routeRaidCoverUrl : freeHuntCoverUrl} />
       <div><h3>{raid.title}</h3><p>{description}</p></div>
     </div>
     <dl className="rdp-active__metrics">
