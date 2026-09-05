@@ -183,7 +183,9 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await page.getByRole('button', { name: 'Зафиксировать итог' }).click()
-  await expect(page.getByText('Рейд завершён', { exact: true })).toBeVisible()
+  await expect(page.getByRole('article', { name: 'Рейд завершён. Отличная поездка!' })).toBeVisible()
+  await expect(page.locator('.raid-completion__stats > div')).toHaveCount(4)
+  await expect(page.locator('.raid-completion__art')).toBeVisible()
 
   const result = await api<{ result: { team: { uniquePoints: number; photos: number } } }>(
     page,
