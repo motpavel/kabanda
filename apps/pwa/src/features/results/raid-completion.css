@@ -1,0 +1,67 @@
+.raid-completion {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #091729;
+  color: #fff;
+  container-type: inline-size;
+}
+
+.raid-completion__art {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The supplied artwork reserves sky below its subtitle (29–36% of height).
+   Keep the complete image visible so the statistics never cover that title. */
+.raid-completion__stats {
+  position: absolute;
+  inset: 29.2% 5% auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  color: #fff;
+  font-family: "Manrope Variable", Manrope, ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+  text-shadow: 0 1px 5px #07111e;
+}
+
+.raid-completion__stats > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column-reverse;
+  justify-content: center;
+  gap: 3px;
+  padding-inline: 3px;
+}
+
+.raid-completion__stats > div + div {
+  border-left: 1px solid rgb(255 255 255 / 85%);
+}
+
+.raid-completion__stats dt {
+  font-size: clamp(.6rem, 2.7cqi, .875rem);
+  line-height: 1.2;
+  font-weight: 450;
+}
+
+.raid-completion__stats dd {
+  margin: 0;
+  font-size: clamp(.72rem, 3.8cqi, 1.375rem);
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.result-completion-details h2 {
+  margin: 0 0 4px;
+  font-size: clamp(1.15rem, 4vw, 1.5rem);
+  line-height: 1.25;
+}
+
+.result-completion-details p { margin: 0; }
