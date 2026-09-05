@@ -17,7 +17,9 @@ const createRaidSchema = z.object({
   description: z.string().trim().max(500).nullable().optional(),
   scheduledAt: z.iso.datetime({ offset: true }).nullable().optional(),
   routeTemplateId: z.uuid().optional(),
-})
+  pointCategory: z.enum(['stores', 'attractions']).optional(),
+  meetingPlace: z.string().trim().max(200).nullable().optional(),
+}).refine((value) => !(value.routeTemplateId && value.pointCategory), 'Choose a route or a point category')
 const commandSchema = z.object({ expectedVersion: z.coerce.number().int().positive() })
 const finishSchema = commandSchema
   .extend({

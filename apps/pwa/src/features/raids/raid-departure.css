@@ -1,0 +1,46 @@
+.raid-departure { width: min(100%, 680px); min-width: 0; margin: 0 auto; color: #17181b; }
+.raid-departure-heading h1 { margin: 0 0 20px; font-size: clamp(1.5rem, 5vw, 2rem); font-weight: 750; letter-spacing: -.025em; }
+.raid-departure-back { display: block; min-height: 44px; margin: 0 0 14px; padding: 0; border: 0; background: transparent; font-weight: 600; color: #62646b; }
+.raid-mode-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.raid-mode-card { position: relative; display: block; min-width: 0; padding: 0; overflow: hidden; aspect-ratio: 1; border: 0; border-radius: 18px; color: white; text-align: left; background: #17181b; }
+.raid-mode-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.raid-mode-card > span { position: absolute; inset: auto 0 0; padding: 38px 16px 16px; background: linear-gradient(transparent, rgb(0 0 0 / 90%)); }
+.raid-mode-card strong { display: block; font-size: clamp(1rem, 3vw, 1.3rem); font-weight: 750; }
+.raid-mode-card small { display: block; margin-top: 4px; font-size: .78rem; font-weight: 450; }
+.raid-departure-form { gap: 20px; min-width: 0; }
+.raid-departure-form > .raid-free-hunt-cover { margin: 0; }
+.raid-departure-form > .raid-free-hunt-cover img { height: clamp(165px, 44vw, 230px); }
+.raid-departure-field { display: grid; gap: 8px; min-width: 0; }
+.raid-departure-field label { margin: 0; font-size: .9rem; font-weight: 650; }
+.raid-departure-form :is(input, select, textarea) { display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 48px; margin: 0; border: 1px solid #d6d6da; border-radius: 12px; padding: 11px 12px; font-size: 16px; line-height: 1.4; color: #17181b; background: #fff; }
+.raid-departure-form input[type="datetime-local"] { appearance: none; }
+.raid-departure-form input::-webkit-date-and-time-value { text-align: left; min-width: 0; }
+.raid-departure-form textarea { resize: vertical; min-height: 70px; max-height: 200px; overflow-wrap: anywhere; }
+.raid-departure-form .raid-segmented { min-width: 0; margin: 0; padding: 4px; border-radius: 12px; }
+.raid-departure-form .raid-segmented button { min-width: 0; min-height: 44px; padding: 8px; font-size: .875rem; }
+.raid-note-toggle { width: fit-content; min-height: 44px; padding: 0; border: 0; background: transparent; font-size: .9rem; font-weight: 600; }
+.raid-departure-hint { margin: 0; color: #666870; font-size: .8rem; line-height: 1.5; }
+.raid-departure-action { position: sticky; bottom: 0; z-index: 20; padding: 12px 0 max(12px, env(safe-area-inset-bottom)); background: #f7f7f5; }
+.raid-departure-action .raid-primary { margin: 0; width: 100%; min-height: 52px; background: #f42d29; border-color: #f42d29; color: #fff; font-size: 1rem; }
+.raid-departure :is(button, a):focus-visible { outline: 3px solid #1763d5; outline-offset: 3px; }
+
+/* The shared Kabanda shell styles buttons too; keep these controls deliberately flat. */
+.kb-shell .raid-mode-card { padding: 0; border: 0; background: #17181b; color: #fff; }
+.kb-shell .raid-mode-card :is(strong, small) { color: #fff; }
+.kb-shell .raid-departure-back, .kb-shell .raid-note-toggle { padding: 0; border: 0; background: transparent; color: #696b72; box-shadow: none; }
+.raid-departure .raid-segmented { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.raid-departure .raid-segmented legend { float: none; }
+.raid-departure .raid-segmented button[aria-pressed="true"] { background: #17181b; color: #fff; }
+.kb-shell .raid-departure-action { position: fixed; left: 50%; transform: translateX(-50%); width: min(680px, calc(100% - 24px)); bottom: 0; }
+.raid-departure-form { padding-bottom: 76px; }
+.raid-meeting-place { overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .raid-mode-picker { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .raid-mode-card { aspect-ratio: 1.15; }
+  .raid-mode-card strong { font-size: 1.25rem; }
+  .raid-mode-card small { font-size: .85rem; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .raid-departure-form, .raid-mode-picker { animation: raid-departure-enter 200ms ease-out; }
+  @keyframes raid-departure-enter { from { opacity: .5; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+}

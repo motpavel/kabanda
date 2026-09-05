@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
+import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_SOURCE } from '@kabanda/contracts'
 import sharp, { type Metadata, type Sharp } from 'sharp'
 import {
   getRaidAllowedActions,
@@ -68,6 +69,8 @@ export async function renderRaidShareCard(result: RaidResult): Promise<Buffer> {
 }
 
 export type CreateRaidInput = {
+  pointCategory?: 'stores' | 'attractions' | undefined
+  meetingPlace?: string | null | undefined
   title: string
   routeTemplateId?: string | undefined
   description?: string | null | undefined
@@ -249,6 +252,8 @@ export type FinishRaidResponse = {
 export type SettleRaidResponse = { raid: RaidProjection; result: RaidResult }
 
 export type RaidProjection = {
+  pointCategory?: 'stores' | 'attractions' | null
+  meetingPlace?: string | null
   routeTemplateId?: string | null
   id: string
   kabandaId: string
@@ -430,6 +435,8 @@ export const processMedia: MediaProcessor = async (bytes, declaredContentType) =
 }
 
 type RaidRow = {
+  point_category: 'stores' | 'attractions' | null
+  meeting_place: string | null
   id: string
   route_template_id: string | null
   kabanda_id: string
@@ -610,12 +617,12 @@ export class DatabaseRaidService implements RaidService {
       }
       const result = await client.query<{ id: string; created_at: Date }>(
         `INSERT INTO raids
-          (kabanda_id, organizer_user_id, title, description, scheduled_at, state, route_template_id)
+          (kabanda_id, organizer_user_id, title, description, scheduled_at, state, route_template_id, point_category, meeting_place)
          VALUES ($1, $2, $3, $4, $5,
            CASE WHEN $5::timestamptz IS NOT NULL AND $5::timestamptz > now()
-             THEN 'planned'::raid_state ELSE 'draft'::raid_state END, $6)
+             THEN 'planned'::raid_state ELSE 'draft'::raid_state END, $6, $7, $8)
          RETURNING id, created_at`,
-        [kabandaId, actorUserId, input.title, input.description ?? null, input.scheduledAt ?? null, input.routeTemplateId ?? null],
+        [kabandaId, actorUserId, input.title, input.description ?? null, input.scheduledAt ?? null, input.routeTemplateId ?? null, input.pointCategory ?? null, input.meetingPlace ?? null],
       )
       const raid = result.rows[0]
       if (!raid) throw new Error('Raid create did not return a row')
@@ -2741,7 +2748,30 @@ export class DatabaseRaidService implements RaidService {
         if (!presence.allReady) {
           throw new RaidError('RAID_PARTICIPANTS_NOT_PRESENT', 409, 'Подтвердите, что вся стая на месте')
         }
-        const snapshots = raid.route_template_id ? await client.query(
+        if (raid.point_category === 'stores') {
+          // Reuse the dated store-locator catalogue. Do not mark it field-verified:
+          // check-ins still require GPS/organizer evidence against the snapshot.
+          await client.query(
+            `WITH catalogue AS (
+               SELECT * FROM jsonb_to_recordset($3::jsonb)
+                 AS s(id text, "shopNumber" text, address text, latitude float8, longitude float8)
+             ), copied AS (
+               INSERT INTO points (kabanda_id, stable_key, name, location, source, source_id,
+                 source_url, license, verification_status, notes)
+               SELECT $2, s.id, 'Красное&Белое №' || s."shopNumber",
+                 ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326),
+                 'kb_store', s.id, $4, 'source_reference', 'source_checked', s.address
+               FROM catalogue s
+               ON CONFLICT (kabanda_id, stable_key) DO UPDATE SET
+                 name = EXCLUDED.name, location = EXCLUDED.location, notes = EXCLUDED.notes
+               RETURNING id, name, location
+             ) INSERT INTO raid_point_snapshots (raid_id, source_point_id, name, location, position)
+               SELECT $1, id, name, location::geography, row_number() OVER (ORDER BY name, id) - 1
+               FROM copied ON CONFLICT (raid_id, source_point_id) DO NOTHING`,
+            [raid.id, raid.kabanda_id, JSON.stringify(IZHEVSK_KB_STORES), IZHEVSK_KB_STORES_SOURCE],
+          )
+        }
+        const snapshots = raid.route_template_id || raid.point_category === 'stores' ? await client.query(
           'SELECT id FROM raid_point_snapshots WHERE raid_id = $1', [raid.id],
         ) : await client.query(
           `INSERT INTO raid_point_snapshots
@@ -2755,6 +2785,7 @@ export class DatabaseRaidService implements RaidService {
              ON p.id = cp.point_id AND p.archived_at IS NULL
            WHERE pc.kabanda_id = $2 AND pc.archived_at IS NULL
              AND p.verification_status = 'field_verified'
+             AND p.source NOT IN ('kb_store', 'raid_template')
            ORDER BY p.id, pc.created_at DESC, pc.id
            ON CONFLICT (raid_id, source_point_id) DO NOTHING`,
           [raid.id, raid.kabanda_id],
@@ -3545,7 +3576,7 @@ export class DatabaseRaidService implements RaidService {
   private async lockRaid(client: PoolClient, actorUserId: string, raidId: string): Promise<RaidRow> {
     const result = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.route_template_id, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
          r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
@@ -3624,7 +3655,7 @@ export class DatabaseRaidService implements RaidService {
   ): Promise<RaidProjection> {
     const raidResult = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.route_template_id, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
          r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
@@ -3673,6 +3704,8 @@ export class DatabaseRaidService implements RaidService {
       title: raid.title,
       description: raid.description,
       routeTemplateId: raid.route_template_id,
+      pointCategory: raid.point_category,
+      meetingPlace: raid.meeting_place,
       scheduledAt: raid.scheduled_at?.toISOString() ?? null,
       state: raid.state,
       version: Number(raid.version),

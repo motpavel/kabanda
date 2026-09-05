@@ -23,7 +23,29 @@ export function App() {
 }
 
 function AppRoute() {
-  const raidRoute = parseRaidRoute(window.location.search)
+  const search = useSyncExternalStore(subscribeRoute, () => window.location.search, () => '')
+  useEffect(() => {
+    const followLink = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return
+      const url = new URL(anchor.href)
+      if (!isInternalAppLink(url, window.location.origin, appPath('app'))) return
+      event.preventDefault()
+      if (url.href !== window.location.href) navigateApp(`${url.pathname}${url.search}`)
+    }
+    document.addEventListener('click', followLink)
+    return () => document.removeEventListener('click', followLink)
+  }, [])
+  const raidRoute = parseRaidRoute(search)
   if (raidRoute.kind !== 'home') return <RaidApp route={raidRoute} />
   return <KabandasPage />
 }
+
+function subscribeRoute(listener: () => void) {
+  window.addEventListener('popstate', listener)
+  return () => window.removeEventListener('popstate', listener)
+}
+import { useEffect, useSyncExternalStore } from 'react'
+import { appPath } from '../lib/paths'
+import { isInternalAppLink, navigateApp } from './transitions'

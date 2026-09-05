@@ -9,6 +9,9 @@ import {
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
 import { FreeHuntCover, RouteRaidCover } from './FreeHuntCover'
+import { RaidModePicker, departureTitle, type DepartureMode } from './RaidModePicker'
+import './raid-departure.css'
+import { navigateApp } from '../../app/transitions'
 import { getCurrentUser, loginWithPassword, requestMagicLink } from '../auth/api'
 import { listKabandas } from '../kabandas/api'
 import type { KabandaSummary } from '../kabandas/types'
@@ -142,7 +145,7 @@ export function RaidApp({ route }: { route: Exclude<RaidRoute, { kind: 'home' }>
   if (route.kind === 'invalid') return <RaidShell><EmptyState title="Ссылка на рейд некорректна" detail="Откройте рейд с главной страницы КАБАНДЫ." /></RaidShell>
   if (session.source === 'cached' && route.kind !== 'raid') return <RaidShell><EmptyState title="Доступна только сохранённая копия" detail="Создание рейда требует подтверждённой онлайн-сессии." /></RaidShell>
   if (route.kind === 'create-template') return <RaidTemplateEditorRoute identityId={session.identity.id} kabandaId={route.kabandaId} />
-  if (route.kind === 'create') return <CreateRaidPage identityId={session.identity.id} kabandaId={route.kabandaId} />
+  if (route.kind === 'create') return <CreateRaidPage key={`${session.identity.id}:${route.kabandaId}`} identityId={session.identity.id} kabandaId={route.kabandaId} />
   return <RaidDetailPage
     key={raidDetailRemountKey(session.identity.id, route.raidId)}
     user={session.identity}
@@ -197,7 +200,12 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
   const [routeTemplateId, setRouteTemplateId] = useState(() => new URLSearchParams(window.location.search).get('template') ?? '')
   const [templatesUnavailable, setTemplatesUnavailable] = useState(false)
   const [kabanda, setKabanda] = useState<KabandaSummary | null>(null)
-  const [title, setTitle] = useState(defaultRaidTitle)
+  const [mode, setMode] = useState<DepartureMode | null>(() => new URLSearchParams(window.location.search).has('template') ? 'route' : null)
+  const [pointCategory, setPointCategory] = useState<'stores' | 'attractions'>('stores')
+  const [meetingPlace, setMeetingPlace] = useState('')
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [dateAnchor] = useState(() => new Date())
+  const [restoredTitle, setRestoredTitle] = useState<string | null>(null)
   const [startMode, setStartMode] = useState<'now' | 'later'>('now')
   const [startsAt, setStartsAt] = useState('')
   const [description, setDescription] = useState('')
@@ -206,7 +214,6 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
 
   useEffect(() => {
     fallbackAttempt.current = null
-    setTitle(defaultRaidTitle())
     setDescription('')
     setStartMode('now')
     setStartsAt('')
@@ -214,7 +221,11 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
     const restored = restoreCreateRaidForm(attempt, identityId, kabandaId)
     if (!attempt || !restored) return
     fallbackAttempt.current = attempt
-    setTitle(restored.title)
+    setRestoredTitle(restored.title)
+    setMode(restored.routeTemplateId ? 'route' : 'free')
+    setPointCategory(restored.pointCategory ?? 'attractions')
+    setMeetingPlace(restored.meetingPlace ?? '')
+    setNoteOpen(Boolean(restored.description))
     setDescription(restored.description)
     setStartMode(restored.startMode)
     setStartsAt(restored.startsAt)
@@ -249,16 +260,17 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!kabanda || status === 'saving') return
+    if (!kabanda || !mode || (mode === 'route' && !routeTemplateId) || status === 'saving') return
     setStatus('saving')
     try {
       const scheduledAt = startMode === 'now' ? null : localDateTimeInputToIso(startsAt)
       if (startMode === 'later' && !scheduledAt) throw new Error('Invalid scheduled time')
       const input = {
-        title: title.trim(),
+        title: restoredTitle ?? departureTitle(mode, templates.find((item) => item.id === routeTemplateId)?.title, scheduledAt ? new Date(scheduledAt) : dateAnchor),
         description: description.trim() || null,
+        meetingPlace: meetingPlace.trim() || null,
         scheduledAt,
-        ...(routeTemplateId ? { routeTemplateId } : {}),
+        ...(mode === 'route' ? { routeTemplateId } : { pointCategory }),
       }
       const normalizedPayload = normalizeCreateRaidPayload(input)
       const previous = readCreateRaidAttempt(identityId) ?? fallbackAttempt.current
@@ -283,7 +295,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
       )
       clearCreateRaidAttempt(identityId, attempt)
       fallbackAttempt.current = null
-      window.location.assign(`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`)
+      navigateApp(`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`)
     } catch {
       setStatus('error')
     }
@@ -291,33 +303,37 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
 
   return (
     <RaidShell>
-      <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Назад к рейдам</a>
-      <header className="raid-page-head"><p className="kb-kicker">Меньше минуты</p><h1>Новый рейд</h1><p>Выберите маршрут и соберите команду.</p></header>
+      <div className="raid-departure">
+      {mode ? <button className="raid-departure-back" type="button" disabled={status === 'saving'} onClick={() => setMode(null)}>← Выбор режима</button> : <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Рейды</a>}
+      <header className="raid-departure-heading"><h1>{mode === null ? 'Выйти в рейд' : mode === 'free' ? 'Свободная охота' : 'По маршруту'}</h1></header>
       {status === 'loading' && <p aria-busy="true">Загружаем Кабанду…</p>}
       {status === 'error' && <p className="kb-error" role="alert">Не удалось открыть форму или сохранить рейд. Проверьте будущее время, доступ и соединение.</p>}
-      {kabanda && (
-        <form className="raid-create-form" onSubmit={submit}>
-          <section className="kb-card">
-            <p className="kb-kicker">{kabanda.avatar} {kabanda.name}</p>
-            <label htmlFor="raid-title">Название</label>
-            <input id="raid-title" required maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} />
-            <label htmlFor="raid-route">Маршрут рейда</label>
-            <select id="raid-route" value={routeTemplateId} onChange={(event) => setRouteTemplateId(event.target.value)}>
-              <option value="">Свободный рейд — точки на карте</option>
+      {kabanda && !mode && <RaidModePicker onSelect={(value) => { setMode(value); setRestoredTitle(null) }} />}
+      {kabanda && mode && (
+        <form key={mode} className="raid-create-form raid-departure-form" onSubmit={submit}>
+            {mode === 'route' ? <RouteRaidCover /> : <FreeHuntCover />}
+            {mode === 'free' ? <div className="raid-departure-field"><label htmlFor="raid-category">По каким точкам едем?</label>
+              <select id="raid-category" value={pointCategory} onChange={(event) => setPointCategory(event.target.value as 'stores' | 'attractions')}>
+                <option value="stores">Красное&Белое</option><option value="attractions">Достопримечательности</option>
+              </select></div> : <div className="raid-departure-field"><label htmlFor="raid-route">Маршрут</label>
+            <select id="raid-route" required value={routeTemplateId} onChange={(event) => { setRouteTemplateId(event.target.value); setRestoredTitle(null) }}>
+              <option value="">Выберите маршрут</option>
               {templates.map((template) => <option key={template.id} value={template.id}>{template.title} · {template.pointCount} точек</option>)}
             </select>
-            {routeTemplateId ? <RouteRaidCover /> : <FreeHuntCover />}
             {templatesUnavailable && <p role="alert">Каталог не загрузился. Обновите страницу, чтобы выбрать маршрут.</p>}
-            <p className="kb-muted">{routeTemplateId ? 'Точки и их порядок сохранятся в этом рейде. Перед чекином выбирайте безопасное место для остановки.' : 'Едете своим путём и отмечаете доступные точки рядом.'}</p>
-            <fieldset className="raid-segmented"><legend>Когда</legend><button type="button" aria-pressed={startMode === 'now'} onClick={() => setStartMode('now')}>Стартуем сегодня</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => setStartMode('later')}>Запланировать</button></fieldset>
-            {startMode === 'later' && <><label htmlFor="raid-time">Дата и время</label><input id="raid-time" type="datetime-local" step="0.001" required value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></>}
-            <label htmlFor="raid-description">Короткая заметка <span className="raid-optional">необязательно</span></label>
-            <textarea id="raid-description" maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Что взять или где встречаемся" />
-            <p className="kb-muted raid-form-note">После создания откройте сбор — приглашение получит каждый участник Кабанды.</p>
-          </section>
-          <button className="kb-primary raid-primary raid-sticky" type="submit" disabled={status === 'saving' || !title.trim() || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Создаём…' : startMode === 'later' ? 'Запланировать рейд' : 'Создать рейд'}</button>
+            {!templatesUnavailable && templates.length === 0 && <a href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}>Создать первый маршрут</a>}</div>}
+            <fieldset className="raid-segmented"><legend>Стартуем</legend><button type="button" aria-pressed={startMode === 'now'} onClick={() => { setStartMode('now'); setRestoredTitle(null) }}>Сейчас</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => { setStartMode('later'); setRestoredTitle(null) }}>Запланировать</button></fieldset>
+            {startMode === 'later' && <div className="raid-departure-field"><label htmlFor="raid-time">Дата и время</label><input id="raid-time" type="datetime-local" required value={startsAt} onChange={(event) => { setStartsAt(event.target.value); setRestoredTitle(null) }} /></div>}
+            <div className="raid-departure-field"><label htmlFor="raid-meeting">Место старта <span className="raid-optional">необязательно</span></label><input id="raid-meeting" maxLength={200} value={meetingPlace} onChange={(event) => setMeetingPlace(event.target.value)} placeholder="Например, у входа в парк" /></div>
+            <div className="raid-departure-field">
+              <button className="raid-note-toggle" type="button" aria-expanded={noteOpen} aria-controls="raid-note-field" onClick={() => setNoteOpen((value) => !value)}>{noteOpen ? '−' : '+'} Короткая заметка</button>
+              {noteOpen && <textarea id="raid-note-field" aria-label="Короткая заметка" maxLength={500} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Что взять с собой или что важно знать" />}
+            </div>
+            <p className="raid-departure-hint">Поездка для всей Кабанды. Личное приглашение можно отправить ссылкой после создания.</p>
+          <div className="raid-departure-action"><button className="kb-primary raid-primary" type="submit" disabled={status === 'saving' || (mode === 'route' && (!routeTemplateId || templatesUnavailable)) || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Сохраняем…' : startMode === 'later' ? 'Запланировать рейд' : 'Собрать Кабанду'}</button></div>
         </form>
       )}
+      </div>
     </RaidShell>
   )
 }
@@ -543,6 +559,8 @@ function RaidDetailPage({
         <span className={`raid-state raid-state--${raid.state}`}>{stateLabel(raid.state)}</span>
       </header>
 
+      {raid.meetingPlace && <p className="raid-meeting-place"><strong>Место старта:</strong> {raid.meetingPlace}</p>}
+      {raid.description && <p className="raid-meeting-place">{raid.description}</p>}
       {resource.stale && <p className="kb-stale" role="status">Read-only копия{resource.savedAt ? ` от ${new Date(resource.savedAt).toLocaleString('ru-RU')}` : ''}. Ни одна команда не будет поставлена в offline-очередь.</p>}
       {message && <p className="kb-notice" role="status">{message}</p>}
       {resource.error && <p className="kb-error" role="alert">{resource.error}</p>}
@@ -641,13 +659,6 @@ function RaidShell({ children, active = false }: { children: ReactNode; active?:
 
 function EmptyState({ title, detail }: { title: string; detail: string }) {
   return <section className="kb-card raid-empty"><h1>{title}</h1><p className="kb-muted">{detail}</p><a className="kb-link-button" href={appPath('app')}>На главную</a></section>
-}
-
-function defaultRaidTitle(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Утренний рейд'
-  if (hour < 18) return 'Дневной рейд'
-  return 'Вечерний рейд'
 }
 
 function stateLabel(state: RaidProjection['state']) {

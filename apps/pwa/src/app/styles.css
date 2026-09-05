@@ -16,6 +16,25 @@ html {
   background: #f3efe6;
 }
 
+/* Prevent intrinsic form widths (not user zoom) from stretching mobile screens. */
+:where(main, section, form, fieldset) { min-width: 0; }
+:where(input, select, textarea) { max-width: 100%; min-width: 0; }
+@media (max-width: 700px) {
+  html, body { overflow-x: clip; }
+  input, select, textarea { font-size: 16px !important; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root) { animation: kb-screen-out 160ms ease-out both; }
+  ::view-transition-new(root) { animation: kb-screen-in 210ms ease-out both; }
+  :root { --screen-offset: 16px; }
+  :root[data-transition-direction="back"] { --screen-offset: -16px; }
+  @keyframes kb-screen-out { to { opacity: 0; transform: translateX(calc(-1 * var(--screen-offset))); } }
+  @keyframes kb-screen-in { from { opacity: 0; transform: translateX(var(--screen-offset)); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}
+
 body {
   margin: 0;
   min-width: 320px;

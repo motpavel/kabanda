@@ -225,3 +225,4 @@ export interface PointVisitHistory {
     participants: Array<{ userId: string; displayName: string }>
   }>
 }
+export { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_SOURCE, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores.js'

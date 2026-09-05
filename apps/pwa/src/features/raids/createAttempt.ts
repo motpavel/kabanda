@@ -11,6 +11,8 @@ export interface CreateRaidAttempt {
 }
 
 export interface RestoredCreateRaidForm {
+  pointCategory?: 'stores' | 'attractions'
+  meetingPlace?: string | null
   routeTemplateId?: string
   title: string
   description: string
@@ -24,6 +26,8 @@ export function normalizeCreateRaidPayload(input: CreateRaidInput): string {
     description: input.description,
     scheduledAt: input.scheduledAt,
     ...(input.routeTemplateId ? { routeTemplateId: input.routeTemplateId } : {}),
+    ...(input.pointCategory ? { pointCategory: input.pointCategory } : {}),
+    ...(input.meetingPlace ? { meetingPlace: input.meetingPlace } : {}),
   })
 }
 
@@ -83,15 +87,19 @@ export function restoreCreateRaidForm(
       description: value.description ?? null,
       scheduledAt: value.scheduledAt ?? null,
       ...(typeof value.routeTemplateId === 'string' ? { routeTemplateId: value.routeTemplateId } : {}),
+      ...(value.pointCategory === 'stores' || value.pointCategory === 'attractions' ? { pointCategory: value.pointCategory } : {}),
+      ...(typeof value.meetingPlace === 'string' && value.meetingPlace.length <= 200 ? { meetingPlace: value.meetingPlace } : {}),
     }
     if (normalizeCreateRaidPayload(input) !== attempt.normalizedPayload) return null
     if (input.scheduledAt === null) {
-      return { title: input.title, description: input.description ?? '', startMode: 'now', startsAt: '', ...(input.routeTemplateId ? { routeTemplateId: input.routeTemplateId } : {}) }
+      return { ...input, description: input.description ?? '', startMode: 'now', startsAt: '' }
     }
     const startsAt = isoToLocalDateTimeInput(input.scheduledAt)
     if (!startsAt || localDateTimeInputToIso(startsAt) !== input.scheduledAt) return null
     return {
       title: input.title,
+      ...(input.pointCategory ? { pointCategory: input.pointCategory } : {}),
+      ...(input.meetingPlace ? { meetingPlace: input.meetingPlace } : {}),
       description: input.description ?? '',
       startMode: 'later',
       startsAt,

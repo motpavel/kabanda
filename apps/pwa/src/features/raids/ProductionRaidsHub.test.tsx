@@ -34,7 +34,7 @@ describe('ProductionRaidsHub shell', () => {
     expect(markup).toContain('aria-label="Создание рейда и маршрута"')
     expect(markup).toContain('data-testid="production-new-raid"')
     expect(markup).toContain('href="/app?createRaid=kabanda-real-id"')
-    expect(markup).toContain('Новый рейд')
+    expect(markup).toContain('Выйти в рейд')
     expect(markup).toContain('data-testid="production-new-template"')
     expect(markup).toContain('href="/app?createRaidTemplate=kabanda-real-id"')
     expect(markup).toContain('Новый маршрут')

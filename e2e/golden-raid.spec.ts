@@ -95,9 +95,10 @@ test('owner completes one canonical raid and opens the next raid form', async ({
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
   await page.getByRole('link', { name: 'Создать рейд', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
-  await page.getByLabel('Название').fill('Синтетический золотой рейд')
-  await page.getByRole('button', { name: 'Создать рейд' }).click()
+  await expect(page.getByRole('heading', { name: 'Выйти в рейд' })).toBeVisible()
+  await page.getByRole('button', { name: /Свободная охота/ }).click()
+  await page.getByLabel('По каким точкам едем?').selectOption('attractions')
+  await page.getByRole('button', { name: 'Собрать Кабанду' }).click()
   await page.waitForURL(/\/app\?raid=[0-9a-f-]+$/)
   const raidId = new URL(page.url()).searchParams.get('raid')
   expect(raidId).toBeTruthy()
@@ -111,7 +112,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByText('Все готовы', { exact: true })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Все здесь — начать рейд' }).click()
 
-  await expect(page.getByLabel(/Активный рейд Синтетический золотой рейд/)).toBeVisible()
+  await expect(page.getByLabel(/Активный рейд Свободный рейд/)).toBeVisible()
   await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { status: string } } }>(
@@ -199,8 +200,8 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Рейды' })).toBeVisible()
   expect(pageErrors).toEqual([])
-  await expect(page.getByRole('link', { name: /Синтетический золотой рейд/ })).toBeVisible()
-  await page.getByRole('link', { name: /Синтетический золотой рейд/ }).click()
+  await expect(page.getByRole('link', { name: /Свободный рейд/ })).toBeVisible()
+  await page.getByRole('link', { name: /Свободный рейд/ }).click()
   await page.getByRole('link', { name: 'Запланировать следующий рейд' }).click()
-  await expect(page.getByRole('heading', { name: 'Новый рейд' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Выйти в рейд' })).toBeVisible()
 })

@@ -3,7 +3,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
 import sharp from 'sharp'
 import { DatabaseKabandaService, KabandaError, type ManifestPoint } from '../src/kabandas.js'
-import { DatabaseRaidService } from '../src/raids.js'
+import { DatabaseRaidService, type CreateRaidInput } from '../src/raids.js'
+import { IZHEVSK_KB_STORES } from '@kabanda/contracts'
 
 const databaseUrl = process.env.DATABASE_URL
 const describePostgres = databaseUrl ? describe : describe.skip
@@ -88,7 +89,7 @@ async function waitForBlockedQuery(fragment: string, timeoutMs = 2_000): Promise
   throw new Error(`Timed out waiting for blocked query: ${fragment}`)
 }
 
-async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
+async function readyRaid(ownerId: string, kabandaId: string, suffix: string, options: Partial<CreateRaidInput> = {}) {
   await service!.importManifest(
     ownerId,
     kabandaId,
@@ -100,7 +101,7 @@ async function readyRaid(ownerId: string, kabandaId: string, suffix: string) {
   const created = await raidService!.createDraft(
     ownerId,
     kabandaId,
-    { title: `Рейд ${suffix}` },
+    { title: `Рейд ${suffix}`, ...options },
     `raid-create-${suffix}`,
   )
   const raidId = created.raid.id
@@ -612,6 +613,22 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
         100,
       ),
     ).rejects.toMatchObject({ code: 'BBOX_INVALID' })
+  })
+
+  it.each(['stores', 'attractions'] as const)('starts free hunt with only %s and preserves its meeting place', async (pointCategory) => {
+    const { ownerId, kabanda } = await ownerAndKabanda(`hunt-${pointCategory}`)
+    const ready = await readyRaid(ownerId, kabanda.id, `hunt-${pointCategory}`, { pointCategory, meetingPlace: 'У входа в парк' })
+    expect(ready.raid).toMatchObject({ pointCategory, meetingPlace: 'У входа в парк' })
+    const started = await raidService!.command(ownerId, ready.raid.id, 'start', { expectedVersion: ready.raid.version }, `start-hunt-${pointCategory}`)
+    const rows = await pool!.query(`SELECT p.source, s.id, ST_Y(s.location::geometry) AS lat, ST_X(s.location::geometry) AS lon
+      FROM raid_point_snapshots s JOIN points p ON p.id=s.source_point_id WHERE s.raid_id=$1`, [started.raid.id])
+    expect(rows.rowCount).toBe(pointCategory === 'stores' ? IZHEVSK_KB_STORES.length : 1)
+    expect(rows.rows.every((point) => pointCategory === 'stores' ? point.source === 'kb_store' : point.source !== 'kb_store')).toBe(true)
+    const point = rows.rows[0]!
+    await raidService!.createCheckin(ownerId, started.raid.id, { pointSnapshotId: point.id,
+      evidence: { latitude: point.lat, longitude: point.lon, accuracyMeters: 8, capturedAt: new Date().toISOString() },
+      presentParticipantIds: [], organizerAttestation: false }, randomUUID())
+    expect((await raidService!.getMapPoints(ownerId, started.raid.id)).points.find((item) => item.id === point.id)?.visitedByMe).toBe(true)
   })
 
   it('runs the server-owned lobby, readiness, start, pause, resume and cancel lifecycle', async () => {

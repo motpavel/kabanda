@@ -5,6 +5,7 @@ import { ApiError } from '../../lib/http'
 import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
+import { transitionScreen } from '../../app/transitions'
 import {
   appSectionSearch,
   parseAppSection,
@@ -194,9 +195,12 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
   }
   const selectSection = (section: AppSection) => {
     const search = appSectionSearch(window.location.search, section, selectedId)
+    const order = ['home', 'map', 'raids', 'kabanda']
+    transitionScreen(() => {
     window.history.pushState(null, '', `${appPath('app')}${search}`)
     setRouteSearch(search)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    }, order.indexOf(section) < order.indexOf(activeSection) ? 'back' : 'forward')
   }
   const selectKabanda = (kabandaId: string) => {
     setSelectedId(kabandaId)

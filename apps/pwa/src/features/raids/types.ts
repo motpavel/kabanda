@@ -65,6 +65,8 @@ export interface NavigatorLeaseProjection {
 }
 
 export interface RaidProjection {
+  pointCategory?: 'stores' | 'attractions' | null
+  meetingPlace?: string | null
   routeTemplateId?: string | null
   id: string
   kabandaId: string
@@ -185,6 +187,8 @@ export interface HandoffNavigatorInput {
 }
 
 export interface CreateRaidInput {
+  pointCategory?: 'stores' | 'attractions'
+  meetingPlace?: string | null
   routeTemplateId?: string
   title: string
   description: string | null

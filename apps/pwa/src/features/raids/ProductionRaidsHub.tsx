@@ -311,9 +311,9 @@ export function ProductionRaidsHub({
             </section>
           )}
 
-          <ProductionHistory coverImage={coverImage} history={history} />
-
           <RaidTemplateCatalog kabandaId={kabanda.id} />
+
+          <ProductionHistory coverImage={coverImage} history={history} />
         </>
       )}
     </section>
@@ -328,7 +328,7 @@ export function ProductionCreateActions({ enabled, kabandaId }: { enabled: boole
       data-testid="production-new-raid"
       href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
     >
-      <span aria-hidden="true">＋</span> Новый рейд
+      Выйти в рейд
     </a>
     <a
       className="rdp-new prd-raids__new prd-raids__new--template"
