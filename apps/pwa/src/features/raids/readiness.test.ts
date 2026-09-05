@@ -20,7 +20,7 @@ describe('navigator readiness', () => {
     const rows = buildReadinessRows(facts, Date.parse('2026-08-28T08:00:22.000Z'))
     expect(rows.find(({ id }) => id === 'location')?.status).toBe('pass')
     expect(rows.find(({ id }) => id === 'wake-lock')).toMatchObject({ status: 'warn' })
-    expect(rows.find(({ id }) => id === 'wake-lock')?.detail).toContain('не обещает фоновый GPS')
+    expect(rows.find(({ id }) => id === 'wake-lock')?.detail).toContain('запись в фоне может прерваться')
   })
 
   it('fails denied location and offline start without inventing a coordinate', () => {
@@ -37,7 +37,7 @@ describe('navigator readiness', () => {
     expect(rows.find(({ id }) => id === 'location')?.status).toBe('fail')
     expect(rows.find(({ id }) => id === 'network')).toMatchObject({
       status: 'fail',
-      detail: 'Офлайн-старт в VP запрещён',
+      detail: 'Для старта подключитесь к интернету',
     })
   })
 
