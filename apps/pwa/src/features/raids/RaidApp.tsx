@@ -61,6 +61,8 @@ import { FinalizationPanel } from '../results/FinalizationPanel'
 import { ResultPanel } from '../results/ResultPanel'
 import { leaveRaid } from '../results/api'
 import { RaidTemplateEditorRoute } from '../raid-plans/editor/RaidTemplateEditorPage'
+import { listRaidTemplates } from '../raid-plans/api'
+import type { RaidTemplateSummary } from '../raid-plans/types'
 import './raids.css'
 
 type RaidIdentity = { id: string }
@@ -190,6 +192,9 @@ function RaidSignIn() {
 }
 
 function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabandaId: string }) {
+  const [templates, setTemplates] = useState<RaidTemplateSummary[]>([])
+  const [routeTemplateId, setRouteTemplateId] = useState(() => new URLSearchParams(window.location.search).get('template') ?? '')
+  const [templatesUnavailable, setTemplatesUnavailable] = useState(false)
   const [kabanda, setKabanda] = useState<KabandaSummary | null>(null)
   const [title, setTitle] = useState(defaultRaidTitle)
   const [startMode, setStartMode] = useState<'now' | 'later'>('now')
@@ -212,7 +217,16 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
     setDescription(restored.description)
     setStartMode(restored.startMode)
     setStartsAt(restored.startsAt)
+    setRouteTemplateId(restored.routeTemplateId ?? '')
   }, [identityId, kabandaId])
+
+  useEffect(() => {
+    let active = true
+    void listRaidTemplates(kabandaId).then((items) => {
+      if (active) { setTemplates(items); setTemplatesUnavailable(false) }
+    }).catch(() => { if (active) setTemplatesUnavailable(true) })
+    return () => { active = false }
+  }, [kabandaId])
 
   useEffect(() => {
     let active = true
@@ -243,6 +257,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
         title: title.trim(),
         description: description.trim() || null,
         scheduledAt,
+        ...(routeTemplateId ? { routeTemplateId } : {}),
       }
       const normalizedPayload = normalizeCreateRaidPayload(input)
       const previous = readCreateRaidAttempt(identityId) ?? fallbackAttempt.current
@@ -276,7 +291,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
   return (
     <RaidShell>
       <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Назад к рейдам</a>
-      <header className="raid-page-head"><p className="kb-kicker">Меньше минуты</p><h1>Новый рейд</h1><p>Название, время и люди. Остальное решите в lobby.</p></header>
+      <header className="raid-page-head"><p className="kb-kicker">Меньше минуты</p><h1>Новый рейд</h1><p>Выберите маршрут и соберите команду.</p></header>
       {status === 'loading' && <p aria-busy="true">Загружаем Кабанду…</p>}
       {status === 'error' && <p className="kb-error" role="alert">Не удалось открыть форму или сохранить рейд. Проверьте будущее время, доступ и соединение.</p>}
       {kabanda && (
@@ -285,11 +300,18 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
             <p className="kb-kicker">{kabanda.avatar} {kabanda.name}</p>
             <label htmlFor="raid-title">Название</label>
             <input id="raid-title" required maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} />
+            <label htmlFor="raid-route">Маршрут рейда</label>
+            <select id="raid-route" value={routeTemplateId} onChange={(event) => setRouteTemplateId(event.target.value)}>
+              <option value="">Свободный рейд — точки на карте</option>
+              {templates.map((template) => <option key={template.id} value={template.id}>{template.title} · {template.pointCount} точек</option>)}
+            </select>
+            {templatesUnavailable && <p role="alert">Каталог не загрузился. Обновите страницу, чтобы выбрать маршрут.</p>}
+            <p className="kb-muted">{routeTemplateId ? 'Точки и их порядок сохранятся в этом рейде. Перед чекином выбирайте безопасное место для остановки.' : 'Едете своим путём и отмечаете доступные точки рядом.'}</p>
             <fieldset className="raid-segmented"><legend>Когда</legend><button type="button" aria-pressed={startMode === 'now'} onClick={() => setStartMode('now')}>Стартуем сегодня</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => setStartMode('later')}>Запланировать</button></fieldset>
             {startMode === 'later' && <><label htmlFor="raid-time">Дата и время</label><input id="raid-time" type="datetime-local" step="0.001" required value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></>}
             <label htmlFor="raid-description">Короткая заметка <span className="raid-optional">необязательно</span></label>
             <textarea id="raid-description" maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Что взять или где встречаемся" />
-            <p className="kb-muted raid-form-note">После создания откройте lobby — сервер пригласит текущий состав Кабанды одним snapshot.</p>
+            <p className="kb-muted raid-form-note">После создания откройте сбор — приглашение получит каждый участник Кабанды.</p>
           </section>
           <button className="kb-primary raid-primary raid-sticky" type="submit" disabled={status === 'saving' || !title.trim() || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Создаём…' : startMode === 'later' ? 'Запланировать рейд' : 'Создать рейд'}</button>
         </form>
@@ -506,6 +528,11 @@ function RaidDetailPage({
     </RaidShell>
   }
 
+  if (raid.state === 'completed') return <RaidShell>
+    <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>← К рейдам</a>
+    <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />
+  </RaidShell>
+
   return (
     <RaidShell>
       <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>← К рейдам</a>
@@ -561,8 +588,6 @@ function RaidDetailPage({
           onApplyRaid={resource.applyRaid}
         />
       )}
-
-      {raid.state === 'completed' && <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />}
 
       {allowed.has('handoff-navigator') && !resource.stale && handoffCandidates.length > 0 && (
         <section className="kb-card raid-handoff">

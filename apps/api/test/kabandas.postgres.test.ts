@@ -1888,6 +1888,55 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     ).resolves.toEqual({ deleted: true })
   })
 
+  it('allows the organizer to confirm and revoke a member presence before start', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('manual-presence')
+    const ready = await readyRaid(ownerId, kabanda.id, 'manual-presence')
+    const memberId = await user('manual-presence-member@example.test')
+    await pool!.query("INSERT INTO kabanda_memberships(kabanda_id,user_id,role) VALUES($1,$2,'member')", [kabanda.id, memberId])
+    await pool!.query("INSERT INTO raid_participants(raid_id,user_id,state,accepted_at) VALUES($1,$2,'accepted',now())", [ready.raid.id, memberId])
+    const confirmed = await raidService!.setManualPresence(ownerId, ready.raid.id, memberId, true)
+    expect(confirmed.participants.find(({id}) => id === memberId)?.status).toBe('manual')
+    expect(confirmed.allReady).toBe(true)
+    const revoked = await raidService!.setManualPresence(ownerId, ready.raid.id, memberId, false)
+    expect(revoked.participants.find(({id}) => id === memberId)?.status).toBe('waiting')
+    expect(revoked.allReady).toBe(false)
+    await expect(raidService!.setManualPresence(memberId, ready.raid.id, ownerId, true)).rejects.toMatchObject({statusCode:403})
+  })
+
+  it('keeps free-hunt repeat history separate from unique credits and isolates private teams', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('repeat-history')
+    const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'repeat-history')
+    const raidId = acquired.raid.id
+    const point = (await pool!.query<{ id: string; source_point_id: string }>(
+      'SELECT id, source_point_id FROM raid_point_snapshots WHERE raid_id=$1', [raidId],
+    )).rows[0]!
+    const memberId = await user('repeat-member@example.test')
+    await pool!.query("INSERT INTO kabanda_memberships(kabanda_id,user_id,role) VALUES($1,$2,'member')", [kabanda.id, memberId])
+    await pool!.query("INSERT INTO raid_participants(raid_id,user_id,state,active_from) VALUES($1,$2,'active',now())", [raidId, memberId])
+    const input = { pointSnapshotId: point.id, evidence: { latitude: 56.86, longitude: 53.21,
+      capturedAt: new Date().toISOString(), accuracyMeters: 8 }, presentParticipantIds: [memberId], organizerAttestation: true }
+    await raidService!.createCheckin(ownerId, raidId, input, 'history-first')
+    await raidService!.createCheckin(ownerId, raidId, input, 'history-accidental-duplicate')
+    expect((await service!.getPointVisitHistory(memberId, kabanda.id, point.source_point_id)).personalCount).toBe(1)
+    const repeat = { ...input, repeatVisit: true, evidence: { ...input.evidence, capturedAt: new Date().toISOString() } }
+    await raidService!.createCheckin(ownerId, raidId, repeat, 'history-repeat')
+    await raidService!.createCheckin(ownerId, raidId, repeat, 'history-repeat')
+    const history = await service!.getPointVisitHistory(memberId, kabanda.id, point.source_point_id)
+    expect(history.personalCount).toBe(2)
+    expect(history.entries).toHaveLength(1)
+    expect(history.entries[0]).toMatchObject({ raidId, mine: true, personalVisits: 2 })
+    expect(history.entries[0]!.visits).toHaveLength(4)
+    expect(history.entries[0]!.visits.every(({ source }) => source === 'organizer_attestation')).toBe(true)
+    expect(history.entries[0]!.participants).toHaveLength(2)
+    expect(Number((await pool!.query('SELECT count(*) FROM raid_point_credits WHERE raid_id=$1', [raidId])).rows[0].count)).toBe(2)
+    expect((await raidService!.getMapPoints(memberId, raidId)).points).toContainEqual(expect.objectContaining({ id: point.id, visitedByMe: true }))
+    const outsider = await ownerAndKabanda('repeat-outsider')
+    await expect(service!.getPointVisitHistory(outsider.ownerId, kabanda.id, point.source_point_id)).rejects.toMatchObject({ statusCode: 404 })
+    await expect(service!.getPointVisitHistory(ownerId, outsider.kabanda.id, point.source_point_id)).rejects.toMatchObject({ statusCode: 404 })
+    await pool!.query('UPDATE kabanda_memberships SET removed_at=now() WHERE user_id=$1 AND kabanda_id=$2', [memberId, kabanda.id])
+    await expect(service!.getPointVisitHistory(memberId, kabanda.id, point.source_point_id)).rejects.toMatchObject({ statusCode: 404 })
+  })
+
   it('freezes field-verified points and issues one idempotent GPS credit', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('checkin-snapshot')
     const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'checkin-snapshot')
@@ -2691,6 +2740,18 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     })
     const history = await raidService!.listHistory(ownerId, kabanda.id, 20)
     expect(history.raids[0]).toMatchObject({ raidId: acquired.raid.id, team: settled.result.team })
+    const mapPoint = (await pool!.query<{ collection_id: string; source_point_id: string }>(
+      'SELECT collection_id, source_point_id FROM raid_point_snapshots WHERE id = $1', [snapshot.id],
+    )).rows[0]!
+    for (const viewer of [ownerId, memberId, laterMemberId]) {
+      const point = (await service!.listPoints(viewer, mapPoint.collection_id, bounds, 100))
+        .points.find(({ id }) => id === mapPoint.source_point_id)
+      expect(point).toMatchObject({
+        visitedByMeCount: viewer === laterMemberId ? 0 : 1,
+        visitedByTeamCount: 1,
+        visitedByTeam: true,
+      })
+    }
     const progress = await raidService!.getProgress(ownerId, kabanda.id)
     expect(progress.progress.team).toMatchObject({ completedRaids: 1, uniquePoints: 1, photos: 1 })
     const png = await raidService!.getShareCard(ownerId, acquired.raid.id)

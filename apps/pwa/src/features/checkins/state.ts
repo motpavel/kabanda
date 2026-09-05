@@ -1,5 +1,10 @@
 export type CheckInPrimaryKind = 'claim' | 'verify_fallback' | 'submit_fallback' | 'locate' | 'check_in' | null
 
+export function canQueueLocalCheckIn(state: string, activeMember: boolean, stale: boolean, online: boolean): boolean {
+  // A cached active raid permits local evidence only. Replay still needs a fresh server projection.
+  return state === 'active' && activeMember && (!stale || !online)
+}
+
 export function participantSelectionKey(participantIds: readonly string[]): string {
   return Array.from(new Set(participantIds)).sort().join(':')
 }

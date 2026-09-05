@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:postgres": "vitest run test/auth.postgres.test.ts test/alpha-access.postgres.test.ts test/kabandas.postgres.test.ts test/raid-templates.postgres.test.ts --no-file-parallelism",
+    "test:postgres": "vitest run test/auth.postgres.test.ts test/alpha-access.postgres.test.ts test/kabandas.postgres.test.ts test/raid-templates.postgres.test.ts test/raid-route-selection.postgres.test.ts --no-file-parallelism",
     "e2e:fixture": "tsx src/e2e-fixture-cli.ts",
     "e2e:run": "tsx src/e2e-run.ts",
     "points:import": "tsx src/import-alpha.ts",

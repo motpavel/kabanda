@@ -11,6 +11,7 @@ export interface CreateRaidAttempt {
 }
 
 export interface RestoredCreateRaidForm {
+  routeTemplateId?: string
   title: string
   description: string
   startMode: 'now' | 'later'
@@ -22,6 +23,7 @@ export function normalizeCreateRaidPayload(input: CreateRaidInput): string {
     title: input.title,
     description: input.description,
     scheduledAt: input.scheduledAt,
+    ...(input.routeTemplateId ? { routeTemplateId: input.routeTemplateId } : {}),
   })
 }
 
@@ -80,10 +82,11 @@ export function restoreCreateRaidForm(
       title: value.title,
       description: value.description ?? null,
       scheduledAt: value.scheduledAt ?? null,
+      ...(typeof value.routeTemplateId === 'string' ? { routeTemplateId: value.routeTemplateId } : {}),
     }
     if (normalizeCreateRaidPayload(input) !== attempt.normalizedPayload) return null
     if (input.scheduledAt === null) {
-      return { title: input.title, description: input.description ?? '', startMode: 'now', startsAt: '' }
+      return { title: input.title, description: input.description ?? '', startMode: 'now', startsAt: '', ...(input.routeTemplateId ? { routeTemplateId: input.routeTemplateId } : {}) }
     }
     const startsAt = isoToLocalDateTimeInput(input.scheduledAt)
     if (!startsAt || localDateTimeInputToIso(startsAt) !== input.scheduledAt) return null
@@ -92,6 +95,7 @@ export function restoreCreateRaidForm(
       description: input.description ?? '',
       startMode: 'later',
       startsAt,
+      ...(input.routeTemplateId ? { routeTemplateId: input.routeTemplateId } : {}),
     }
   } catch {
     return null

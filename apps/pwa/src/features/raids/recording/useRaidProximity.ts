@@ -3,6 +3,8 @@ import { getNearbyPoints } from '../../checkins/api'
 import { getOneShotCoordinate } from '../../checkins/platform'
 import type { NearbyPoint, OneShotCoordinate } from '../../checkins/types'
 import { reportRaidPresence } from '../api'
+import { readRaidMapCache } from './map-cache'
+import { nearbyCachedPoints } from './proximity'
 
 export type RaidProximityState = {
   status: 'locating' | 'ready' | 'offline' | 'blocked'
@@ -11,7 +13,7 @@ export type RaidProximityState = {
   refresh: () => Promise<void>
 }
 
-export function useRaidProximity(raidId: string, enabled: boolean): RaidProximityState {
+export function useRaidProximity(identityId: string, raidId: string, enabled: boolean): RaidProximityState {
   const [status, setStatus] = useState<RaidProximityState['status']>(() => navigator.onLine ? 'locating' : 'offline')
   const [coordinate, setCoordinate] = useState<OneShotCoordinate | null>(null)
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
@@ -19,30 +21,31 @@ export function useRaidProximity(raidId: string, enabled: boolean): RaidProximit
 
   const refresh = useCallback(async () => {
     if (!enabled || inFlight.current || document.visibilityState !== 'visible') return
-    if (!navigator.onLine) {
-      setStatus('offline')
-      return
-    }
     inFlight.current = true
     try {
       const nextCoordinate = await getOneShotCoordinate(10_000)
-      const response = await getNearbyPoints(
-        raidId,
-        nextCoordinate.latitude,
-        nextCoordinate.longitude,
-      )
       setCoordinate(nextCoordinate)
-      setNearby(response.points)
-      setStatus('ready')
-      if (nextCoordinate.accuracyMeters <= 50) {
-        void reportRaidPresence(raidId, nextCoordinate).catch(() => undefined)
-      }
+      const cached = await readRaidMapCache(identityId, raidId).catch(() => null)
+      setNearby(nearbyCachedPoints(cached?.points ?? [], nextCoordinate))
+      if (!navigator.onLine) { setStatus('offline'); return }
+      try {
+        const response = await getNearbyPoints(
+          raidId,
+          nextCoordinate.latitude,
+          nextCoordinate.longitude,
+        )
+        setNearby(response.points)
+        setStatus('ready')
+        if (nextCoordinate.accuracyMeters <= 50) {
+          void reportRaidPresence(raidId, nextCoordinate).catch(() => undefined)
+        }
+      } catch { setStatus('offline') }
     } catch {
       setStatus('blocked')
     } finally {
       inFlight.current = false
     }
-  }, [enabled, raidId])
+  }, [enabled, identityId, raidId])
 
   useEffect(() => {
     if (!enabled) return

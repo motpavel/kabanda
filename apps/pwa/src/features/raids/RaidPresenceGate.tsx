@@ -17,6 +17,7 @@ export function RaidPresenceGate({
   const [roster, setRoster] = useState<RaidPresenceRoster | null>(null)
   const [status, setStatus] = useState<'locating' | 'ready' | 'blocked' | 'offline'>(() => navigator.onLine ? 'locating' : 'offline')
   const [manualBusy, setManualBusy] = useState<string | null>(null)
+  const [manualError, setManualError] = useState<string | null>(null)
   const viewerIsOrganizer = raid.organizerUserId === identityId
 
   const refreshRoster = useCallback(async () => {
@@ -25,7 +26,7 @@ export function RaidPresenceGate({
       const next = await getRaidPresence(raid.id)
       setRoster(next)
     } catch {
-      // The fresh location submission below remains the primary recovery path.
+      setRoster(null)
     }
   }, [raid.id])
 
@@ -66,14 +67,21 @@ export function RaidPresenceGate({
   }, [refreshRoster, report])
 
   useEffect(() => {
-    onReadyChange(Boolean(roster?.allReady))
-  }, [onReadyChange, roster?.allReady])
+    onReadyChange(Boolean(!stale && navigator.onLine && roster?.allReady))
+    if (!roster) return
+    const remaining = Math.max(0, Date.parse(roster.serverAt) + roster.maxAgeSeconds * 1000 - Date.now())
+    const timer = window.setTimeout(() => { setRoster(null); onReadyChange(false) }, remaining)
+    return () => window.clearTimeout(timer)
+  }, [onReadyChange, roster, stale])
 
   const toggleManual = async (participantId: string, present: boolean) => {
     if (manualBusy || stale || !navigator.onLine) return
     setManualBusy(participantId)
+    setManualError(null)
     try {
       setRoster(await setManualRaidPresence(raid.id, participantId, present))
+    } catch {
+      setManualError('Не удалось подтвердить участника. Проверьте связь и повторите.')
     } finally {
       setManualBusy(null)
     }
@@ -87,6 +95,7 @@ export function RaidPresenceGate({
     <p className="kb-muted">Статус обновляется автоматически, пока приложение открыто. Радиус встречи — 50 метров от организатора.</p>
     {status === 'blocked' && <p className="kb-notice" role="status">Не получили свежую геолокацию. Разрешите доступ или попросите организатора отметить вас вручную.</p>}
     {status === 'offline' && <p className="kb-notice" role="status">Нет сети. Подтверждение присутствия возобновится автоматически.</p>}
+    {manualError && <p className="kb-error" role="alert">{manualError}</p>}
     {!roster && status === 'locating' && <p aria-busy="true">Определяем, кто уже приехал…</p>}
     {roster && <ul className="raid-presence-list">{roster.participants.map((participant) => <li key={participant.id} data-status={participant.status}>
       <span className="raid-avatar">{participant.displayName.slice(0, 1).toUpperCase()}</span>

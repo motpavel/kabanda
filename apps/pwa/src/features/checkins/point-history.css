@@ -1,0 +1,21 @@
+.point-visit-history { font-size: .82rem; line-height: 1.4; }
+.point-visit-history header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.point-visit-history h3 { margin: 0; font-size: .95rem; }
+.point-visit-history header > strong { font-size: 1.25rem; }
+.point-visit-history__hint, .point-visit-history__date { color: #69716e; font-size: .73rem; margin: 5px 0 10px; }
+.point-visit-history ol, .point-visit-history ul { list-style: none; margin: 0; padding: 0; }
+.point-visit-history ol > li { border-top: 1px solid #e5e7e4; padding: 12px 0; }
+.point-visit-history__raid { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.point-visit-history__raid a { color: inherit; font-weight: 650; text-decoration: none; }
+.point-visit-history__raid > span { flex-shrink: 0; border-radius: 6px; padding: 2px 6px; color: #52605a; background: #edf0ed; font-size: .68rem; }
+.point-visit-history ul > li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 5px 0; }
+.point-visit-history small { display: block; font-size: .68rem; color: #747b78; }
+.point-visit-history time { color: #747b78; font-size: .7rem; }
+.point-visit-history summary { margin-top: 8px; cursor: pointer; color: #58645e; font-size: .75rem; }
+.point-visit-history details p { overflow-wrap: anywhere; }
+.point-visit-history button { min-height: 40px; font: inherit; }
+.raid-point-history-sheet { position: absolute; z-index: 35; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 560px); max-height: 56dvh; overflow-y: auto; box-sizing: border-box; background: #fffdfa; border-radius: 22px 22px 0 0; padding: 12px 18px max(18px, env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px #18211c26; }
+.raid-point-history-sheet > header { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.raid-point-history-sheet h2 { font-size: 1rem; margin: 6px 0 12px; }
+.raid-point-history-sheet > header button { min-height: 40px; border: 0; padding: 8px; background: transparent; color: #63716a; font: inherit; font-size: .75rem; }
+.raid-point-history-sheet > p { font-size: .78rem; color: #69716e; }

@@ -29,6 +29,7 @@ export interface CheckInEvidence {
 }
 
 export interface CreateCheckInInput {
+  repeatVisit?: boolean
   pointSnapshotId: string
   evidence: CheckInEvidence
   presentParticipantIds: string[]

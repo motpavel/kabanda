@@ -65,6 +65,7 @@ export interface NavigatorLeaseProjection {
 }
 
 export interface RaidProjection {
+  routeTemplateId?: string | null
   id: string
   kabandaId: string
   title: string
@@ -184,6 +185,7 @@ export interface HandoffNavigatorInput {
 }
 
 export interface CreateRaidInput {
+  routeTemplateId?: string
   title: string
   description: string | null
   scheduledAt: string | null

@@ -472,7 +472,7 @@
 .kb-yandex-marker::before { position: absolute; inset: 4px; border-radius: inherit; background: #fff; content: ""; }
 .kb-yandex-marker::after { position: absolute; inset: -9px; border-radius: 50%; content: ""; }
 .kb-yandex-marker--attractions { background: #60bdea !important; }
-.kb-yandex-marker--attractions.visited { background: #1689c3 !important; }
+.kb-yandex-marker.visited, .kb-yandex-marker.visited.selected { background: #929a96 !important; }
 .kb-yandex-marker.selected {
   width: 23px;
   min-height: 23px !important;
@@ -610,6 +610,8 @@
   left: 12px;
   width: min(calc(100% - 24px), 520px);
   min-height: 76px;
+  max-height: 58dvh;
+  overflow-y: auto;
   margin: 0 auto;
   border: 1px solid rgb(73 78 72 / 14%);
   border-radius: 15px;
@@ -665,7 +667,7 @@
 .kb-dot { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgb(65 75 68 / 20%); }
 .kb-dot--stores { background: #ed1c24; }
 .kb-dot--attractions { background: #60bdea; }
-.kb-dot--attractions.visited { background: #1689c3; }
+.kb-dot.visited { background: #929a96; }
 .kb-empty-inline { display: grid; gap: 5px; padding: 40px 12px; color: var(--kb-muted); text-align: center; }
 .kb-empty-inline strong { color: var(--kb-ink); }
 

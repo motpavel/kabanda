@@ -8,6 +8,7 @@ import {
 import type { OneShotCoordinate } from '../../checkins/types'
 import { getRaidMapPoints, getRouteTrack } from '../api'
 import type { RaidMapPoint, RouteTrackPoint, RouteTrackProjection } from '../types'
+import { readRaidMapCache, saveRaidMapCache } from './map-cache'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 
@@ -46,15 +47,21 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
 }
 
 export function RaidRouteMap({
+  identityId,
+  planned = false,
   raidId,
   live,
   location,
   highlightedPointId,
+  onSelectPoint,
 }: {
+  identityId: string
+  planned?: boolean
   raidId: string
   live: boolean
   location: OneShotCoordinate | null
   highlightedPointId: string | null
+  onSelectPoint: (point: RaidMapPoint) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<YandexMap | null>(null)
@@ -102,6 +109,12 @@ export function RaidRouteMap({
   useEffect(() => {
     let active = true
     let inFlight = false
+    void readRaidMapCache(identityId, raidId).then((cached) => {
+      if (!active || !cached) return
+      setTrack((current) => current ?? cached.track)
+      setPoints((current) => current.length ? current : cached.points)
+      setDataState('ready')
+    }).catch(() => undefined)
     const refresh = async () => {
       if (inFlight || !navigator.onLine) return
       inFlight = true
@@ -114,6 +127,7 @@ export function RaidRouteMap({
         setTrack((current) => current?.updatedAt === nextTrack.updatedAt && current.pointCount === nextTrack.pointCount ? current : nextTrack)
         setPoints((current) => sameMapPoints(current, nextPoints) ? current : nextPoints)
         setDataState('ready')
+        void saveRaidMapCache(identityId, raidId, nextPoints, nextTrack).catch(() => undefined)
       } catch {
         if (active) setDataState('failed')
       } finally {
@@ -129,7 +143,7 @@ export function RaidRouteMap({
       if (timer !== null) window.clearInterval(timer)
       window.removeEventListener('online', onOnline)
     }
-  }, [live, raidId])
+  }, [identityId, live, raidId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -174,14 +188,22 @@ export function RaidRouteMap({
     pointObjectsRef.current = []
 
     const pointLayout = runtime.templateLayoutFactory.createClass(
-      '<span class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}"></span>',
+      '<button type="button" class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}"></button>',
     )
+    if (planned && points.length > 1) {
+      const path = [...points].sort((a, b) => a.position - b.position)
+      const line = new runtime.Polyline(path.map(({ latitude, longitude }) => [latitude, longitude] as const), {}, {
+        strokeColor: '#e84b43', strokeWidth: 3, strokeStyle: 'shortdash', zIndex: 1,
+      })
+      pointObjectsRef.current.push(line)
+      map.geoObjects.add(line)
+    }
     for (const point of points) {
       const highlighted = point.id === highlightedPointId
-      const markerClass = `raid-live-point${point.visitedByTeam ? ' raid-live-point--visited' : ''}${highlighted ? ' raid-live-point--nearby' : ''}`
+      const markerClass = `raid-live-point${point.visitedByMe ? ' raid-live-point--visited' : ''}${highlighted && !point.visitedByMe ? ' raid-live-point--nearby' : ''}`
       const marker = new runtime.Placemark([point.latitude, point.longitude], {
         markerClass,
-        ariaLabel: `${point.name}. ${point.visitedByTeam ? 'Точка закрыта' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда'}`,
+        ariaLabel: `${point.name}. ${point.visitedByMe ? 'Вы уже были. История посещений' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда. История посещений'}`,
       }, {
         iconLayout: pointLayout,
         iconShape: { type: 'Circle', coordinates: [0, 0], radius: highlighted ? 22 : 14 },
@@ -189,6 +211,7 @@ export function RaidRouteMap({
         hasHint: false,
         zIndex: highlighted ? 8 : point.visitedByTeam ? 1 : 4,
       })
+      marker.events.add('click', (event) => { event.stopPropagation?.(); onSelectPoint(point) })
       pointObjectsRef.current.push(marker)
       map.geoObjects.add(marker)
     }
@@ -198,7 +221,7 @@ export function RaidRouteMap({
       map.setCenter(view.center, view.zoom, { duration: 0 })
       firstViewApplied.current = true
     }
-  }, [highlightedPointId, points, providerState])
+  }, [highlightedPointId, onSelectPoint, planned, points, providerState])
 
   useEffect(() => {
     const map = mapRef.current
@@ -243,6 +266,7 @@ export function RaidRouteMap({
   }
 
   return <div className="route-live-map-shell">
+    {planned && <p className="raid-route-legend">Пунктир — порядок точек, не навигация · чёрный — пройденный путь</p>}
     <div className="route-live-map" ref={containerRef} />
     <nav className="raid-map-controls" aria-label="Управление картой">
       <button aria-label="Увеличить карту" onClick={() => changeZoom(1)} type="button">＋</button>

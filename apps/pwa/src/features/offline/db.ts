@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import type { RaidMapCacheRecord } from '../raids/recording/map-cache'
 import type {
   IdentityContext,
   LocalIdentity,
@@ -18,6 +19,7 @@ import type {
 } from './types'
 
 class KabandaOfflineDatabase extends Dexie {
+  raidMapCache!: EntityTable<RaidMapCacheRecord, 'key'>
   identities!: EntityTable<LocalIdentity, 'userId'>
   identityContext!: EntityTable<IdentityContext, 'key'>
   outbox!: EntityTable<OutboxOperation, 'id'>
@@ -134,6 +136,7 @@ class KabandaOfflineDatabase extends Dexie {
       raidHistory: 'key, identityId, kabandaId, savedAt, [identityId+kabandaId]',
       kabandaProgress: 'key, identityId, kabandaId, savedAt, [identityId+kabandaId]',
     })
+    this.version(8).stores({ raidMapCache: 'key, identityId, raidId' })
   }
 }
 

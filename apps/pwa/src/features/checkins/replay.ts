@@ -80,6 +80,7 @@ export async function replayOneCheckInOrMedia(input: {
         evidence: checkIn.evidence,
         presentParticipantIds: checkIn.presentParticipantIds,
         organizerAttestation: checkIn.organizerAttestation,
+        ...(checkIn.repeatVisit ? { repeatVisit: true } : {}),
       })
       const settled = await settleCheckIn(fence, checkIn.operationId, response)
       return settled

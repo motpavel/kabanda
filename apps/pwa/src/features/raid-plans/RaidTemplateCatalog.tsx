@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listRaidTemplates } from './api'
+import { appPath } from '../../lib/paths'
 import { formatPlanDistance } from './editor/route-estimate'
 import type { RaidTemplateSummary } from './types'
 
@@ -46,14 +47,14 @@ export function RaidTemplateCatalog({ kabandaId }: { kabandaId: string }) {
       <strong>Маршрутов пока нет</strong>
       <span>Создайте первый: добавьте обложку и точки на карте.</span>
     </div>}
-    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid templates={state.templates} />}
+    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid kabandaId={kabandaId} templates={state.templates} />}
   </section>
 }
 
-export function RaidTemplateGrid({ templates }: { templates: readonly RaidTemplateSummary[] }) {
+export function RaidTemplateGrid({ templates, kabandaId }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string }) {
   const chronological = [...templates].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
   return <div className="prd-template-grid">
-    {chronological.map((template) => <article className="prd-template-card" key={template.id}>
+    {chronological.map((template) => <a className="prd-template-card" key={template.id} href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId ?? template.kabandaId)}&template=${encodeURIComponent(template.id)}`}>
       <img alt="" decoding="async" loading="lazy" src={template.cover.url} />
       <div>
         <h3>{template.title}</h3>
@@ -64,7 +65,7 @@ export function RaidTemplateGrid({ templates }: { templates: readonly RaidTempla
         </p>
         <small>Расстояние по прямым отрезкам</small>
       </div>
-    </article>)}
+    </a>)}
   </div>
 }
 

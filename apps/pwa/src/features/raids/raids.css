@@ -819,6 +819,9 @@
   box-sizing: border-box;
   width: 27px;
   height: 27px;
+  min-height: 0;
+  padding: 0;
+  cursor: pointer;
   transform: translate(-50%, -50%);
   border: 7px solid #ea3e35;
   border-radius: 50%;
@@ -979,3 +982,5 @@
   .raid-arrival-pill > span:first-child,
   .raid-arrival-sheet__pulse { animation: none; }
 }
+.prd-template-card { color: inherit; text-decoration: none; }
+.raid-route-legend { position: absolute; z-index: 4; top: 80px; left: 12px; right: 64px; margin: 0; padding: 6px 9px; border-radius: 9px; background: #fffc; font-size: 11px; color: #34383c; pointer-events: none; }

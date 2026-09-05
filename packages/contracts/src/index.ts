@@ -210,3 +210,18 @@ export type RaidTemplatePointInput = z.infer<typeof raidTemplatePointInputSchema
 export type CreateRaidTemplate = z.infer<typeof createRaidTemplateSchema>
 export type ReverseGeocodeQuery = z.infer<typeof reverseGeocodeQuerySchema>
 export type ReverseGeocodeResult = z.infer<typeof reverseGeocodeResultSchema>
+export interface PointVisitHistory {
+  personalCount: number
+  nextOffset: number | null
+  entries: Array<{
+    id: string
+    raidId: string | null
+    title: string
+    state: string | null
+    visitedAt: string
+    mine: boolean
+    personalVisits: number
+    visits: Array<{ id: string; userId: string; displayName: string; visitedAt: string; source: string }>
+    participants: Array<{ userId: string; displayName: string }>
+  }>
+}

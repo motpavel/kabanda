@@ -168,7 +168,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
-  await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
+  await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)
@@ -176,7 +176,12 @@ test('offline route, check-in and photo survive reload and replay once', async (
   }).toEqual([1, 1])
 
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: /Сохранено без сети/ }).click()
+  // A fresh GPS sample can reopen the cached nearby point automatically.
+  const confirmation = page.getByRole('complementary', { name: 'Подтверждение точки' })
+  const savedOffline = page.getByRole('button', { name: /Сохранено без сети/ })
+  await expect(confirmation.or(savedOffline).first()).toBeVisible()
+  if (!(await confirmation.isVisible())) await savedOffline.click()
+  await expect(confirmation).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id)

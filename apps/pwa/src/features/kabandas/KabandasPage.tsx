@@ -2,6 +2,7 @@ import '@fontsource-variable/manrope'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
+import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
 import {
@@ -540,6 +541,7 @@ function KabandaWorkspace({
             <aside className="kb-point-sheet" aria-label={`Точка: ${selectedPoint.name}`}>
               <button className="kb-point-sheet-close" type="button" aria-label="Закрыть информацию о точке" onClick={() => setSelectedPointId(null)}>×</button>
               <PointDetail point={selectedPoint} />
+              {selectedPoint.category === 'attractions' && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedPoint.id}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedPoint.id} />}
             </aside>
           )}
         </div>
@@ -1017,12 +1019,6 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
 }
 
 function PointDetail({ point }: { point: MapPoint }) {
-  const times = (count: number) => {
-    const lastTwo = count % 100
-    if (lastTwo >= 11 && lastTwo <= 14) return 'раз'
-    const last = count % 10
-    return last >= 2 && last <= 4 ? 'раза' : 'раз'
-  }
   if (point.category === 'stores') {
     return <>
       <p className="kb-point-eyebrow">Красное&amp;Белое</p>
@@ -1035,9 +1031,5 @@ function PointDetail({ point }: { point: MapPoint }) {
   return <>
     <h2>{point.name}</h2>
     <p className="kb-point-place">Ижевск</p>
-    <div className="kb-point-visits" aria-label="Посещения точки">
-      <p aria-label={`Вы посетили эту точку ${point.visitedByMeCount} ${times(point.visitedByMeCount)}`}><span>Вы</span><strong>{point.visitedByMeCount}</strong><small>{times(point.visitedByMeCount)}</small></p>
-      <p aria-label={`Команда посетила эту точку ${point.visitedByTeamCount} ${times(point.visitedByTeamCount)}`}><span>Команда</span><strong>{point.visitedByTeamCount}</strong><small>{times(point.visitedByTeamCount)}</small></p>
-    </div>
   </>
 }

@@ -75,6 +75,7 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
     acceptInvite: vi.fn(),
     acceptInviteWithCredentials: vi.fn(),
     listPoints: vi.fn().mockResolvedValue({ points: [], nextCursor: null }),
+    getPointVisitHistory: vi.fn().mockResolvedValue({ personalCount: 0, entries: [], nextOffset: null }),
     ...overrides,
   }
 }

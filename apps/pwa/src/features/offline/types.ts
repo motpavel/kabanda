@@ -156,6 +156,7 @@ export interface CheckInEvidenceRecord {
 }
 
 export interface CheckInOutboxRecord {
+  repeatVisit?: boolean
   operationId: string
   identityId: string
   kabandaId: string

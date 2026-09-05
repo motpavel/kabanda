@@ -381,6 +381,7 @@ export function useRouteRecorder(input: {
                 document.visibilityState !== 'visible'
               ) return
               recovering = false
+              setMessage(null)
               lastPersistedSampleAt = record.capturedAt
               const nextStats = await refreshStats()
               safeSetPhase(isPersistedSampleFresh(record.capturedAt) ? 'fresh' : 'stale')

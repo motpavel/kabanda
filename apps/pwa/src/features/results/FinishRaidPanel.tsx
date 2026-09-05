@@ -69,10 +69,10 @@ export function FinishRaidPanel({
       setReview(next)
       setDrainAttempted(true)
       if (next && pendingInventoryCount(next) > 0) {
-        setMessage('Не всё получило receipt. Можно повторить отправку или явно завершить с неполным итогом.')
+        setMessage('Не все данные отправлены. Повторите отправку или завершите с неполным итогом.')
       }
     } catch {
-      setMessage('Foreground drain не завершился. Локальные данные сохранены; повторите или подтвердите partial.')
+      setMessage('Отправка не завершилась. Данные сохранены на телефоне; повторите или подтвердите неполный итог.')
     } finally {
       setBusy(null)
     }
@@ -101,7 +101,7 @@ export function FinishRaidPanel({
       await onApplyRaid(response.raid)
       await onCanonicalRefresh()
     } catch (error) {
-      setMessage(error instanceof ApiError ? error.message : 'Завершение не подтверждено. Повтор использует тот же idempotency key.')
+      setMessage(error instanceof ApiError ? error.message : 'Завершение не подтверждено. Нажмите ещё раз — повтор не создаст второй итог.')
     } finally {
       setBusy(null)
     }
@@ -109,7 +109,7 @@ export function FinishRaidPanel({
 
   return (
     <section className="kb-card result-finish-review">
-      <div className="kb-section-head"><div><p className="kb-kicker">Перед финишем</p><h2>Что ещё ждёт receipt</h2></div></div>
+      <div className="kb-section-head"><div><p className="kb-kicker">Перед финишем</p><h2>Сохранение рейда</h2></div></div>
       {!review ? <p className="kb-muted" aria-busy="true">Проверяем локальную очередь…</p> : (
         <>
           <dl className="result-inventory">

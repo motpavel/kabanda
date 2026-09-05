@@ -16,6 +16,7 @@ const createRaidSchema = z.object({
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).nullable().optional(),
   scheduledAt: z.iso.datetime({ offset: true }).nullable().optional(),
+  routeTemplateId: z.uuid().optional(),
 })
 const commandSchema = z.object({ expectedVersion: z.coerce.number().int().positive() })
 const finishSchema = commandSchema
@@ -94,6 +95,7 @@ const checkinSchema = z.object({
   }),
   presentParticipantIds: presentParticipantIdsSchema,
   organizerAttestation: z.boolean(),
+  repeatVisit: z.boolean().optional(),
 })
 const pendingQuerySchema = z.object({ status: z.literal('pending') })
 const fallbackSchema = z.object({

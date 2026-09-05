@@ -147,7 +147,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
-  await expect(page.getByText(/Попытка сохранена на телефоне/)).toBeVisible()
+  await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
 
   await expect.poll(async () => {
     const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(
@@ -162,10 +162,28 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     return gallery.media.length
   }, { timeout: 30_000 }).toBe(1)
 
+  // A grey point remains clickable. Only explicit free-hunt repeat adds a
+  // visit; the unique completion count in the final result stays one.
+  const visitedMarker = page.getByRole('button', { name: 'Синтетическая точка E2E. Вы уже были. История посещений' })
+  await expect(visitedMarker).toBeVisible({ timeout: 15_000 })
+  await visitedMarker.click()
+  const historySheet = page.getByRole('complementary', { name: 'История точки: Синтетическая точка E2E' })
+  await expect(historySheet.getByLabel('Личных посещений: 1')).toBeVisible()
+  await historySheet.getByRole('button', { name: 'Отметиться ещё раз' }).click()
+  await context.setGeolocation({ latitude: 56.86015, longitude: 53.21015, accuracy: 8 })
+  await page.getByRole('button', { name: 'Подтвердить новое посещение' }).click()
+  await expect.poll(async () => {
+    const points = await api<{ points: Array<{ sourcePointId: string }> }>(page, 'GET', `/api/raids/${raid.id}/map-points`)
+    return (await api<{ personalCount: number }>(page, 'GET', `/api/kabandas/${kabanda.id}/points/${points.points[0]!.sourcePointId}/history`)).personalCount
+  }).toBe(2)
+  await visitedMarker.click()
+  await expect(historySheet.getByLabel('Личных посещений: 2')).toBeVisible()
+  await historySheet.getByRole('button', { name: 'Свернуть' }).click()
+
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await page.getByRole('button', { name: 'Зафиксировать итог' }).click()
-  await expect(page.getByText('Канонический итог')).toBeVisible()
+  await expect(page.getByText('Рейд завершён', { exact: true })).toBeVisible()
 
   const result = await api<{ result: { team: { uniquePoints: number; photos: number } } }>(
     page,

@@ -18,6 +18,7 @@ import { replayOneCheckInOrMedia } from './replay'
 import { loadCheckInExtras } from './refresh'
 import {
   activeParticipantSelection,
+  canQueueLocalCheckIn,
   checkInAttentionState,
   participantSelectionAfterPresenceRefresh,
   participantSelectionKey,
@@ -66,6 +67,8 @@ export function CheckInPanel({
   presentation = 'card',
   onPendingChange,
   onAttentionChange,
+  repeatVisit = false,
+  onRepeatSaved,
 }: {
   identityId: string
   raid: RaidProjection
@@ -76,6 +79,8 @@ export function CheckInPanel({
   presentation?: 'card' | 'map-sheet'
   onPendingChange?: (count: number) => void
   onAttentionChange?: (state: { count: number; key: string; actionKey: string }) => void
+  repeatVisit?: boolean
+  onRepeatSaved?: () => void
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState('')
@@ -119,6 +124,7 @@ export function CheckInPanel({
     draft.attemptId === manualResponse?.attemptId && draft.mediaId,
   ) ?? null
   const canMutate = raid.state === 'active' && !staleProjection
+  const canEnqueue = canQueueLocalCheckIn(raid.state, activeParticipantIds.has(identityId), staleProjection, navigator.onLine)
   const effectiveNearby = nearbyPoints ?? nearby
   const validSelectedParticipants = activeParticipantSelection(
     identityId,
@@ -135,11 +141,11 @@ export function CheckInPanel({
 
   useEffect(() => {
     if (!nearbyPoints) return
-    const eligible = nearbyPoints.filter(({ creditedByTeam }) => !creditedByTeam)
+    const eligible = nearbyPoints.filter(({ creditedByMe }) => !creditedByMe || (repeatVisit && !raid.routeTemplateId))
     setSelectedPointId((current) => eligible.some(({ pointSnapshotId }) => pointSnapshotId === current)
       ? current
       : eligible[0]?.pointSnapshotId ?? '')
-  }, [nearbyPoints])
+  }, [nearbyPoints, repeatVisit, raid.routeTemplateId])
 
   useEffect(() => {
     for (const participantId of manualParticipantChoices.current.keys()) {
@@ -309,23 +315,32 @@ export function CheckInPanel({
   }
 
   const submit = async () => {
-    if (!selectedPointId || busy || !canMutate) return
+    if (!selectedPointId || busy || !canEnqueue) return
     setBusy('checkin')
     setMessage(null)
+    let evidence
     try {
-      const evidence = await getOneShotCoordinate()
+      evidence = await getOneShotCoordinate()
+    } catch {
+      setMessage('Не получили свежую геолокацию. Разрешите доступ и повторите чекин на месте.')
+      setBusy(null)
+      return
+    }
+    try {
       const record = await enqueueCheckIn(identityId, raid.kabandaId, raid.id, {
         pointSnapshotId: selectedPointId,
         evidence,
         presentParticipantIds: validSelectedParticipants,
         organizerAttestation: viewerIsOrganizer && organizerAttestation,
+        ...(repeatVisit && !raid.routeTemplateId ? { repeatVisit: true } : {}),
       })
       if (!record) throw new Error('IDENTITY_CHANGED')
       await refreshLocal()
-      setMessage('Попытка сохранена на телефоне. Канонический результат появится после server receipt.')
+      setMessage('Чекин сохранён на телефоне. Подтверждение появится после отправки на сервер.')
+      if (repeatVisit) onRepeatSaved?.()
       void flush()
     } catch {
-      setMessage('Попытку не удалось надёжно сохранить. Никакого pending check-in не показываем.')
+      setMessage('Не удалось сохранить чекин на телефоне. Проверьте свободное место и повторите.')
     } finally {
       setBusy(null)
     }
@@ -368,7 +383,7 @@ export function CheckInPanel({
   }
 
   const addMedia = async (file: File | null) => {
-    if (!file || busy || !canMutate) return
+    if (!file || busy || !canEnqueue) return
     const invalid = validateMediaFile(file)
     if (invalid) return setMessage(invalid)
     setBusy('media')
@@ -448,7 +463,7 @@ export function CheckInPanel({
       (reservedFallback?.input.verifierUserId ?? verifierId) &&
       (reservedFallback?.input.verifierUserId ?? verifierId) !== identityId,
     ),
-    viewerCanCoordinate: viewerIsOrganizer,
+    viewerCanCoordinate: activeParticipantIds.has(identityId),
     hasSelectedPoint: Boolean(selectedPointId),
   })
   const primaryKind = serverTailOnly && selectedPrimaryKind !== 'claim' && selectedPrimaryKind !== 'verify_fallback'
@@ -461,7 +476,7 @@ export function CheckInPanel({
       : primaryKind === 'submit_fallback'
         ? { label: 'Отправить на ручную проверку', action: submitFallback }
         : primaryKind === 'check_in'
-          ? { label: 'Отметиться у точки', action: submit }
+          ? { label: repeatVisit ? 'Подтвердить новое посещение' : 'Отметиться у точки', action: submit }
             : primaryKind === 'locate' && presentation !== 'map-sheet'
             ? { label: 'Найти точку рядом', action: locate }
             : null
@@ -480,7 +495,7 @@ export function CheckInPanel({
       {pendingFallback && <div className="kb-notice"><strong>Вас выбрали verifier.</strong><p>Подтверждение будет отдельным от автора попытки.</p></div>}
 
       {!manualResponse && effectiveNearby.length > 0 && (
-        <fieldset className="checkin-points"><legend>{presentation === 'map-sheet' ? 'Точка рядом' : 'Eligible точки рядом'}</legend>{effectiveNearby.filter(({ creditedByTeam }) => presentation !== 'map-sheet' || !creditedByTeam).map((point) => (
+        <fieldset className="checkin-points"><legend>Точка рядом</legend>{effectiveNearby.filter(({ creditedByMe }) => !creditedByMe || (repeatVisit && !raid.routeTemplateId)).map((point) => (
           <label key={point.pointSnapshotId}><input type="radio" name="nearby-point" checked={selectedPointId === point.pointSnapshotId} onChange={() => setSelectedPointId(point.pointSnapshotId)} /><span><strong>{point.name}</strong><small>{Math.round(point.distanceMeters)} м · {point.creditedByTeam ? 'команда уже была' : 'новая для команды'}</small></span></label>
         ))}</fieldset>
       )}
@@ -511,12 +526,12 @@ export function CheckInPanel({
 
       {message && <p className="kb-notice" role="status">{message}</p>}
 
-      {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || staleProjection || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
+      {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || (staleProjection && !(primaryKind === 'check_in' && canEnqueue)) || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
       {pendingClaim && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => claimAction(pendingClaim, 'decline')}>Это ошибка — отклонить</button>}
       {pendingFallback && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => fallbackAction(pendingFallback, 'decline')}>Не могу подтвердить</button>}
       {Boolean(local?.unsynced) && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => void flush()}>Синхронизировать сохранённое</button>}
 
-      {canMutate && (
+      {canEnqueue && (
         <div className="checkin-media-compose">
           <label>Подпись к фото <input maxLength={160} value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
           <label className="kb-link-button checkin-photo">{manualResponse ? 'Добавить fallback-фото' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy)} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>

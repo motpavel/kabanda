@@ -2,6 +2,8 @@ import { createHash, createHmac, randomBytes } from 'node:crypto'
 import type { GeographicBounds } from '@kabanda/domain'
 import { isBoundedIzhevskQuery } from '@kabanda/domain'
 import type { Pool, PoolClient } from 'pg'
+import type { PointVisitHistory } from '@kabanda/contracts'
+import { readPointVisitHistory } from './point-history.js'
 import {
   acquireAlphaQuotaLock,
   activeAlphaAccessCount,
@@ -128,6 +130,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 }
 
 export interface KabandaService {
+  getPointVisitHistory(userId: string, kabandaId: string, pointId: string, offset?: number): Promise<PointVisitHistory>
   listKabandas(userId: string): Promise<KabandaSummary[]>
   createKabanda(userId: string, name: string, avatar: string, idempotencyKey: string): Promise<KabandaSummary>
   updateKabanda(
@@ -166,6 +169,9 @@ export interface KabandaService {
 }
 
 export class DatabaseKabandaService implements KabandaService {
+  getPointVisitHistory(userId: string, kabandaId: string, pointId: string, offset = 0) {
+    return readPointVisitHistory(this.pool, userId, kabandaId, pointId, offset)
+  }
   constructor(
     private readonly pool: Pool,
     private readonly inviteAccess: InviteAccessOptions = {
@@ -662,11 +668,22 @@ export class DatabaseKabandaService implements KabandaService {
       `SELECT p.id, p.stable_key, p.name,
          ST_Y(p.location)::float8 AS latitude, ST_X(p.location)::float8 AS longitude,
          p.verification_status,
-         (SELECT COUNT(*)::int FROM point_visits mine
+         ((SELECT COUNT(*) FROM point_visits mine
            WHERE mine.kabanda_id = c.kabanda_id AND mine.point_id = p.id AND mine.user_id = $1)
+           + (SELECT COUNT(*) FROM raid_point_visit_events event
+             JOIN raid_point_credits credit ON credit.id = event.credit_id
+             JOIN raid_point_snapshots snapshot ON snapshot.id = credit.point_snapshot_id
+             JOIN raids r ON r.id = credit.raid_id
+             WHERE r.kabanda_id = c.kabanda_id AND snapshot.source_point_id = p.id AND credit.user_id = $1
+               AND (r.state IN ('active', 'paused', 'finalizing') OR (r.state = 'completed' AND EXISTS (
+                 SELECT 1 FROM raid_result_points final WHERE final.raid_id = r.id AND final.user_id = $1 AND final.source_point_id = p.id
+               )))))::int
            AS visited_by_me_count,
-         (SELECT COUNT(*)::int FROM point_visits team
-           WHERE team.kabanda_id = c.kabanda_id AND team.point_id = p.id) AS visited_by_team_count
+         ((SELECT COUNT(*) FROM point_visits team
+           WHERE team.kabanda_id = c.kabanda_id AND team.point_id = p.id)
+           + (SELECT COUNT(DISTINCT rp.raid_id) FROM raid_result_points rp
+             JOIN raid_results rr ON rr.raid_id = rp.raid_id
+             WHERE rr.kabanda_id = c.kabanda_id AND rp.source_point_id = p.id))::int AS visited_by_team_count
        FROM point_collections c
        JOIN kabanda_memberships member
          ON member.kabanda_id = c.kabanda_id AND member.user_id = $1 AND member.removed_at IS NULL

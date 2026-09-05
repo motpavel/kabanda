@@ -69,6 +69,7 @@ export async function renderRaidShareCard(result: RaidResult): Promise<Buffer> {
 
 export type CreateRaidInput = {
   title: string
+  routeTemplateId?: string | undefined
   description?: string | null | undefined
   scheduledAt?: string | null | undefined
 }
@@ -248,6 +249,7 @@ export type FinishRaidResponse = {
 export type SettleRaidResponse = { raid: RaidProjection; result: RaidResult }
 
 export type RaidProjection = {
+  routeTemplateId?: string | null
   id: string
   kabandaId: string
   title: string
@@ -307,6 +309,7 @@ export type RouteBatchResponse = {
 
 export type NearbyCheckinInput = { latitude: number; longitude: number; limit: number }
 export type CheckinInput = {
+  repeatVisit?: boolean | undefined
   pointSnapshotId: string
   evidence: { latitude: number; longitude: number; capturedAt: string; accuracyMeters: number }
   presentParticipantIds: string[]
@@ -428,6 +431,7 @@ export const processMedia: MediaProcessor = async (bytes, declaredContentType) =
 
 type RaidRow = {
   id: string
+  route_template_id: string | null
   kabanda_id: string
   organizer_user_id: string
   navigator_user_id: string | null
@@ -594,17 +598,48 @@ export class DatabaseRaidService implements RaidService {
       )
       if (!membership.rowCount) throw this.notFound()
 
+      if (input.routeTemplateId) {
+        const visible = await client.query(
+          `SELECT t.id FROM raid_templates t
+           JOIN kabandas k ON k.id = t.kabanda_id AND k.archived_at IS NULL
+           WHERE t.id = $1 AND t.archived_at IS NULL
+             AND (t.scope = 'all_authenticated' OR t.kabanda_id = $2) FOR SHARE OF t`,
+          [input.routeTemplateId, kabandaId],
+        )
+        if (!visible.rowCount) throw this.notFound()
+      }
       const result = await client.query<{ id: string; created_at: Date }>(
         `INSERT INTO raids
-          (kabanda_id, organizer_user_id, title, description, scheduled_at, state)
+          (kabanda_id, organizer_user_id, title, description, scheduled_at, state, route_template_id)
          VALUES ($1, $2, $3, $4, $5,
            CASE WHEN $5::timestamptz IS NOT NULL AND $5::timestamptz > now()
-             THEN 'planned'::raid_state ELSE 'draft'::raid_state END)
+             THEN 'planned'::raid_state ELSE 'draft'::raid_state END, $6)
          RETURNING id, created_at`,
-        [kabandaId, actorUserId, input.title, input.description ?? null, input.scheduledAt ?? null],
+        [kabandaId, actorUserId, input.title, input.description ?? null, input.scheduledAt ?? null, input.routeTemplateId ?? null],
       )
       const raid = result.rows[0]
       if (!raid) throw new Error('Raid create did not return a row')
+      if (input.routeTemplateId) {
+        // Keep source IDs for personal/lifetime statistics without inserting the
+        // private template into the city's public point collections.
+        await client.query(
+          `WITH copied AS (
+             INSERT INTO points (kabanda_id, stable_key, name, location, source, source_id,
+               source_url, license, verification_status, notes)
+             SELECT $1, 'template:' || p.id, p.name, p.location::geometry,
+               'raid_template', p.id::text, '', 'user_content', 'source_checked',
+               concat_ws(E'\\n', p.address, p.comment)
+             FROM raid_template_points p WHERE p.template_id = $2
+             ON CONFLICT (kabanda_id, stable_key) DO UPDATE SET
+               name = EXCLUDED.name, location = EXCLUDED.location, notes = EXCLUDED.notes
+             RETURNING id, source_id
+           ) INSERT INTO raid_point_snapshots (raid_id, source_point_id, name, location, position)
+             SELECT $3, c.id, p.name, p.location, p.position
+             FROM copied c JOIN raid_template_points p ON p.id::text = c.source_id
+             WHERE p.template_id = $2 ORDER BY p.position`,
+          [kabandaId, input.routeTemplateId, raid.id],
+        )
+      }
       await client.query(
         `INSERT INTO raid_participants
           (raid_id, user_id, state, accepted_at)
@@ -1236,7 +1271,7 @@ export class DatabaseRaidService implements RaidService {
       const result = await client.query(
         `UPDATE raid_participants SET
            presence_override_at = CASE WHEN $4 THEN clock_timestamp() ELSE NULL END,
-           presence_override_by = CASE WHEN $4 THEN $2 ELSE NULL END,
+           presence_override_by = CASE WHEN $4 THEN $2::uuid ELSE NULL END,
            updated_at = clock_timestamp()
          WHERE raid_id = $1 AND user_id = $3 AND state IN ('accepted', 'ready')`,
         [raid.id, actorUserId, participantId, present],
@@ -1436,6 +1471,9 @@ export class DatabaseRaidService implements RaidService {
       if (input.organizerAttestation && raid.organizer_user_id !== actorUserId) {
         throw this.forbiddenCommand()
       }
+      if (input.repeatVisit && raid.route_template_id) {
+        throw new RaidError('RAID_REPEAT_NOT_ALLOWED', 409, 'На выбранном маршруте точка засчитывается один раз за рейд. Продолжайте маршрут.')
+      }
       const pointResult = await client.query<{
         id: string
         source_point_id: string
@@ -1466,10 +1504,10 @@ export class DatabaseRaidService implements RaidService {
         `INSERT INTO raid_checkin_attempts
           (raid_id, point_snapshot_id, actor_user_id, evidence_location,
            evidence_captured_at, evidence_accuracy_meters, organizer_attestation,
-           outcome, reason, distance_meters)
+           outcome, reason, distance_meters, repeat_visit)
          VALUES ($1, $2, $3,
            ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
-           $6, $7, $8, $9, $10, $11) RETURNING id`,
+           $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
         [
           raid.id,
           point.id,
@@ -1482,6 +1520,7 @@ export class DatabaseRaidService implements RaidService {
           accepted ? 'accepted' : 'needs_manual_verification',
           accepted ? null : reason,
           distanceMeters,
+          input.repeatVisit ?? false,
         ],
       )
       const attemptId = attemptResult.rows[0]!.id
@@ -2702,7 +2741,9 @@ export class DatabaseRaidService implements RaidService {
         if (!presence.allReady) {
           throw new RaidError('RAID_PARTICIPANTS_NOT_PRESENT', 409, 'Подтвердите, что вся стая на месте')
         }
-        const snapshots = await client.query(
+        const snapshots = raid.route_template_id ? await client.query(
+          'SELECT id FROM raid_point_snapshots WHERE raid_id = $1', [raid.id],
+        ) : await client.query(
           `INSERT INTO raid_point_snapshots
             (raid_id, source_point_id, collection_id, name, location, position)
            SELECT DISTINCT ON (p.id) $1, p.id, pc.id, p.name,
@@ -2722,7 +2763,7 @@ export class DatabaseRaidService implements RaidService {
           throw new RaidError(
             'RAID_POINTS_EMPTY',
             409,
-            'Нет проверенных точек для старта рейда',
+            'Нет доступных точек для старта рейда. Создайте маршрут с точками.',
           )
         }
         await client.query(
@@ -3367,6 +3408,17 @@ export class DatabaseRaidService implements RaidService {
        RETURNING id, user_id, point_snapshot_id, source, created_at`,
       [raidId, pointSnapshotId, attemptId, [...new Set(userIds)], source],
     )
+    await client.query(
+      `INSERT INTO raid_point_visit_events (credit_id, evidence_attempt_id, user_id, source)
+       SELECT c.id, $3, c.user_id, $5 FROM raid_point_credits c
+       JOIN raids r ON r.id = c.raid_id
+       JOIN raid_checkin_attempts a ON a.id = $3 AND a.raid_id = c.raid_id
+         AND a.point_snapshot_id = c.point_snapshot_id
+       WHERE c.raid_id = $1 AND c.point_snapshot_id = $2 AND c.user_id = ANY($4::uuid[])
+         AND (c.evidence_attempt_id = $3 OR (a.repeat_visit AND r.route_template_id IS NULL))
+       ON CONFLICT (evidence_attempt_id, user_id) DO NOTHING`,
+      [raidId, pointSnapshotId, attemptId, [...new Set(userIds)], source],
+    )
     return result.rows.map((row) => ({
       id: row.id,
       userId: row.user_id,
@@ -3493,7 +3545,7 @@ export class DatabaseRaidService implements RaidService {
   private async lockRaid(client: PoolClient, actorUserId: string, raidId: string): Promise<RaidRow> {
     const result = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.title, r.description, r.route_template_id, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
          r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
@@ -3572,7 +3624,7 @@ export class DatabaseRaidService implements RaidService {
   ): Promise<RaidProjection> {
     const raidResult = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.title, r.description, r.route_template_id, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
          r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
@@ -3620,6 +3672,7 @@ export class DatabaseRaidService implements RaidService {
       kabandaId: raid.kabanda_id,
       title: raid.title,
       description: raid.description,
+      routeTemplateId: raid.route_template_id,
       scheduledAt: raid.scheduled_at?.toISOString() ?? null,
       state: raid.state,
       version: Number(raid.version),

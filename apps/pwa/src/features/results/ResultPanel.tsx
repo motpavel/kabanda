@@ -65,7 +65,7 @@ export function ResultPanel({
       if (cached) {
         setResult(cached.result)
         setStaleAt(cached.savedAt)
-      } else setError('Канонический итог ещё не сохранён на этом устройстве.')
+      } else setError('Итог ещё не сохранён на этом устройстве. Подключитесь к интернету.')
     }
     void load()
     return () => { active = false }
@@ -86,7 +86,7 @@ export function ResultPanel({
     }
   }, [raid.id, result, staleOnly])
 
-  if (!result) return <section className="kb-card" aria-busy={!error}><h2>Собираем канонический итог…</h2>{error && <p className="kb-error">{error}</p>}</section>
+  if (!result) return <section className="kb-card" aria-busy={!error}><h2>Загружаем итог рейда…</h2>{error && <p className="kb-error">{error}</p>}</section>
   const rows = metricRows(result.personal, result.team)
   const share = async () => {
     if (!card) return
@@ -100,12 +100,12 @@ export function ResultPanel({
   return (
     <section className="result-shell">
       <article className="result-hero">
-        <p className="kb-kicker">Канонический итог</p>
+        <p className="kb-kicker">Рейд завершён</p>
         <h2>{result.raid.title}</h2>
         <p>{new Date(result.raid.completedAt).toLocaleString('ru-RU')}</p>
-        {result.raid.partial && <span>Partial · непринятые операции не включены</span>}
+        {result.raid.partial && <span>Неполный итог · несинхронизированные данные не включены</span>}
       </article>
-      {staleAt && <p className="kb-stale">Сохранённая identity-bound копия от {new Date(staleAt).toLocaleString('ru-RU')}.</p>}
+      {staleAt && <p className="kb-stale">Сохранённая копия от {new Date(staleAt).toLocaleString('ru-RU')}.</p>}
       <div className="result-metrics" role="table" aria-label="Личные и командные метрики">
         <div className="result-metrics__head" role="row"><span>Метрика</span><strong>Лично</strong><strong>Команда</strong></div>
         {rows.map((row) => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}
@@ -113,6 +113,7 @@ export function ResultPanel({
       <section className="kb-card"><p className="kb-kicker">Участники</p><ul className="result-participants">{result.participants.map((participant) => <li key={participant.userId}><strong>{participant.displayName}</strong><span>{participant.metrics.uniquePoints} точек · {participant.metrics.photos} фото</span></li>)}</ul></section>
       {card && <section className="kb-card result-share"><img src={card.url} alt="Приватная карточка результата без маршрута и внутренних ID" /><button className="kb-link-button" type="button" onClick={share}>Поделиться карточкой</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
       <ResultNextRaidAction enabled={!staleOnly && online} kabandaId={result.raid.kabandaId} />
+      <a className="kb-link-button" href={`${appPath('app')}?kabanda=${encodeURIComponent(result.raid.kabandaId)}&tab=raids`}>К завершённым рейдам</a>
     </section>
   )
 }

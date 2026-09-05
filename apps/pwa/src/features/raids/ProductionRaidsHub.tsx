@@ -215,7 +215,7 @@ export function ProductionRaidsHub({
     } catch (error) {
       if (error instanceof ApiError && isStaleConflict(error.status, error.code)) {
         invitationKeys.current.delete(logical)
-        setInvitationNotice({ tone: 'error', text: 'Рейд уже изменился. Обновили его каноническое состояние.' })
+        setInvitationNotice({ tone: 'error', text: 'Состав рейда изменился. Обновили список — нажмите ещё раз, чтобы отправить свой ответ.' })
         refreshAfterMutation = true
       } else if (error instanceof ApiError) {
         setInvitationNotice({ tone: 'error', text: error.message })

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RaidPrimaryAction } from '../state'
-import type { RaidProjection } from '../types'
+import type { RaidMapPoint, RaidProjection } from '../types'
+import { PointVisitHistory } from '../../checkins/PointVisitHistory'
 import { selectActivePrimaryAction } from './state'
 import { useRouteRecorder } from './useRouteRecorder'
 import { CheckInPanel } from '../../checkins/CheckInPanel'
@@ -34,14 +35,23 @@ export function ActiveRaidPanel({
   resourceError: string | null
 }) {
   const recorder = useRouteRecorder({ identityId, raid, staleProjection, onCanonicalRefresh, onApplyRaid })
-  const proximity = useRaidProximity(raid.id, raid.state === 'active')
+  const proximity = useRaidProximity(identityId, raid.id, raid.state === 'active')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
+  const [inspectedPoint, setInspectedPoint] = useState<RaidMapPoint | null>(null)
+  const [repeatPointId, setRepeatPointId] = useState<string | null>(null)
+  const [selectedArrivalId, setSelectedArrivalId] = useState<string | null>(null)
+  const inspectPoint = useCallback((point: RaidMapPoint) => { setInspectedPoint(point); setSheetOpen(false) }, [])
   const [pendingCheckIns, setPendingCheckIns] = useState(0)
   const [checkInAttention, setCheckInAttention] = useState({ count: 0, key: '', actionKey: '' })
   const lastPresentedPoint = useRef<string | null>(null)
   const lastPresentedAttention = useRef('')
-  const activePoint = proximity.nearby.find(({ creditedByTeam }) => !creditedByTeam) ?? null
+  const activePoint = proximity.nearby.find((point) => point.pointSnapshotId === selectedArrivalId &&
+      (!point.creditedByMe || (point.pointSnapshotId === repeatPointId && !raid.routeTemplateId)))
+    ?? proximity.nearby.find(({ creditedByMe }) => !creditedByMe) ?? null
+  const inspectedNearby = proximity.nearby.find((point) => point.pointSnapshotId === inspectedPoint?.id)
+  // A delayed proximity response cannot undo an already confirmed map credit.
+  const inspectedVisited = Boolean(inspectedNearby?.creditedByMe || inspectedPoint?.visitedByMe)
   const viewerIsOrganizer = raid.organizerUserId === identityId
   const serverActionAvailable = serverPrimary?.kind === 'command' || serverPrimary?.kind === 'refresh'
   const primary = selectActivePrimaryAction(recorder.phase, serverActionAvailable)
@@ -90,10 +100,13 @@ export function ActiveRaidPanel({
 
   return <section className="raid-active-map" aria-label={`Активный рейд ${raid.title}`}>
     <RaidRouteMap
+      identityId={identityId}
+      planned={Boolean(raid.routeTemplateId)}
       highlightedPointId={activePoint?.pointSnapshotId ?? null}
       live={raid.state === 'active'}
       location={proximity.coordinate}
       raidId={raid.id}
+      onSelectPoint={inspectPoint}
     />
 
     <header className="raid-active-map__header">
@@ -115,21 +128,36 @@ export function ActiveRaidPanel({
       {primary === 'recover' && <button className="kb-link-button route-recorder__secondary" type="button" onClick={recorder.recover}>{recorder.phase === 'standby' ? 'Продолжить запись здесь' : 'Возобновить запись маршрута'}</button>}
     </section>}
 
-    {arrivalAvailable && !sheetOpen && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button">
+    {arrivalAvailable && !sheetOpen && !inspectedPoint && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button">
       <span aria-hidden="true" />
       <span><strong>{activePoint ? 'Вы рядом с точкой' : pendingCheckIns > 0 ? 'Сохранено без сети' : 'Нужно закончить отметку'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : pendingCheckIns > 0 ? `${pendingCheckIns} действий ждут синхронизации` : 'Есть подтверждение или ручная проверка'}</small></span>
       <b>{activePoint ? 'Отметиться' : 'Открыть'}</b>
     </button>}
 
-    <aside className="raid-arrival-sheet" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'} hidden={!sheetOpen || !arrivalAvailable}>
+    <aside className="raid-arrival-sheet" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'} hidden={!sheetOpen || !arrivalAvailable || Boolean(inspectedPoint)}>
       <button className="raid-arrival-sheet__collapse" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
       <div className="raid-arrival-sheet__heading">
         <div><small>{activePoint ? `Вы на точке · ${Math.round(activePoint.distanceMeters)} м` : 'Требуется действие'}</small><h2>{activePoint?.name ?? 'Завершите отметку'}</h2></div>
         <span className="raid-arrival-sheet__pulse" aria-hidden="true" />
       </div>
-      {!viewerIsOrganizer && activePoint && <p className="raid-arrival-sheet__waiting">Вы на месте. Организатор подтвердит состав группы.</p>}
-      <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onAttentionChange={setCheckInAttention} onCanonicalRefresh={onCanonicalRefresh} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} />
+      {!viewerIsOrganizer && activePoint && <p className="raid-arrival-sheet__waiting">Вы на месте. Подтвердите своё посещение.</p>}
+      <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onAttentionChange={setCheckInAttention} onCanonicalRefresh={onCanonicalRefresh} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={Boolean(repeatPointId && activePoint?.pointSnapshotId === repeatPointId && !raid.routeTemplateId)} onRepeatSaved={() => { setRepeatPointId(null); setSheetOpen(false) }} />
     </aside>
+
+    {inspectedPoint && <aside className="raid-point-history-sheet" aria-label={`История точки: ${inspectedPoint.name}`}>
+      <header><h2>{inspectedPoint.name}</h2><button type="button" onClick={() => setInspectedPoint(null)}>Свернуть</button></header>
+      {raid.routeTemplateId && inspectedVisited
+        ? <p>Вы уже посетили эту точку в этом рейде. Продолжайте маршрут.</p>
+        : raid.state === 'active' && inspectedNearby
+          ? <button type="button" className="kb-primary raid-primary" disabled={pendingCheckIns > 0} onClick={() => {
+            setRepeatPointId(inspectedVisited ? inspectedPoint.id : null)
+            setSelectedArrivalId(inspectedPoint.id)
+            setInspectedPoint(null)
+            setSheetOpen(true)
+          }}>{inspectedVisited ? 'Отметиться ещё раз' : 'Отметиться у точки'}</button>
+          : <p>{raid.state === 'paused' ? 'Чекины доступны после продолжения рейда.' : 'Для чекина подъедьте к точке на расстояние до 50 м.'}</p>}
+      <PointVisitHistory key={`${identityId}:${inspectedPoint.sourcePointId}`} identityId={identityId} kabandaId={raid.kabandaId} pointId={inspectedPoint.sourcePointId} currentRaidId={raid.id} />
+    </aside>}
 
     {!arrivalAvailable && <p className={`raid-proximity-status raid-proximity-status--${proximity.status}`} role="status">{proximityLabel}</p>}
   </section>

@@ -217,4 +217,12 @@ export async function registerKabandaRoutes(
       input.limit,
     )
   })
+
+  app.get('/api/kabandas/:id/points/:pointId/history', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const params = z.object({ id: z.uuid(), pointId: z.uuid() }).parse(request.params)
+    const query = z.object({ offset: z.coerce.number().int().min(0).max(10000).default(0) }).parse(request.query)
+    return dependencies.kabandas.getPointVisitHistory(user.id, params.id, params.pointId, query.offset)
+  })
 }

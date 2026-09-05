@@ -213,7 +213,7 @@ export function operationId(prefix: string): string {
 
 export async function api<T>(
   page: Page,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT',
   path: string,
   body?: unknown,
   idempotencyKey?: string,
@@ -222,7 +222,7 @@ export async function api<T>(
     method,
     data: body,
     headers: {
-      Origin: 'http://127.0.0.1:4173',
+      Origin: process.env.APP_ORIGIN ?? 'http://127.0.0.1:4173',
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   })
