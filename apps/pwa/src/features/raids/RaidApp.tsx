@@ -8,7 +8,9 @@ import {
 } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
-import { FreeHuntCover, RouteRaidCover } from './FreeHuntCover'
+import { FreeHuntCover, RouteRaidCover, freeHuntCoverUrl, routeRaidCoverUrl } from './FreeHuntCover'
+import { LocationHelp } from './LocationHelp'
+import { CachedImage } from '../../lib/CachedImage'
 import { RaidModePicker, departureTitle, type DepartureMode } from './RaidModePicker'
 import './raid-departure.css'
 import { navigateApp } from '../../app/transitions'
@@ -34,7 +36,7 @@ import {
   type CreateRaidAttempt,
 } from './createAttempt'
 import { useRaidProjection } from './hooks'
-import { collectLocalReadiness } from './platform'
+import { collectLocalReadiness, locationRecoveryMessage } from './platform'
 import { findRaidCreationMembership } from './production-model'
 import type { RaidRoute } from './routing'
 import {
@@ -359,13 +361,15 @@ function RaidDetailPage({
   const [handoffNavigatorId, setHandoffNavigatorId] = useState('')
   const [presenceReady, setPresenceReady] = useState(false)
   const operationKeys = useRef(new Map<string, string>())
+  const readinessAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => readinessAbort.current?.abort(), [])
   const pendingReadiness = useRef<{
     key: string
     input: ReadinessReportInput
     facts: LocalReadinessFacts
   } | null>(null)
 
-  if (resource.loading && !resource.raid) return <RaidShell><p aria-busy="true">Собираем lobby…</p></RaidShell>
+  if (resource.loading && !resource.raid) return <RaidShell><p aria-busy="true">Открываем поездку…</p></RaidShell>
   if (!resource.raid) return <RaidShell><EmptyState title="Рейд не открылся" detail={resource.error ?? 'Попробуйте вернуться на главную.'} /></RaidShell>
 
   const raid = resource.raid
@@ -413,7 +417,7 @@ function RaidDetailPage({
     } catch (error) {
       if (error instanceof ApiError && isStaleConflict(error.status, error.code)) {
         operationKeys.current.delete(logical)
-        setMessage('Рейд уже изменился в другой вкладке. Обновили каноническое состояние.')
+        setMessage('Участники уже обновили рейд. Показываем последние изменения.')
         await resource.refresh()
       } else if (error instanceof ApiError) {
         setMessage(error.message)
@@ -422,7 +426,7 @@ function RaidDetailPage({
           await resource.refresh()
         }
       } else {
-        setMessage('Команда не подтверждена сервером. Повтор сохранит тот же ключ действия.')
+        setMessage('Не удалось подтвердить действие. Проверьте связь и повторите.')
       }
     } finally {
       setOperation(null)
@@ -456,10 +460,19 @@ function RaidDetailPage({
     ) return
     setOperation('readiness')
     setMessage(null)
+    const controller = new AbortController()
+    readinessAbort.current = controller
     try {
       let pending = pendingReadiness.current
-      if (!pending || pending.input.expectedVersion !== raid.version) {
-        const facts = await collectLocalReadiness(user.id)
+      if (!pending || pending.input.expectedVersion !== raid.version || Date.now() - Date.parse(pending.facts.measuredAt) > 10_000) {
+        const facts = await collectLocalReadiness(user.id, controller.signal)
+        if (controller.signal.aborted) return
+        setLocalFacts(facts)
+        if (facts.locationIssue) {
+          pendingReadiness.current = null
+          setMessage(locationRecoveryMessage(facts.locationIssue))
+          return
+        }
         pending = {
           key: crypto.randomUUID(),
           input: buildReadinessReport(raid.version, facts),
@@ -473,10 +486,11 @@ function RaidDetailPage({
         pending.input,
         pending.key,
       )
+      if (controller.signal.aborted) return
       pendingReadiness.current = null
       setLastReport({ raidId: raid.id, report: response.report })
       await resource.applyRaid(response.raid)
-      if (response.report.blockers.length) setMessage('Сервер подтвердил блокеры. Исправьте их и отправьте новый отчёт.')
+      if (response.report.blockers.length) setMessage('Телефон пока не готов. Ниже указано, что нужно проверить.')
     } catch (error) {
       if (error instanceof ApiError && isStaleConflict(error.status, error.code)) {
         pendingReadiness.current = null
@@ -487,7 +501,7 @@ function RaidDetailPage({
       setMessage(
         error instanceof ApiError
           ? error.message
-          : 'Проверка не подтверждена сервером. Зелёный старт не показываем.',
+          : 'Не удалось отправить проверку. Проверьте связь и попробуйте ещё раз.',
       )
     } finally {
       setOperation(null)
@@ -509,7 +523,7 @@ function RaidDetailPage({
     try {
       if (canShare) await navigator.share({ title: raid.title, text: `Присоединяйтесь к рейду «${raid.title}»`, url })
       else await navigator.clipboard.writeText(url)
-      setMessage(canShare ? null : 'Ссылка на lobby скопирована.')
+      setMessage(canShare ? null : 'Ссылка на сбор команды скопирована.')
     } catch {
       setMessage('Не удалось поделиться ссылкой. Попробуйте ещё раз.')
     }
@@ -546,40 +560,36 @@ function RaidDetailPage({
     </RaidShell>
   }
 
-  if (raid.state === 'completed') return <RaidShell>
-    <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>← К рейдам</a>
+  if (raid.state === 'completed') return <RaidShell backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
     <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />
   </RaidShell>
 
   return (
-    <RaidShell>
-      <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>← К рейдам</a>
-      <header className="raid-hero">
-        <div><p className="kb-kicker">Рейд Кабанды</p><h1>{raid.title}</h1><p>{raid.scheduledAt ? new Date(raid.scheduledAt).toLocaleString('ru-RU') : 'Старт после готовности команды'}</p></div>
-        <span className={`raid-state raid-state--${raid.state}`}>{stateLabel(raid.state)}</span>
+    <RaidShell prestart backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
+      <header className="raid-gather-hero">
+        <CachedImage identityId={user.id} src={raid.routeTemplateId ? appPath(`api/raid-templates/${raid.routeTemplateId}/cover`) : freeHuntCoverUrl} fallbackSrc={raid.routeTemplateId ? routeRaidCoverUrl : freeHuntCoverUrl} alt="Обложка поездки" className="raid-gather-cover" />
+        <h1><span>Рейд:</span> {raid.title}</h1>
+        {(raid.scheduledAt || raid.createdAt) && <p className="raid-gather-date">{!raid.scheduledAt && 'Создан '}{new Date(raid.scheduledAt ?? raid.createdAt!).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
+        {raid.state === 'cancelled' && <p role="status">Рейд отменён</p>}
       </header>
 
       {raid.meetingPlace && <p className="raid-meeting-place"><strong>Место старта:</strong> {raid.meetingPlace}</p>}
       {raid.description && <p className="raid-meeting-place">{raid.description}</p>}
-      {resource.stale && <p className="kb-stale" role="status">Read-only копия{resource.savedAt ? ` от ${new Date(resource.savedAt).toLocaleString('ru-RU')}` : ''}. Ни одна команда не будет поставлена в offline-очередь.</p>}
+      {resource.stale && <p className="kb-stale" role="status">Сохранённая копия{resource.savedAt ? ` от ${new Date(resource.savedAt).toLocaleString('ru-RU')}` : ''}. Для действий нужно соединение.</p>}
       {message && <p className="kb-notice" role="status">{message}</p>}
       {resource.error && <p className="kb-error" role="alert">{resource.error}</p>}
 
-      <section className="raid-overview">
-        <article className="kb-card raid-navigator">
-          <p className="kb-kicker">Навигатор</p>
-          <h2>{navigatorParticipant?.displayName ?? 'Ещё не выбран'}</h2>
-          <p className="kb-muted">Только его устройство отправляет readiness. Фоновый GPS не считается подтверждённым.</p>
+        <section className="kb-card raid-gather-navigator">
+          <div className="raid-gather-navigator__heading"><span className="raid-gather-compass" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/></svg></span><div><h2>Навигатор</h2><strong>{navigatorParticipant?.displayName ?? 'Выберите участника'}</strong></div>{navigatorParticipant && <span className="raid-avatar">{navigatorParticipant.displayName.slice(0,1).toUpperCase()}</span>}</div>
+          <p className="kb-muted">Его телефон записывает путь. Во время поездки держите Кабанду открытой.</p>
           {allowed.has('assign-navigator') && !resource.stale && (
             <div className="raid-assign"><label htmlFor="navigator">Выбрать из готовых</label><select id="navigator" value={navigatorId} onChange={(event) => setNavigatorId(event.target.value)}><option value="">Выберите участника</option>{navigatorCandidates.map((participant) => <option key={participant.id} value={participant.id}>{participant.displayName}</option>)}</select><button type="button" disabled={!navigatorId || operation === 'assign-navigator'} onClick={() => applyCommand('assign-navigator', { navigatorUserId: navigatorId })}>{operation === 'assign-navigator' ? 'Назначаем…' : 'Назначить'}</button></div>
           )}
-        </article>
-        <article className="kb-card raid-version"><p className="kb-kicker">Каноническое состояние</p><strong>v{raid.version}</strong><span>{navigator.onLine ? 'Сервер на связи' : 'Офлайн'}</span></article>
-      </section>
+        </section>
 
       {(raid.state === 'draft' || raid.state === 'planned' || raid.state === 'lobby') && (
         <section className="kb-card">
-          <div className="kb-section-head"><div><p className="kb-kicker">Lobby</p><h2>Кто едет</h2></div>{canShareRaidInvite(raid.state) && <button type="button" onClick={share}>Пригласить</button>}</div>
+          <div className="kb-section-head"><h2>Кто едет</h2>{canShareRaidInvite(raid.state) && <button type="button" onClick={share}>Пригласить</button>}</div>
           <ParticipantList participants={raid.participants} navigatorId={raid.navigatorUserId} />
           {allowed.has('decline') && !resource.stale && <button className="kb-text-action raid-decline" type="button" disabled={operation === 'decline'} onClick={() => applyCommand('decline')}>Не смогу поехать</button>}
         </section>
@@ -591,10 +601,13 @@ function RaidDetailPage({
 
       {(raid.state === 'draft' || raid.state === 'planned' || raid.state === 'lobby') && viewerIsNavigator && (
         <section className="kb-card raid-readiness">
-          <div className="kb-section-head"><div><p className="kb-kicker">Перед стартом</p><h2>Готов ли телефон?</h2></div><span className={`readiness-pill readiness-pill--${readinessStatus}`}>{readinessStatus}</span></div>
-          <p className="kb-muted">Проверяем только измеримое. КАБАНДА не обещает запись при выключенном экране.</p>
+          <div className="kb-section-head"><h2>Геолокация и запись</h2><span className={`readiness-pill readiness-pill--${readinessStatus}`}>{({ pass: 'Готово', warn: 'Проверьте', fail: 'Нужна проверка', unknown: 'Не проверено' })[readinessStatus]}</span></div>
+          <p className="kb-muted">Получим свежую точку и проверим, что маршрут сохранится на телефоне.</p>
+          <button className="raid-location-retry" type="button" disabled={Boolean(operation) || resource.stale || viewerParticipant?.state !== 'ready' || !navigator.onLine} onClick={() => { pendingReadiness.current = null; void runReadiness() }}>{operation === 'readiness' ? 'Получаем свежую геопозицию…' : 'Обновить геолокацию'}</button>
+          {viewerParticipant?.state !== 'ready' && <p className="kb-muted">Сначала подтвердите «Я готов» кнопкой ниже.</p>}
+          <LocationHelp />
           {readinessRows.length > 0 && <ul>{readinessRows.map((row) => <li key={row.id} data-status={row.status}><span aria-hidden="true">{statusIcon(row.status)}</span><div><strong>{row.label}</strong><small>{row.detail}</small></div></li>)}</ul>}
-          {raid.navigatorBlockers.length ? <div className="kb-error"><strong>Сервер блокирует старт:</strong><ul>{raid.navigatorBlockers.map((blocker) => <li key={blocker}>{readinessCodeLabel(blocker)}</li>)}</ul></div> : null}
+          {raid.navigatorBlockers.length ? <div className="kb-error"><strong>До старта:</strong><ul>{raid.navigatorBlockers.map((blocker) => <li key={blocker}>{readinessCodeLabel(blocker)}</li>)}</ul></div> : null}
           {raid.navigatorWarnings.length ? <div className="kb-notice"><strong>Предупреждения:</strong><ul>{raid.navigatorWarnings.map((warning) => <li key={warning}>{readinessCodeLabel(warning)}</li>)}</ul></div> : null}
         </section>
       )}
@@ -614,7 +627,7 @@ function RaidDetailPage({
           <p className="kb-kicker">Передача навигации</p>
           <h2>Сменить устройство и навигатора</h2>
           <p className="kb-muted">
-            После подтверждения старый lease закроется сразу. Его неприсланные точки уже не войдут в канонический маршрут.
+            Запись продолжится на новом телефоне. Сначала дождитесь отправки точек со старого устройства.
           </p>
           <div className="raid-assign">
             <label htmlFor="handoff-navigator">Новый навигатор</label>
@@ -641,7 +654,7 @@ function RaidDetailPage({
       )}
 
       {primary && raid.state !== 'finalizing' && (
-        <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && (!navigator.onLine || !presenceReady))} onClick={handlePrimary}>{operation ? 'Подтверждаем…' : primary.kind === 'command' && primary.command === 'start' ? presenceReady ? 'Все здесь — начать рейд' : 'Ждём всю стаю' : primary.label}</button>
+        <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && (!navigator.onLine || !presenceReady))} onClick={handlePrimary}>{operation === 'readiness' ? 'Получаем свежую геопозицию…' : operation ? 'Подтверждаем…' : primary.kind === 'command' && primary.command === 'start' ? presenceReady ? 'Все здесь — начать рейд' : 'Ждём всю стаю' : primary.label}</button>
       )}
       {allowed.has('cancel') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'cancel'} onClick={() => window.confirm('Отменить рейд для всей команды?') && applyCommand('cancel')}>Отменить рейд</button>}
       {allowed.has('leave') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'leave' || !navigator.onLine} onClick={leaveCurrentRaid}>{operation === 'leave' ? 'Выходим…' : 'Выйти из рейда'}</button>}
@@ -653,16 +666,12 @@ function ParticipantList({ participants, navigatorId }: { participants: RaidPart
   return <ul className="raid-participants">{participants.map((participant) => <li key={participant.id}><span className="raid-avatar">{participant.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{participant.displayName}</strong><small>{participant.id === navigatorId ? 'Навигатор · ' : ''}{participantStateLabel(participant.state)}</small></div><span className={`participant-state participant-state--${participant.state}`}>{participantStateLabel(participant.state)}</span></li>)}</ul>
 }
 
-function RaidShell({ children, active = false }: { children: ReactNode; active?: boolean }) {
-  return <main className={`kb-shell raid-shell${active ? ' raid-shell--active' : ''}`}><a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>{children}</main>
+function RaidShell({ children, active = false, prestart = false, backHref, identityLabel }: { children: ReactNode; active?: boolean; prestart?: boolean; backHref?: string; identityLabel?: string | undefined }) {
+  return <main className={`kb-shell raid-shell${active ? ' raid-shell--active' : ''}${prestart ? ' raid-shell--gather' : ''}`}>{!active && <header className="kb-topbar raid-topbar">{backHref && <a className="raid-topbar-back" href={backHref} aria-label="Назад"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m14 6-6 6 6 6"/></svg></a>}<a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>{identityLabel && <span className="raid-topbar-avatar" aria-label={identityLabel}>{identityLabel.slice(0,1).toUpperCase()}</span>}</header>}{children}</main>
 }
 
 function EmptyState({ title, detail }: { title: string; detail: string }) {
   return <section className="kb-card raid-empty"><h1>{title}</h1><p className="kb-muted">{detail}</p><a className="kb-link-button" href={appPath('app')}>На главную</a></section>
-}
-
-function stateLabel(state: RaidProjection['state']) {
-  return { draft: 'Черновик', planned: 'Запланирован', lobby: 'Lobby', active: 'В пути', paused: 'Пауза', finalizing: 'Собираем итог', completed: 'Завершён', cancelled: 'Отменён' }[state]
 }
 
 function participantStateLabel(state: RaidParticipant['state']) {
@@ -675,13 +684,13 @@ function statusIcon(status: ReadinessStatus) {
 
 function readinessCodeLabel(code: string): string {
   const labels: Record<string, string> = {
-    OFFLINE: 'Нет связи: старт ещё не может получить канонический receipt.',
+    OFFLINE: 'Нет связи. Подключитесь к интернету перед стартом.',
     LOCATION_PERMISSION: 'Геолокация не разрешена на устройстве навигатора.',
     LOCATION_STALE: 'Свежая координата не получена за последние 30 секунд.',
     LOCATION_INACCURATE: 'Точность координаты недостаточна для старта.',
     INDEXED_DB_UNAVAILABLE: 'Локальное хранилище недоступно для записи.',
     STORAGE_UNAVAILABLE: 'Достаточный объём хранения не подтверждён.',
-    REPORT_STALE: 'Readiness-отчёт устарел — проверьте телефон снова.',
+    REPORT_STALE: 'Проверка устарела — нажмите «Проверить геолокацию» снова.',
     BACKGROUND_GPS_UNVERIFIED: 'Фоновый GPS не подтверждён: держите приложение открытым и экран активным.',
     STANDALONE_NOT_CONFIRMED: 'Навигатор работает в браузере, а не в установленной PWA.',
   }

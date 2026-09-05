@@ -8,6 +8,7 @@ import type {
   ReadinessRow,
   ReadinessStatus,
 } from './types'
+import { locationRecoveryMessage, type LocationIssue } from './platform'
 
 export type RaidPrimaryAction =
   | { kind: 'navigate'; label: string }
@@ -34,7 +35,7 @@ export function selectPrimaryAction(
     const labels: Partial<Record<RaidProjection['state'], string>> = {
       draft: 'Продолжить настройку',
       planned: 'Открыть рейд',
-      lobby: 'Открыть lobby',
+      lobby: 'Открыть сбор',
       active: 'Вернуться в рейд',
       paused: 'Вернуться в рейд',
       finalizing: 'Проверить завершение',
@@ -59,7 +60,7 @@ export function selectPrimaryAction(
     return { kind: 'readiness', label: 'Проверить телефон' }
   }
   if (allowed.has('start') && context.online) return { kind: 'command', command: 'start', label: 'Начать рейд' }
-  if (allowed.has('open-lobby')) return { kind: 'command', command: 'open-lobby', label: 'Открыть lobby' }
+  if (allowed.has('open-lobby')) return { kind: 'command', command: 'open-lobby', label: 'Открыть сбор' }
   if (allowed.has('pause') && context.online) return { kind: 'command', command: 'pause', label: 'Поставить на паузу' }
   if (allowed.has('resume') && context.online) return { kind: 'command', command: 'resume', label: 'Продолжить рейд' }
   return null
@@ -93,11 +94,14 @@ export function isStaleConflict(status: number, code: string): boolean {
 function coordinateStatus(facts: LocalReadinessFacts, now: number): ReadinessStatus {
   if (facts.locationPermission === 'unsupported' || facts.locationPermission === 'denied') return 'fail'
   if (facts.locationPermission !== 'granted' || !facts.coordinateMeasuredAt) return 'unknown'
-  return now - Date.parse(facts.coordinateMeasuredAt) <= 30_000 ? 'pass' : 'fail'
+  const age = now - Date.parse(facts.coordinateMeasuredAt)
+  return Number.isFinite(age) && age >= -5_000 && age <= 30_000 &&
+    facts.accuracyM !== null && Number.isFinite(facts.accuracyM) && facts.accuracyM >= 0 && facts.accuracyM <= 100
+    ? 'pass' : 'fail'
 }
 
 export function buildReadinessRows(
-  facts: LocalReadinessFacts,
+  facts: LocalReadinessFacts & { locationIssue?: LocationIssue | null },
   now = Date.now(),
 ): ReadinessRow[] {
   const coordinate = coordinateStatus(facts, now)
@@ -108,7 +112,7 @@ export function buildReadinessRows(
       detail:
         facts.appMode === 'standalone'
           ? 'Установленная КАБАНДА открыта отдельно'
-          : 'В браузере можно участвовать; сервер решит, допустим ли старт навигатора',
+          : 'Кабанда открыта в браузере',
       status: facts.appMode === 'standalone' ? 'pass' : 'warn',
     },
     {
@@ -117,20 +121,22 @@ export function buildReadinessRows(
       detail:
         coordinate === 'pass'
           ? `Координата свежая${facts.accuracyM === null ? '' : `, точность ${Math.round(facts.accuracyM)} м`}`
+          : facts.locationIssue
+            ? locationRecoveryMessage(facts.locationIssue)
           : facts.locationPermission === 'denied'
-            ? 'Доступ запрещён — разрешите геолокацию в настройках'
+            ? locationRecoveryMessage('denied')
             : facts.locationPermission === 'unsupported'
-              ? 'Геолокация недоступна на этом устройстве'
+              ? locationRecoveryMessage('unsupported')
               : facts.coordinateMeasuredAt
-                ? 'Координата устарела — получите новую перед стартом'
-                : 'Нужна первая свежая координата',
+                ? locationRecoveryMessage(facts.accuracyM === null || facts.accuracyM > 100 ? 'inaccurate' : 'stale')
+                : 'Нажмите «Обновить геолокацию», чтобы телефон определил ваше местоположение',
       status: coordinate,
     },
     {
       id: 'indexed-db',
       label: 'Локальное сохранение',
       detail: facts.indexedDbWritable
-        ? 'Identity-bound очередь доступна для записи'
+        ? 'Маршрут можно сохранять на телефоне'
         : 'Хранилище недоступно — маршрут может потеряться',
       status: facts.indexedDbWritable ? 'pass' : 'fail',
     },
@@ -138,7 +144,7 @@ export function buildReadinessRows(
       id: 'storage',
       label: 'Свободное место',
       detail: facts.storageAvailable === true
-        ? 'Измеренного места достаточно для alpha-рейда'
+        ? 'На телефоне достаточно места для записи маршрута'
         : facts.storageAvailable === false
           ? 'Измерение показало недостаток места или ошибку хранилища'
           : 'Браузер не поддерживает оценку свободного места',
@@ -147,23 +153,23 @@ export function buildReadinessRows(
     {
       id: 'network',
       label: 'Связь с сервером',
-      detail: facts.online ? 'Старт можно подтвердить каноническим receipt' : 'Офлайн-старт в VP запрещён',
+      detail: facts.online ? 'Есть соединение для старта рейда' : 'Для старта подключитесь к интернету',
       status: facts.online ? 'pass' : 'fail',
     },
     {
       id: 'wake-lock',
       label: 'Экран во время записи',
       detail: facts.wakeLockSupported
-        ? 'Wake Lock доступен, но не обещает фоновый GPS'
-        : 'Wake Lock недоступен — экран нельзя считать защищённым от сна',
+        ? 'Не закрывайте приложение: запись в фоне может прерваться'
+        : 'Не блокируйте экран во время записи маршрута',
       status: 'warn',
     },
     {
       id: 'service-worker',
       label: 'Версия приложения',
       detail: facts.serviceWorkerControlled
-        ? 'App shell контролируется service worker'
-        : 'Контроль service worker не подтверждён; сервер проверит совместимость',
+        ? 'Приложение готово к работе без сети'
+        : 'Перезагрузите приложение с подключённым интернетом',
       status: facts.serviceWorkerControlled ? 'pass' : 'unknown',
     },
   ]

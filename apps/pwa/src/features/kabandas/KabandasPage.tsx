@@ -6,6 +6,9 @@ import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
 import { transitionScreen } from '../../app/transitions'
+import { RetainedScreen } from '../../app/RetainedScreen'
+import { clearPrivateImageCache } from '../../lib/CachedImage'
+import { IDENTITY_CHANGED_EVENT } from '../offline/ledger'
 import {
   appSectionSearch,
   parseAppSection,
@@ -69,27 +72,39 @@ const STORE_MAP_POINTS: readonly MapPoint[] = IZHEVSK_KB_STORES.map((store) => (
   hours: store.hours,
 }))
 
-export function KabandasPage() {
+export function KabandasPage({ active = true }: { active?: boolean }) {
   const [session, setSession] = useState<Session>({ state: 'loading' })
 
   useEffect(() => {
-    let active = true
+    if (!active) return
+    let subscribed = true
     getCurrentUser()
-      .then((user) => active && setSession({ state: 'ready', user }))
+      .then((user) => subscribed && setSession({ state: 'ready', user }))
       .catch((error) => {
-        if (!active) return
-        setSession(error instanceof ApiError && error.status === 401 ? { state: 'anonymous' } : { state: 'anonymous' })
+        if (!subscribed) return
+        setSession((current) => error instanceof ApiError && error.status < 500
+          ? { state: 'anonymous' }
+          : current.state === 'ready' ? current : { state: 'anonymous' })
       })
     return () => {
-      active = false
+      subscribed = false
     }
+  }, [active])
+
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const id = (event as CustomEvent<{ userId: string | null }>).detail.userId
+      setSession((current) => current.state === 'ready' && current.user.id !== id ? { state: 'anonymous' } : current)
+    }
+    window.addEventListener(IDENTITY_CHANGED_EVENT, changed)
+    return () => window.removeEventListener(IDENTITY_CHANGED_EVENT, changed)
   }, [])
 
   if (session.state === 'loading') {
     return <main className="kb-shell kb-center" aria-busy="true">Загружаем КАБАНДУ…</main>
   }
   if (session.state === 'anonymous') return <SignInPanel />
-  return <AuthenticatedKabandas user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
+  return <AuthenticatedKabandas key={session.user.id} active={active} user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
 }
 
 function SignInPanel() {
@@ -144,7 +159,7 @@ function SignInPanel() {
   )
 }
 
-function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut: () => void }) {
+function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLoggedOut: () => void; active: boolean }) {
   const [kabandas, setKabandas] = useState<KabandaSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -163,19 +178,29 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
   }, [])
 
   useEffect(() => {
-    let active = true
+    if (!active) return
+    let subscribed = true
     listKabandas()
       .then((items) => {
-        if (!active) return
+        if (!subscribed) return
         setKabandas(items)
+        setError(null)
         setSelectedId((current) => resolveSelectedKabandaId(items.map(({ id }) => id), requestedKabandaId, current))
       })
-      .catch(() => active && setError('Не удалось загрузить Кабанды.'))
-      .finally(() => active && setLoading(false))
+      .catch((reason) => {
+        if (!subscribed) return
+        if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
+          clearPrivateImageCache()
+          setKabandas([])
+          setSelectedId(null)
+        }
+        setError('Не удалось загрузить Кабанды.')
+      })
+      .finally(() => subscribed && setLoading(false))
     return () => {
-      active = false
+      subscribed = false
     }
-  }, [requestedKabandaId])
+  }, [requestedKabandaId, active, activeSection])
 
   const selected = kabandas.find(({ id }) => id === selectedId) ?? null
   const addKabanda = (kabanda: KabandaSummary) => {
@@ -184,6 +209,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
     setShowCreate(false)
   }
   const removeKabandaLocally = (kabandaId: string) => {
+    clearPrivateImageCache()
     setKabandas((items) => {
       const next = items.filter(({ id }) => id !== kabandaId)
       setSelectedId(next[0]?.id ?? null)
@@ -265,6 +291,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         user={user}
         kabanda={selected}
         section={activeSection}
+        active={active}
         inventory={inventory}
         accountState={accountState}
         onLeft={() => removeKabandaLocally(selected.id)}
@@ -316,6 +343,7 @@ function KabandaWorkspace({
   user,
   kabanda,
   section,
+  active,
   inventory,
   accountState,
   onLeft,
@@ -325,6 +353,7 @@ function KabandaWorkspace({
   user: User
   kabanda: KabandaSummary
   section: AppSection
+  active: boolean
   inventory: IdentityLocalInventory | null
   accountState: 'idle' | 'loading' | 'leaving' | 'error'
   onLeft: () => void
@@ -489,14 +518,11 @@ function KabandaWorkspace({
     {message && <p className="kb-notice" role="status">{message}</p>}
   </>
 
-  if (section === 'home') {
-    return (
+  const homePanel = (
       <HomeDashboard identityId={user.id} kabanda={kabanda} members={members} progress={progress} notices={notices} />
     )
-  }
 
-  if (section === 'map') {
-    return (
+  const mapPanel = active && section === 'map' ? (
       <section className="kb-map-screen" ref={workspaceRef} aria-label="Точки маршрута">
         <div className="kb-map-stage">
           <div className="kb-map-controls">
@@ -533,19 +559,16 @@ function KabandaWorkspace({
           )}
         </div>
       </section>
-    )
-  }
+    ) : null
 
-  if (section === 'raids') {
-    return (
-      <section className="kb-workspace kb-workspace--single" ref={workspaceRef}>
+  const raidsPanel = (
+      <section className="kb-workspace kb-workspace--single" ref={section === 'raids' ? workspaceRef : null}>
         <div className="kb-workspace-main kb-workspace-main--wide">
           {notices}
-          <ProductionRaidsHub identityId={user.id} kabanda={kabanda} />
+          <ProductionRaidsHub identityId={user.id} kabanda={kabanda} active={active && section === 'raids'} />
         </div>
       </section>
     )
-  }
 
   const personalPoints = points.filter(({ visitedByMe }) => visitedByMe).length
   const teamPoints = points.filter(({ visitedByTeam }) => visitedByTeam).length
@@ -553,8 +576,8 @@ function KabandaWorkspace({
   const memberCount = members.length || kabanda.memberCount
   const roleLabel = kabanda.role === 'owner' ? 'Вы вожак' : 'Вы участник'
 
-  return (
-    <section className="kb-team-page" ref={workspaceRef}>
+  const teamPanel = (
+    <section className="kb-team-page" ref={section === 'kabanda' ? workspaceRef : null}>
       <div className="kb-team-page-inner">
         {notices}
 
@@ -693,6 +716,13 @@ function KabandaWorkspace({
       </div>
     </section>
   )
+
+  return <>
+    <RetainedScreen active={active && section === 'home'}>{homePanel}</RetainedScreen>
+    {mapPanel}
+    <RetainedScreen active={active && section === 'raids'}>{raidsPanel}</RetainedScreen>
+    <RetainedScreen active={active && section === 'kabanda'}>{teamPanel}</RetainedScreen>
+  </>
 }
 
 async function prepareKabandaCover(file: File): Promise<string> {

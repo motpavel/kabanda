@@ -60,7 +60,7 @@
 .prd-raids [data-testid="production-new-raid"] {
   position: fixed;
   z-index: 45;
-  bottom: calc(78px + env(safe-area-inset-bottom));
+  bottom: calc(56px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -78,6 +78,10 @@
 
 .prd-raids > .rdp-section,
 .prd-raids > .rdp-section--history { margin-top: 0; }
+
+@media (min-width: 861px) {
+  .prd-raids [data-testid="production-new-raid"] { bottom: 82px; }
+}
 
 .prd-raids__issue {
   margin: -6px 0 0;

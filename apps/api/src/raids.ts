@@ -252,6 +252,7 @@ export type FinishRaidResponse = {
 export type SettleRaidResponse = { raid: RaidProjection; result: RaidResult }
 
 export type RaidProjection = {
+  createdAt?: string
   pointCategory?: 'stores' | 'attractions' | null
   meetingPlace?: string | null
   routeTemplateId?: string | null
@@ -435,6 +436,7 @@ export const processMedia: MediaProcessor = async (bytes, declaredContentType) =
 }
 
 type RaidRow = {
+  created_at: Date
   point_category: 'stores' | 'attractions' | null
   meeting_place: string | null
   id: string
@@ -3576,7 +3578,7 @@ export class DatabaseRaidService implements RaidService {
   private async lockRaid(client: PoolClient, actorUserId: string, raidId: string): Promise<RaidRow> {
     const result = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.created_at, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
          r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
@@ -3655,7 +3657,7 @@ export class DatabaseRaidService implements RaidService {
   ): Promise<RaidProjection> {
     const raidResult = await client.query<RaidRow>(
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
-         r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.scheduled_at, r.started_at, r.finalizing_at,
+         r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.created_at, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
          r.state, r.version,
          m.role AS membership_role, p.state AS participant_state
@@ -3702,6 +3704,7 @@ export class DatabaseRaidService implements RaidService {
       id: raid.id,
       kabandaId: raid.kabanda_id,
       title: raid.title,
+      createdAt: raid.created_at.toISOString(),
       description: raid.description,
       routeTemplateId: raid.route_template_id,
       pointCategory: raid.point_category,

@@ -104,11 +104,28 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(raidId).toBeTruthy()
   const raid = { id: raidId as string }
 
-  await page.getByRole('button', { name: 'Открыть lobby' }).click()
+  await page.getByRole('button', { name: 'Открыть сбор' }).click()
   await page.getByLabel('Выбрать из готовых').selectOption(identity.userId)
   await page.getByRole('button', { name: 'Назначить', exact: true }).click()
   await page.getByRole('button', { name: 'Я готов' }).click()
+  // Exercise permission failure and an explicit fresh retry, not the browser's
+  // initial synthetic fix (its timestamp is now too old for a safe start).
+  await page.evaluate(() => {
+    const geo = navigator.geolocation
+    const original = geo.watchPosition.bind(geo)
+    Object.assign(window, { restoreQaLocation: () => { geo.watchPosition = original } })
+    geo.watchPosition = (_success, failure) => {
+      queueMicrotask(() => failure?.({ code: 1, message: 'QA denied', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 }))
+      return 999999
+    }
+  })
   await page.getByRole('button', { name: 'Проверить телефон' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Разрешите доступ к геопозиции' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Все здесь — начать рейд' })).toHaveCount(0)
+  await page.evaluate(() => (window as unknown as {restoreQaLocation:()=>void}).restoreQaLocation())
+  await context.setGeolocation({ latitude: identity.point.latitude, longitude: identity.point.longitude, accuracy: 8 })
+  await page.getByRole('button', { name: 'Обновить геолокацию', exact: true }).click()
+  await page.getByRole('button', { name: 'Обновить мою геолокацию', exact: true }).click()
   await expect(page.getByText('Все готовы', { exact: true })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Все здесь — начать рейд' }).click()
 
@@ -145,7 +162,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
   await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
-  await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()

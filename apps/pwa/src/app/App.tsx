@@ -11,6 +11,7 @@ import { RecordingRuntimeProvider } from '../features/raids/recording/runtime'
 import { parseRaidRoute } from '../features/raids/routing'
 import { AlphaDiagnosticsConsent } from './AlphaDiagnosticsConsent'
 import { InstallProvider } from '../features/install/InstallGuidance'
+import { RetainedScreen } from './RetainedScreen'
 
 export function App() {
   if (window.location.pathname.endsWith('/auth/verify')) return <VerifyMagicLinkPage />
@@ -38,8 +39,10 @@ function AppRoute() {
     return () => document.removeEventListener('click', followLink)
   }, [])
   const raidRoute = parseRaidRoute(search)
-  if (raidRoute.kind !== 'home') return <RaidApp route={raidRoute} />
-  return <KabandasPage />
+  return <>
+    <RetainedScreen active={raidRoute.kind === 'home'}><KabandasPage active={raidRoute.kind === 'home'} /></RetainedScreen>
+    {raidRoute.kind !== 'home' && <RaidApp route={raidRoute} />}
+  </>
 }
 
 function subscribeRoute(listener: () => void) {

@@ -55,6 +55,7 @@ export default defineConfig({
         'brand/kabanda-logo-reference.png',
         'brand/kabanda-login-riders.jpg',
         'brand/kabanda-team-cover.jpg',
+        'brand/**/*.{png,jpg,jpeg,webp,svg}',
       ],
       manifest: {
         name: 'КАБАНДА',
@@ -87,10 +88,21 @@ export default defineConfig({
         ]
       },
       workbox: {
+        globPatterns: ['**/*.{js,wasm,css,html,woff2}'],
         cleanupOutdatedCaches: true,
         importScripts: [swBuildAsset],
         navigateFallbackDenylist: [/^\/api(?:\/|$)/],
-        runtimeCaching: []
+        // Only public, bundled art. Authenticated API, covers and map/GPS responses
+        // remain network-only; never leak one member's data into a shared SW cache.
+        runtimeCaching: [{
+          urlPattern: ({ url, request, sameOrigin }) => sameOrigin === true && request.destination === 'image' && /^\/(?:kabanda\/)?brand\//.test(url.pathname),
+          handler: 'StaleWhileRevalidate',
+          options: {
+            cacheName: 'kabanda-public-art',
+            cacheableResponse: { statuses: [200] },
+            expiration: { maxEntries: 64, maxAgeSeconds: 30 * 24 * 60 * 60 },
+          },
+        }]
       },
       devOptions: {
         enabled: true,

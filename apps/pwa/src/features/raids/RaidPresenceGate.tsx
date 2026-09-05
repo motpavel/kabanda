@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getOneShotCoordinate } from '../checkins/platform'
 import { getRaidPresence, reportRaidPresence, setManualRaidPresence } from './api'
 import type { RaidPresenceRoster, RaidProjection } from './types'
+import { LocationHelp } from './LocationHelp'
+import { locationRecoveryMessage } from './platform'
 
 export function RaidPresenceGate({
   identityId,
@@ -18,6 +20,10 @@ export function RaidPresenceGate({
   const [status, setStatus] = useState<'locating' | 'ready' | 'blocked' | 'offline'>(() => navigator.onLine ? 'locating' : 'offline')
   const [manualBusy, setManualBusy] = useState<string | null>(null)
   const [manualError, setManualError] = useState<string | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const reporting = useRef(false)
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const viewerIsOrganizer = raid.organizerUserId === identityId
 
   const refreshRoster = useCallback(async () => {
@@ -31,18 +37,29 @@ export function RaidPresenceGate({
   }, [raid.id])
 
   const report = useCallback(async () => {
-    if (!navigator.onLine || stale || document.visibilityState !== 'visible') {
+    if (reporting.current || !navigator.onLine || stale || document.visibilityState !== 'visible') {
       if (!navigator.onLine) setStatus('offline')
       return
     }
+    reporting.current = true
+    setStatus('locating')
+    setLocationError(null)
     try {
-      const coordinate = await getOneShotCoordinate(10_000)
+      const coordinate = await getOneShotCoordinate(20_000)
+      if (!mounted.current) return
+      if (Date.now() - Date.parse(coordinate.capturedAt) > 10_000) throw new Error('STALE_COORDINATE')
       const next = await reportRaidPresence(raid.id, coordinate)
+      if (!mounted.current) return
       setRoster(next)
       setStatus('ready')
-    } catch {
+    } catch (error) {
+      if (!mounted.current) return
       setStatus('blocked')
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : null
+      setLocationError(locationRecoveryMessage(code === 1 ? 'denied' : code === 3 ? 'timeout' : error instanceof Error && error.message === 'STALE_COORDINATE' ? 'stale' : 'unavailable'))
       await refreshRoster()
+    } finally {
+      reporting.current = false
     }
   }, [raid.id, refreshRoster, stale])
 
@@ -89,11 +106,13 @@ export function RaidPresenceGate({
 
   return <section className="kb-card raid-presence-gate" aria-label="Сбор стаи перед стартом">
     <div className="kb-section-head">
-      <div><p className="kb-kicker">Перед стартом</p><h2>Все на месте?</h2></div>
+      <h2>Все на месте?</h2>
       <span className={`raid-presence-gate__summary${roster?.allReady ? ' is-ready' : ''}`}>{roster?.allReady ? 'Все готовы' : `${roster?.participants.filter(({ status: value }) => value !== 'waiting').length ?? 0}/${roster?.participants.length ?? raid.participants.filter(({ state }) => state === 'accepted' || state === 'ready').length}`}</span>
     </div>
     <p className="kb-muted">Статус обновляется автоматически, пока приложение открыто. Радиус встречи — 50 метров от организатора.</p>
-    {status === 'blocked' && <p className="kb-notice" role="status">Не получили свежую геолокацию. Разрешите доступ или попросите организатора отметить вас вручную.</p>}
+    {status === 'blocked' && <p className="kb-notice" role="status">{locationError} Участника рядом организатор может отметить вручную.</p>}
+    <button className="raid-location-retry" type="button" disabled={status === 'locating' || stale || !navigator.onLine} onClick={() => void report()}>{status === 'locating' ? 'Определяем местоположение…' : 'Обновить мою геолокацию'}</button>
+    {status === 'blocked' && <LocationHelp />}
     {status === 'offline' && <p className="kb-notice" role="status">Нет сети. Подтверждение присутствия возобновится автоматически.</p>}
     {manualError && <p className="kb-error" role="alert">{manualError}</p>}
     {!roster && status === 'locating' && <p aria-busy="true">Определяем, кто уже приехал…</p>}

@@ -3,32 +3,51 @@ import { listRaidTemplates } from './api'
 import { appPath } from '../../lib/paths'
 import { formatPlanDistance } from './editor/route-estimate'
 import type { RaidTemplateSummary } from './types'
+import { CachedImage, clearPrivateImageCache } from '../../lib/CachedImage'
+import { ApiError } from '../../lib/http'
 
-export function RaidTemplateCatalog({ kabandaId }: { kabandaId: string }) {
+export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { kabandaId: string; identityId: string; active?: boolean }) {
   const requestVersion = useRef(0)
   const [state, setState] = useState<
     | { status: 'loading' }
-    | { status: 'ready'; templates: RaidTemplateSummary[] }
+    | { status: 'ready'; templates: RaidTemplateSummary[]; stale?: boolean }
     | { status: 'error' }
   >({ status: 'loading' })
 
   const load = useCallback(async () => {
     const version = ++requestVersion.current
-    setState({ status: 'loading' })
+    setState(current => current.status === 'ready' ? current : { status: 'loading' })
     try {
       const templates = await listRaidTemplates(kabandaId)
       if (requestVersion.current === version) setState({ status: 'ready', templates })
-    } catch {
-      if (requestVersion.current === version) setState({ status: 'error' })
+    } catch (error) {
+      if (requestVersion.current !== version) return
+      // Network failure may retain the current identity's picture; denial must not.
+      if (error instanceof ApiError && error.status < 500) {
+        clearPrivateImageCache()
+        setState({ status: 'error' })
+      } else setState(current => current.status === 'ready' ? { ...current, stale: true } : { status: 'error' })
     }
   }, [kabandaId])
 
   useEffect(() => {
-    void load()
+    if (active) void load()
     return () => {
       requestVersion.current += 1
     }
-  }, [load])
+  }, [active, load])
+
+  useEffect(() => {
+    const refresh = () => { if (active && document.visibilityState === 'visible' && navigator.onLine) void load() }
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [active, load])
 
   return <section className="rdp-section prd-template-catalog" aria-labelledby="production-routes-heading" data-testid="production-route-catalog">
     <div className="prd-section-heading">
@@ -47,15 +66,16 @@ export function RaidTemplateCatalog({ kabandaId }: { kabandaId: string }) {
       <strong>Маршрутов пока нет</strong>
       <span>Создайте первый: добавьте обложку и точки на карте.</span>
     </div>}
-    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid kabandaId={kabandaId} templates={state.templates} />}
+    {state.status === 'ready' && state.stale && <p role="status">Сохранённые маршруты. Обновим после восстановления связи.</p>}
+    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid identityId={identityId} kabandaId={kabandaId} templates={state.templates} />}
   </section>
 }
 
-export function RaidTemplateGrid({ templates, kabandaId }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string }) {
+export function RaidTemplateGrid({ templates, kabandaId, identityId }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string }) {
   const chronological = [...templates].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
   return <div className="prd-template-grid">
     {chronological.map((template) => <a className="prd-template-card" key={template.id} href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId ?? template.kabandaId)}&template=${encodeURIComponent(template.id)}`}>
-      <img alt="" decoding="async" loading="lazy" src={template.cover.url} />
+      {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" src={template.cover.url} />}
       <div>
         <h3>{template.title}</h3>
         <p>

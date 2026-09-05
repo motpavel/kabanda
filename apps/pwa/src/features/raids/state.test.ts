@@ -46,7 +46,7 @@ describe('raid primary CTA', () => {
     const cases: Array<[RaidProjection['state'], string | null]> = [
       ['draft', 'Продолжить настройку'],
       ['planned', 'Открыть рейд'],
-      ['lobby', 'Открыть lobby'],
+      ['lobby', 'Открыть сбор'],
       ['active', 'Вернуться в рейд'],
       ['paused', 'Вернуться в рейд'],
       ['finalizing', 'Проверить завершение'],

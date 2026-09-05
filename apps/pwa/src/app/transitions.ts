@@ -1,6 +1,7 @@
 import { flushSync } from 'react-dom'
 
-// Keep browser back/forward and real URLs. No cache of protected screens or GPS state.
+// Keep browser back/forward and real URLs. Screen retention is identity-scoped;
+// recording and permissions always follow their own live lifecycle.
 export function transitionScreen(update: () => void, direction: 'forward' | 'back' = 'forward') {
   const commit = () => flushSync(update)
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !document.startViewTransition) {

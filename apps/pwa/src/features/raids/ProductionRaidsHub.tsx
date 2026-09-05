@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
+import { clearPrivateImageCache } from '../../lib/CachedImage'
 import { freeHuntCoverUrl, routeRaidCoverUrl } from './FreeHuntCover'
 import type { KabandaSummary } from '../kabandas/types'
 import { listRaidHistory } from '../results/api'
@@ -56,9 +57,11 @@ function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
 export function ProductionRaidsHub({
   identityId,
   kabanda,
+  active = true,
 }: {
   identityId: string
   kabanda: KabandaSummary
+  active?: boolean
 }) {
   const [actionable, setActionable] = useState<RaidProjection[]>([])
   const [history, setHistory] = useState<RaidHistoryItem[]>([])
@@ -101,6 +104,7 @@ export function ProductionRaidsHub({
           return
         }
         setActionable([])
+        if (isAccessFailure(authoritativeFailure.reason)) clearPrivateImageCache()
         setHistory([])
         setActionableStaleAt(null)
         setHistoryStaleAt(null)
@@ -165,12 +169,12 @@ export function ProductionRaidsHub({
   refreshCallback.current = () => void refresh()
 
   useEffect(() => {
-    void refresh({ showLoading: true })
-  }, [refresh])
+    if (active) void refresh()
+  }, [active, refresh])
 
   useEffect(() => {
     const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible' && navigator.onLine) void refresh()
+      if (active && document.visibilityState === 'visible' && navigator.onLine) void refresh()
     }
     const updateConnection = () => setOnline(navigator.onLine)
     const timer = window.setInterval(refreshIfVisible, 5_000)
@@ -187,7 +191,7 @@ export function ProductionRaidsHub({
       window.removeEventListener('offline', updateConnection)
       document.removeEventListener('visibilitychange', refreshIfVisible)
     }
-  }, [refresh])
+  }, [active, refresh])
 
   const respondToInvitation = useCallback(async (raid: RaidProjection, command: InvitationCommand) => {
     if (resourceState !== 'ready' || !online || !refreshFence.current.beginMutation()) {
@@ -311,7 +315,7 @@ export function ProductionRaidsHub({
             </section>
           )}
 
-          <RaidTemplateCatalog kabandaId={kabanda.id} />
+          <RaidTemplateCatalog identityId={identityId} kabandaId={kabanda.id} active={active} />
 
           <ProductionHistory coverImage={coverImage} history={history} />
         </>
@@ -568,7 +572,7 @@ function stateLabel(state: RaidProjection['state']): string {
   return {
     draft: 'Черновик',
     planned: 'Запланирован',
-    lobby: 'Лобби открыто',
+    lobby: 'Сбор открыт',
     active: 'Идёт сейчас',
     paused: 'На паузе',
     finalizing: 'Собираем итог',
