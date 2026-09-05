@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
+import { FreeHuntCover } from './FreeHuntCover'
 import { getCurrentUser, loginWithPassword, requestMagicLink } from '../auth/api'
 import { listKabandas } from '../kabandas/api'
 import type { KabandaSummary } from '../kabandas/types'
@@ -305,6 +306,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
               <option value="">Свободный рейд — точки на карте</option>
               {templates.map((template) => <option key={template.id} value={template.id}>{template.title} · {template.pointCount} точек</option>)}
             </select>
+            {!routeTemplateId && <FreeHuntCover />}
             {templatesUnavailable && <p role="alert">Каталог не загрузился. Обновите страницу, чтобы выбрать маршрут.</p>}
             <p className="kb-muted">{routeTemplateId ? 'Точки и их порядок сохранятся в этом рейде. Перед чекином выбирайте безопасное место для остановки.' : 'Едете своим путём и отмечаете доступные точки рядом.'}</p>
             <fieldset className="raid-segmented"><legend>Когда</legend><button type="button" aria-pressed={startMode === 'now'} onClick={() => setStartMode('now')}>Стартуем сегодня</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => setStartMode('later')}>Запланировать</button></fieldset>

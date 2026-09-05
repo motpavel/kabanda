@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
+import { freeHuntCoverUrl } from './FreeHuntCover'
 import type { KabandaSummary } from '../kabandas/types'
 import { listRaidHistory } from '../results/api'
 import { readRaidHistory, saveRaidHistory, newestFirst } from '../results/cache'
@@ -434,7 +435,7 @@ function CurrentRaidCard({
   return <article className="rdp-active prd-current-raid">
     <div className="rdp-active__top"><span className="rdp-live"><i /> {stateLabel(raid.state)}</span><span className="rdp-pill">{kabanda.name}</span></div>
     <div className="rdp-active__intro">
-      <img alt="" decoding="async" src={coverImage} />
+      <img alt="" decoding="async" src={raid.routeTemplateId ? coverImage : freeHuntCoverUrl} />
       <div><h3>{raid.title}</h3><p>{description}</p></div>
     </div>
     <dl className="rdp-active__metrics">
