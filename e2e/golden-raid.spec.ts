@@ -193,7 +193,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   expect(result.result.team).toMatchObject({ uniquePoints: 1, photos: 1 })
 
   await page.getByRole('link', { name: 'КАБАНДА — на главную' }).click()
-  await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Город — ваш общий маршрут.' })).toBeVisible()
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Рейды' })).toBeVisible()
   expect(pageErrors).toEqual([])

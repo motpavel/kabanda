@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
+import { HomeIcon } from '../home/HomeIcon'
 import type { KabandaSummary } from '../kabandas/types'
 import { listActionableRaids } from './api'
 import {
@@ -89,12 +90,12 @@ export function RaidHomeCard({
     }
   }, [refresh])
 
-  const { current, upcoming } = splitActionableRaids(actionable, identityId)
+  const { current, upcoming, invitations } = splitActionableRaids(actionable, identityId)
   const resourcePolicy = productionResourcePolicy(resourceState, online)
   const selected =
     current ??
     upcoming.find(({ id }) => id === selectedId) ??
-    (upcoming.length === 1 ? upcoming[0] : null)
+    upcoming[0] ?? null
   const primary = selected
     ? selectPrimaryAction(selected, {
         surface: 'home',
@@ -109,13 +110,10 @@ export function RaidHomeCard({
   }
 
   return (
-    <section className="kb-card raid-home-card" aria-busy={resourceState === 'loading'}>
-      <div className="kb-section-head">
-        <div>
-          <h2>{current ? 'Рейд уже идёт' : upcoming.length ? 'Ближайшие рейды' : 'Новый рейд'}</h2>
-          <p>Главное действие команды прямо сейчас.</p>
-        </div>
-        {selected && <span className={`raid-state raid-state--${selected.state}`}>{stateLabel(selected.state)}</span>}
+    <section className={`kb-card raid-home-card${current ? ' raid-home-card--current' : ''}`} aria-busy={resourceState === 'loading'}>
+      <div className="kb-home-section-heading">
+        <h2>{current ? 'Вы в рейде' : 'Ближайшие рейды'}</h2>
+        <a href={`${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=raids`}>Все <HomeIcon name="arrow" /></a>
       </div>
 
       {resourceState === 'loading' && <p className="kb-muted">Проверяем, что сейчас важно…</p>}
@@ -133,34 +131,41 @@ export function RaidHomeCard({
         </div>
       )}
 
+      {invitations.length > 0 && <a className="kb-home-invitation" href={`${appPath('app')}?raid=${encodeURIComponent(invitations[0]!.id)}`}>
+        <HomeIcon name="calendar" /><span>Вас ждут в рейде<strong>{invitations[0]!.title}</strong></span><HomeIcon name="arrow" />
+      </a>}
+
       {!current && upcoming.length > 1 && (
-        <fieldset className="raid-choice">
-          <legend>Какой рейд открыть?</legend>
-          {upcoming.map((raid) => (
+        <div className="kb-home-raid-options" aria-label="Ближайшие рейды">
+          {upcoming.slice(0, 3).map((raid) => (
             <button
               key={raid.id}
               type="button"
-              aria-pressed={selectedId === raid.id}
+              aria-pressed={selected?.id === raid.id}
               onClick={() => setSelectedId(raid.id)}
             >
-              <strong>{raid.title}</strong>
-              <span>{raid.scheduledAt ? new Date(raid.scheduledAt).toLocaleString('ru-RU') : 'Старт после сбора'}</span>
+              <HomeIcon name="calendar" /><span><strong>{raid.title}</strong><small>{scheduleLabel(raid.scheduledAt)}</small></span>
             </button>
           ))}
-        </fieldset>
-      )}
-
-      {selected && (
-        <div className="raid-home-summary">
-          <strong>{selected.title}</strong>
-          <span>{selected.kabandaId === kabanda.id ? kabanda.name : 'Активный рейд другой Кабанды'}</span>
-          <small>{confirmedRaidParticipants(selected).length} участников · версия {selected.version}</small>
         </div>
       )}
 
-      {resourcePolicy.renderContent && !selected && (
-        <RaidHomeCreatePrompt enabled={resourcePolicy.canMutate} kabanda={kabanda} />
+      {selected && (
+        <div className="kb-home-raid-summary">
+          <span className="kb-home-raid-status">{stateLabel(selected.state)}</span>
+          <h3>{selected.title}</h3>
+          <p>{scheduleLabel(selected.scheduledAt)} · {confirmedRaidParticipants(selected).length} участников</p>
+          {selected.description && <p className="kb-home-raid-description">{selected.description}</p>}
+          {selected.kabandaId !== kabanda.id && <small>Активный рейд другой Кабанды</small>}
+        </div>
       )}
+
+      {resourcePolicy.renderContent && !selected && <div className="kb-home-no-raid">
+        <HomeIcon name="bike" /><h3>Соберёмся на прогулку?</h3>
+        <p>{invitations.length ? 'Ответьте на приглашение или запланируйте свою поездку.' : 'Ближайших поездок пока нет. Выберите время — и позовите своих.'}</p>
+        <RaidHomeCreatePrompt enabled={resourcePolicy.canMutate} kabanda={kabanda} />
+        {!resourcePolicy.canMutate && <p>Создание рейда доступно после подключения к сети и обновления.</p>}
+      </div>}
 
       {primary && selected && (
         <button className="kb-primary raid-primary" type="button" onClick={primary.kind === 'refresh' ? refresh : openRaid}>
@@ -180,12 +185,11 @@ export function RaidHomeCreatePrompt({
 }) {
   if (!enabled) return null
   return <>
-    <p className="kb-muted">Название и время — всё обязательное. Остальное можно решить в lobby.</p>
     <a
       className="kb-link-button kb-primary raid-primary"
       href={`${appPath('app')}?createRaid=${encodeURIComponent(kabanda.id)}`}
     >
-      Создать рейд
+      <HomeIcon name="plus" /> Создать рейд
     </a>
   </>
 }
@@ -194,11 +198,15 @@ function stateLabel(state: RaidProjection['state']): string {
   return {
     draft: 'Черновик',
     planned: 'Запланирован',
-    lobby: 'Lobby',
+    lobby: 'Сбор команды',
     active: 'В пути',
     paused: 'Пауза',
     finalizing: 'Собираем итог',
     completed: 'Завершён',
     cancelled: 'Отменён',
   }[state]
+}
+
+function scheduleLabel(value: string | null): string {
+  return value ? new Date(value).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Старт после сбора'
 }

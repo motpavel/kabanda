@@ -30,7 +30,7 @@ import { choosePointPresentation, detectWebgl } from './map-state'
 import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores'
 import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
-import { RaidHomeCard } from '../raids/RaidHomeCard'
+import { HomeDashboard } from '../home/HomeDashboard'
 import { ProductionRaidsHub } from '../raids/ProductionRaidsHub'
 import { getKabandaProgress } from '../results/api'
 import type { KabandaProgress } from '../results/types'
@@ -234,20 +234,19 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
   }
 
   return (
-    <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}${activeSection === 'kabanda' ? ' kb-shell--team' : ''}`}>
+    <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}${activeSection === 'kabanda' || activeSection === 'home' ? ' kb-shell--team' : ''}${activeSection === 'home' ? ' kb-shell--home' : ''}`}>
       <header className="kb-topbar">
         <Brand />
         <button className="kb-identity kb-account-trigger" type="button" aria-current={activeSection === 'kabanda' ? 'page' : undefined} onClick={() => selectSection('kabanda')} aria-label={`Открыть раздел «Кабанда». Аккаунт: ${user.displayName ?? user.username ?? user.email ?? 'Участник'}`}>
           <span>{(user.displayName ?? user.username ?? user.email ?? 'У').slice(0, 1).toUpperCase()}</span>
-          {activeSection !== 'kabanda' && <div><strong>{user.displayName ?? user.username ?? 'Участник'}</strong><small>{user.username ? `@${user.username}` : user.email}</small></div>}
+          {activeSection !== 'kabanda' && activeSection !== 'home' && <div><strong>{user.displayName ?? user.username ?? 'Участник'}</strong><small>{user.username ? `@${user.username}` : user.email}</small></div>}
         </button>
       </header>
 
-      {activeSection !== 'kabanda' && activeSection !== 'raids' && <section className="kb-heading-row">
+      {(activeSection === 'map' || (activeSection === 'home' && !selected)) && <section className="kb-heading-row">
         <div><h1>{sectionHeading(activeSection).title}</h1><p>{sectionHeading(activeSection).description}</p></div>
       </section>}
 
-      {activeSection === 'home' && <InstallGuidance />}
 
       {activeSection === 'kabanda' && user.identityKind === 'verified' && showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
       {error && <p className="kb-error" role="alert">{error}</p>}
@@ -268,6 +267,7 @@ function AuthenticatedKabandas({ user, onLoggedOut }: { user: User; onLoggedOut:
         onKabandaUpdated={updateKabandaLocally}
         onSwitchAccount={() => void leaveAccount()}
       />}
+      {activeSection === 'home' && <div className="kb-home-install"><InstallGuidance /></div>}
       <AppTabBar active={activeSection} kabandaId={selectedId} onSelect={selectSection} />
     </main>
   )
@@ -391,7 +391,7 @@ function KabandaWorkspace({
   }, [kabanda, user.id, webglAvailable])
 
   useEffect(() => {
-    if (section !== 'kabanda') return
+    if (section !== 'kabanda' && section !== 'home') return
     let active = true
     void getKabandaProgress(kabanda.id)
       .then((value) => active && setProgress(value))
@@ -485,26 +485,9 @@ function KabandaWorkspace({
     {message && <p className="kb-notice" role="status">{message}</p>}
   </>
 
-  const summary = <div className="kb-summary">
-    <div><h2>{kabanda.name}</h2><p>{kabanda.role === 'owner' ? 'Вы вожак' : 'Вы участник'}</p></div>
-    <p><strong>{points.filter(({ visitedByMe }) => visitedByMe).length}</strong><span>посещено лично</span></p>
-    <p><strong>{points.filter(({ visitedByTeam }) => visitedByTeam).length}</strong><span>посетила команда</span></p>
-  </div>
-
   if (section === 'home') {
     return (
-      <section className="kb-workspace" ref={workspaceRef}>
-        <aside className="kb-journey-rail" data-journey-rail>
-          {summary}
-          <p className="kb-route-statement" data-route-statement aria-label="Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.">
-            {'Сначала соберите людей. Затем отправляйтесь к точкам. После сохраните общую историю.'.split(' ').map((word, index) => <span key={`${word}-${index}`}>{word} </span>)}
-          </p>
-        </aside>
-        <div className="kb-workspace-main">
-          {notices}
-          <RaidHomeCard identityId={user.id} kabanda={kabanda} />
-        </div>
-      </section>
+      <HomeDashboard identityId={user.id} kabanda={kabanda} members={members} progress={progress} notices={notices} />
     )
   }
 

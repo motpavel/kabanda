@@ -22,7 +22,7 @@ describe('raid create surfaces', () => {
 
     expect(markup).toContain('href="/app?createRaid=kabanda-active"')
     expect(markup).toContain('Создать рейд')
-    expect(markup).toContain('Название и время')
+    expect(markup).toContain('aria-hidden="true"')
     expect(markup).not.toContain('Вожак ещё не открыл')
   })
 
