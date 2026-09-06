@@ -854,7 +854,12 @@
 .raid-map-controls button:last-child { border-bottom: 0; font-size: 1.15rem; }
 .raid-map-controls button:disabled { color: #a5aaa6; }
 
-.raid-live-point {
+/* Map layout buttons must outrank the app's generic .kb-shell button rules,
+   including hover/active, without moving their geographic anchor. */
+.raid-active-map .raid-live-point,
+.raid-active-map .raid-live-point:hover,
+.raid-active-map .raid-live-point:active {
+  --raid-point-border: #ea3e35;
   position: relative;
   display: block;
   box-sizing: border-box;
@@ -864,20 +869,24 @@
   padding: 0;
   cursor: pointer;
   transform: translate(-50%, -50%);
-  border: 7px solid #ea3e35;
+  border: 7px solid var(--raid-point-border);
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 3px 10px rgb(23 27 29 / 28%);
 }
 
-.raid-live-point--visited {
-  border-color: #8c928f;
+.raid-active-map .raid-live-point--visited,
+.raid-active-map .raid-live-point--visited:hover,
+.raid-active-map .raid-live-point--visited:active {
+  --raid-point-border: #8c928f;
   background: #d8dbd8;
   box-shadow: 0 2px 6px rgb(23 27 29 / 18%);
   opacity: .75;
 }
 
-.raid-live-point--nearby {
+.raid-active-map .raid-live-point--nearby,
+.raid-active-map .raid-live-point--nearby:hover,
+.raid-active-map .raid-live-point--nearby:active {
   width: 35px;
   height: 35px;
   border-width: 9px;
@@ -1019,7 +1028,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .raid-live-point--nearby,
+  .raid-active-map .raid-live-point--nearby,
+  .raid-active-map .raid-live-point--nearby:hover,
+  .raid-active-map .raid-live-point--nearby:active,
   .raid-arrival-pill > span:first-child,
   .raid-arrival-sheet__pulse { animation: none; }
 }

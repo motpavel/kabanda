@@ -7,7 +7,7 @@ import {
   type FixtureIdentity,
 } from './support.js'
 
-test('owner completes one canonical raid and opens the next raid form', async ({ context, page }) => {
+test('owner completes one canonical raid and opens the next raid form', async ({ context, page }, testInfo) => {
   const identity = fixture<FixtureIdentity>('prepare')
   const pageErrors: Error[] = []
   page.on('pageerror', (error) => pageErrors.push(error))
@@ -161,6 +161,15 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByLabel('Моё положение')).toBeVisible()
   await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
+  const nearbyMarker = page.locator('.raid-live-point--nearby').first()
+  await expect(nearbyMarker).toHaveCSS('width', '35px')
+  await expect(nearbyMarker).toHaveCSS('height', '35px')
+  await expect(nearbyMarker).toHaveCSS('min-height', '0px')
+  await expect(nearbyMarker).toHaveCSS('padding', '0px')
+  await expect(nearbyMarker).toHaveCSS('border-radius', '50%')
+  await expect(nearbyMarker).toHaveCSS('border-top-width', '9px')
+  await expect(nearbyMarker).toHaveCSS('border-top-color', 'rgb(234, 62, 53)')
+  await page.screenshot({ path: testInfo.outputPath('active-raid-marker.png') })
   await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
   await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
@@ -184,6 +193,14 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   // visit; the unique completion count in the final result stays one.
   const visitedMarker = page.getByRole('button', { name: 'Синтетическая точка E2E. Вы уже были. История посещений' })
   await expect(visitedMarker).toBeVisible({ timeout: 15_000 })
+  await expect(visitedMarker).toHaveCSS('width', '27px')
+  await expect(visitedMarker).toHaveCSS('height', '27px')
+  await expect(visitedMarker).toHaveCSS('border-radius', '50%')
+  await expect(visitedMarker).toHaveCSS('border-top-width', '7px')
+  await expect(visitedMarker).toHaveCSS('border-top-color', 'rgb(140, 146, 143)')
+  await visitedMarker.hover()
+  await expect(visitedMarker).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -13.5, -13.5)')
+  await expect(visitedMarker).toHaveCSS('border-top-color', 'rgb(140, 146, 143)')
   await visitedMarker.click()
   const historySheet = page.getByRole('complementary', { name: 'История точки: Синтетическая точка E2E' })
   await expect(historySheet.getByLabel('Личных посещений: 1')).toBeVisible()
