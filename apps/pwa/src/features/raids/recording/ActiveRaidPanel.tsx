@@ -160,13 +160,13 @@ export function ActiveRaidPanel({
     {arrivalAvailable && !sheetOpen && !inspectedPoint && !actionsOpen && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button">
       <span aria-hidden="true" />
       <span><strong>{activePoint ? 'Вы рядом с точкой' : pendingCheckIns > 0 ? 'Сохранено без сети' : 'Нужно закончить отметку'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : pendingCheckIns > 0 ? `${pendingCheckIns} действий ждут синхронизации` : 'Есть подтверждение или ручная проверка'}</small></span>
-      <b>{activePoint ? 'Отметиться' : 'Открыть'}</b>
+      <b>{activePoint ? 'Пометить' : 'Открыть'}</b>
     </button>}
 
     <aside {...arrivalSheet} className="raid-arrival-sheet" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'}>
       <button className="raid-arrival-sheet__collapse" data-sheet-drag="true" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
       <div className="raid-arrival-sheet__heading" data-sheet-drag="true">
-        <div><small>{activePoint ? 'ТОЧКА РЯДОМ' : 'ТРЕБУЕТСЯ ДЕЙСТВИЕ'}</small><h2>{activePoint?.name ?? 'Завершите отметку'}</h2><p>{activePoint ? 'Ещё одно место в истории вашей Кабанды.' : 'Сохранённые отметки и подтверждения.'}</p></div>
+        <div><small>{activePoint ? 'ТОЧКА РЯДОМ' : 'ТРЕБУЕТСЯ ДЕЙСТВИЕ'}</small><h2>{activePoint?.name ?? 'Завершите отметку'}</h2>{!activePoint && <p>Сохранённые отметки и подтверждения.</p>}</div>
         {activePoint && <span className="raid-arrival-sheet__distance">{Math.round(activePoint.distanceMeters)}<small>метров</small></span>}
       </div>
       {!viewerIsOrganizer && activePoint && <p className="raid-arrival-sheet__waiting">Вы на месте. Подтвердите своё посещение.</p>}
@@ -183,7 +183,7 @@ export function ActiveRaidPanel({
             setSelectedArrivalId(inspectedPoint.id)
             setInspectedPoint(null)
             setSheetOpen(true)
-          }}>{inspectedVisited ? 'Отметиться ещё раз' : 'Отметиться у точки'}</button>
+          }}>{inspectedVisited ? 'Пометить ещё раз' : 'Пометить точку'}</button>
           : <p>{raid.state === 'paused' ? 'Чекины доступны после продолжения рейда.' : 'Для чекина подъедьте к точке на расстояние до 50 м.'}</p>}
       <PointVisitHistory key={`${identityId}:${inspectedPoint.sourcePointId}`} identityId={identityId} kabandaId={raid.kabandaId} pointId={inspectedPoint.sourcePointId} currentRaidId={raid.id} />
     </aside>}

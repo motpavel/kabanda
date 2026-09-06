@@ -34,3 +34,14 @@ Native dialog remains mounted through exit and restores focus. Point-sheet draft
 - Synthetic browser GPS and the repository's map adapter were used locally. These checks do not certify Yandex tile availability or background GPS behavior on a physical phone.
 
 Deployment must compare the current exact base before swapping; preserve the previous release for rollback. Do not replace a user's active recording with a forced PWA reload.
+
+## Follow-up: concise check-in card
+
+User-requested visual refinement on top of `5e3b9f7ee537334c2d307ccc035bd14a33e82a89`:
+
+- One light sage surface groups “Кого отмечаем на точке?” with the participant rows and GPS hint. No nested participant cards or secondary text under names.
+- “Фото с остановки” is a full-width outlined disclosure with a camera icon and a 52 px minimum target. Its caption, upload and gallery remain optional, behind the same disclosure.
+- “Пометить точку” is the single red primary action; repeat-visit actions use “Пометить ещё раз”. Removed the decorative sentence below the point title.
+- GPS selection, organizer attestation, permission boundaries, submission, drafts, swipe behavior and offline replay are unchanged.
+
+Verification: PWA typecheck, 206 unit tests and production build pass. Golden journey covers the new action labels, photo disclosure/draft preservation, check-in and repeat visit. Offline route/check-in/photo replay passes against the isolated local database. Browser artifacts use synthetic GPS, synthetic names and the map adapter, not live participants or Yandex tiles. This refinement has not been deployed.
