@@ -23,12 +23,15 @@ is the primary text. Controls use centered SVG glyphs within 44–46px targets.
   safeguards and operation replay remain in the original finish implementation.
 - Check-in CTA no longer sticks over the photo form. Collapsing handle no longer
   inherits a visible button border; photo action and participant controls aligned.
+- Hidden check-in panel stops claim/fallback polling on pause (previously 409
+  every five seconds); state dependency restarts polling after resume. Local
+  drafts remain mounted. Golden regression spans one full polling interval.
 
 ## Verification
 
 - Workspace typecheck and production build passed. Existing bundle-size warning.
 - PWA unit tests: 202 passed.
-- Golden raid, offline recovery and marker CSS regression: 3 passed (40.4s).
+- Golden raid, offline recovery and marker CSS regression: 3 passed (44.9s).
   Golden covers centered action icon, Escape/focus return, pause, single resume
   action, no recovery/arrival UI on pause, resume, actual check-in/repeat/history,
   finish confirmation, completion and next creation flow.

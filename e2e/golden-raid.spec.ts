@@ -151,6 +151,16 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByRole('button', { name: 'Продолжить рейд', exact: true })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /Возобновить запись|Продолжить запись|Восстановить GPS/ })).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).not.toBeVisible()
+  const pausedCheckInRequests: string[] = []
+  const observePausedRequest = (request: import('@playwright/test').Request) => {
+    if (/check-in-(claims|fallbacks)/.test(request.url())) pausedCheckInRequests.push(request.url())
+  }
+  page.on('request', observePausedRequest)
+  // Cross the actual 5s polling interval: a hidden panel must not keep querying
+  // endpoints which reject paused raids with 409.
+  await page.waitForTimeout(5_200)
+  page.off('request', observePausedRequest)
+  expect(pausedCheckInRequests).toEqual([])
   await page.screenshot({ path: testInfo.outputPath('raid-paused-mobile.png') })
   await actionsTrigger.click()
   await expect(page.getByRole('button', { name: 'Продолжить рейд', exact: true })).toHaveCount(1)

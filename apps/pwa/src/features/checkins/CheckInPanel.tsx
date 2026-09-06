@@ -228,7 +228,9 @@ export function CheckInPanel({
   }, [identityId, raid.id, setUnsyncedCheckInWork])
 
   const refreshCanonicalExtras = useCallback(async () => {
-    if (!navigator.onLine || document.visibilityState !== 'visible') return
+    // Paused raids reject claim/fallback reads. Keep local drafts mounted but
+    // resume this polling only when the raid leaves the paused state.
+    if (raid.state === 'paused' || !navigator.onLine || document.visibilityState !== 'visible') return
     const result = await loadCheckInExtras({
       claims: () => listPendingClaims(raid.id),
       fallbacks: () => listPendingFallbacks(raid.id),
@@ -237,7 +239,7 @@ export function CheckInPanel({
     if (result.claims) setClaims(result.claims)
     if (result.fallbacks) setFallbacks(result.fallbacks)
     if (result.gallery) setMedia(result.gallery.media)
-  }, [raid.id])
+  }, [raid.id, raid.state])
 
   const flush = useCallback(async () => {
     if (!canMutate || !navigator.onLine) return
