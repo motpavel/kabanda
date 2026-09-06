@@ -215,7 +215,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   }, { timeout: 45_000 }).toBe(1)
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Поставить на паузу' }).click()
-  await expect(page.getByText('Рейд на паузе', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Рейд на паузе', exact: true })).toBeVisible()
 
   const acceptedBeforeReload = fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence))
   expect(acceptedBeforeReload.routeSamples).toBeGreaterThan(serverBaseline.routeSamples)

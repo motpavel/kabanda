@@ -9,6 +9,7 @@ import type { OneShotCoordinate } from '../../checkins/types'
 import { getRaidMapPoints, getRouteTrack } from '../api'
 import type { RaidMapPoint, RouteTrackPoint, RouteTrackProjection } from '../types'
 import { readRaidMapCache, saveRaidMapCache } from './map-cache'
+import { RaidControlIcon } from '../RaidControlIcon'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 
@@ -269,9 +270,9 @@ export function RaidRouteMap({
     {planned && <p className="raid-route-legend">Пунктир — порядок точек, не навигация · чёрный — пройденный путь</p>}
     <div className="route-live-map" ref={containerRef} />
     <nav className="raid-map-controls" aria-label="Управление картой">
-      <button aria-label="Увеличить карту" onClick={() => changeZoom(1)} type="button">＋</button>
-      <button aria-label="Уменьшить карту" onClick={() => changeZoom(-1)} type="button">−</button>
-      <button aria-label="Показать моё местоположение" disabled={!location} onClick={centerLocation} type="button">⌖</button>
+      <button aria-label="Увеличить карту" onClick={() => changeZoom(1)} type="button"><RaidControlIcon name="plus" /></button>
+      <button aria-label="Уменьшить карту" onClick={() => changeZoom(-1)} type="button"><RaidControlIcon name="minus" /></button>
+      <button aria-label="Показать моё местоположение" disabled={!location} onClick={centerLocation} type="button"><RaidControlIcon name="location" /></button>
     </nav>
     {providerState === 'loading' && <p className="route-live-map__state" role="status">Загружаем карту…</p>}
     {providerState === 'failed' && <p className="route-live-map__state route-live-map__state--error" role="alert">Карта не загрузилась. Трек продолжает записываться.</p>}

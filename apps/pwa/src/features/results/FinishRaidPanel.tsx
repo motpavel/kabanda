@@ -24,12 +24,14 @@ export function FinishRaidPanel({
   flushRoute,
   onApplyRaid,
   onCanonicalRefresh,
+  presentation = 'card',
 }: {
   identityId: string
   raid: RaidProjection
   flushRoute: () => Promise<void> | void
   onApplyRaid: (raid: RaidProjection) => Promise<unknown>
   onCanonicalRefresh: () => Promise<unknown>
+  presentation?: 'card' | 'sheet'
 }) {
   const [review, setReview] = useState<FinishLocalReview | null>(null)
   const [partialConfirmed, setPartialConfirmed] = useState(false)
@@ -108,27 +110,30 @@ export function FinishRaidPanel({
   }
 
   return (
-    <section className="kb-card result-finish-review">
-      <div className="kb-section-head"><div><p className="kb-kicker">Перед финишем</p><h2>Сохранение рейда</h2></div></div>
-      {!review ? <p className="kb-muted" aria-busy="true">Проверяем локальную очередь…</p> : (
+    <section className={presentation === 'sheet' ? 'result-finish-review result-finish-review--sheet' : 'kb-card result-finish-review'}>
+      {presentation === 'card' && <div className="kb-section-head"><div><p className="kb-kicker">Перед финишем</p><h2>Сохранение рейда</h2></div></div>}
+      {presentation === 'sheet' && <p>Запись остановится для всей Кабанды. Рейд появится в истории участников.</p>}
+      {!review ? <p className="kb-muted" aria-busy="true">Проверяем сохранение…</p> : (
         <>
-          <dl className="result-inventory">
+          {presentation === 'sheet' && !unresolved && <p className="result-finish-review__saved">Все данные отправлены</p>}
+          {(presentation === 'card' || unresolved) && <dl className="result-inventory">
             <div><dt>Маршрут</dt><dd>{review.inventory.routePending}</dd></div>
             <div><dt>Чекины</dt><dd>{review.inventory.checkInsPending}</dd></div>
             <div><dt>Фото</dt><dd>{review.inventory.mediaPending}</dd></div>
             <div><dt>Нужно действие</dt><dd>{review.inventory.needsAction}</dd></div>
-          </dl>
+          </dl>}
           {unresolved && (pending === 0 || drainAttempted) && (
             <label className="result-partial-confirm">
               <input type="checkbox" checked={partialConfirmed} onChange={(event) => setPartialConfirmed(event.target.checked)} />
-              <span><strong>Подтверждаю неполный итог</strong><small>Непринятые сервером данные не попадут в канонические метрики.</small></span>
+              <span><strong>Завершить без неотправленных данных</strong><small>Они останутся на телефоне, но не войдут в итог рейда.</small></span>
             </label>
           )}
         </>
       )}
       {message && <p className="kb-notice" role="status">{message}</p>}
-      {primary === 'drain' && <button className="kb-link-button" type="button" disabled={Boolean(busy)} onClick={drain}>{busy === 'drain' ? 'Досылаем…' : 'Дослать сохранённое'}</button>}
-      {primary === 'finish' && <button className="kb-link-button" type="button" disabled={Boolean(busy)} onClick={finish}>{busy === 'finish' ? 'Завершаем…' : unresolved ? 'Завершить с неполным итогом' : 'Завершить рейд'}</button>}
+      {!navigator.onLine && <p className="kb-notice" role="status">Для завершения нужен интернет. Сохранённые данные останутся на телефоне.</p>}
+      {primary === 'drain' && <button className={presentation === 'sheet' ? 'kb-primary' : 'kb-link-button'} type="button" disabled={Boolean(busy)} onClick={drain}>{busy === 'drain' ? 'Отправляем…' : 'Отправить сохранённое'}</button>}
+      {primary === 'finish' && <button className={presentation === 'sheet' ? 'kb-primary' : 'kb-link-button'} type="button" disabled={Boolean(busy)} onClick={finish}>{busy === 'finish' ? 'Завершаем…' : unresolved ? 'Завершить с неполным итогом' : 'Завершить рейд'}</button>}
     </section>
   )
 }

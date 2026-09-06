@@ -503,7 +503,7 @@ export function CheckInPanel({
       {(selectedPointId || manualResponse) && viewerIsOrganizer && (
         <fieldset className="checkin-participants"><legend>Кто остановился у точки</legend>{participants.map((participant) => (
           <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || validSelectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : ''}</span></label>
-        ))}<small>Тех, чья свежая геопозиция попала в радиус 50 м, приложение отметило само. Остальных организатор может добавить вручную.</small></fieldset>
+        ))}<small>Участники рядом выбраны по GPS. Добавьте остальных, если они с вами.</small></fieldset>
       )}
 
       {!viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (

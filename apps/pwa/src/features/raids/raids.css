@@ -789,6 +789,8 @@
   display: grid;
   width: 46px;
   height: 46px;
+  min-height: 46px;
+  padding: 0;
   place-items: center;
   border: 0;
   border-radius: 14px;
@@ -799,6 +801,10 @@
   font-weight: 760;
   text-decoration: none;
 }
+
+.raid-control-icon { display: block; flex: 0 0 auto; width: 22px; height: 22px; }
+.raid-active-map .raid-active-map__header > button:hover,
+.raid-active-map .raid-active-map__header > button:active { transform: none; }
 
 .raid-active-map__header > div { min-width: 0; }
 .raid-active-map__header small { display: block; color: #69716d; font-size: .72rem; font-weight: 680; }
@@ -838,10 +844,14 @@
   box-shadow: 0 7px 20px rgb(26 31 34 / 16%);
 }
 
-.raid-map-controls button {
+.raid-active-map .raid-map-controls button {
   display: grid;
   width: 46px;
   height: 46px;
+  min-height: 46px;
+  padding: 0;
+  border-radius: 0;
+  transform: none;
   place-items: center;
   border: 0;
   border-bottom: 1px solid rgb(28 32 34 / 9%);
@@ -851,7 +861,7 @@
   font-size: 1.35rem;
 }
 
-.raid-map-controls button:last-child { border-bottom: 0; font-size: 1.15rem; }
+.raid-active-map .raid-map-controls button:last-child { border-bottom: 0; }
 .raid-map-controls button:disabled { color: #a5aaa6; }
 
 /* Map layout buttons must outrank the app's generic .kb-shell button rules,
@@ -966,10 +976,13 @@
 
 .raid-arrival-sheet[hidden] { display: none; }
 
-.raid-arrival-sheet__collapse {
+.raid-active-map .raid-arrival-sheet__collapse {
   display: grid;
   width: 100%;
-  min-height: 32px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 0;
+  transform: none;
   place-items: center;
   border: 0;
   background: transparent;
@@ -985,23 +998,57 @@
 .checkin-panel--map { gap: .65rem; }
 .checkin-panel--map > .kb-section-head { display: none; }
 .checkin-panel--map .checkin-points { display: none; }
-.checkin-panel--map .raid-primary { position: sticky; bottom: 0; min-height: 50px; }
+.checkin-panel--map .raid-primary { position: static; min-height: 48px; margin-top: 4px; }
+.checkin-panel--map .checkin-photo { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--kb-line); border-radius: 12px; padding: 10px; background: #fff; color: var(--kb-ink); }
+.checkin-panel--map .checkin-participants label { align-items: center; }
+.checkin-panel--map .checkin-participants input { flex: 0 0 18px; margin: 0; }
+.checkin-panel--map .checkin-participants > small { color: var(--kb-muted); line-height: 1.4; }
 
 .raid-active-map__actions {
-  position: absolute;
-  z-index: 30;
-  top: calc(max(12px, env(safe-area-inset-top)) + 76px);
-  right: 12px;
+  position: fixed;
+  inset: auto 0 max(12px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
   width: min(420px, calc(100% - 24px));
-  max-height: calc(100% - 104px - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  margin: 0 auto;
   overflow: auto;
-  border-radius: 19px;
-  padding: 14px;
-  background: #fffdf8;
-  box-shadow: 0 12px 36px rgb(26 31 34 / 24%);
+  border: 0;
+  border-radius: 24px;
+  padding: 0;
+  color: var(--kb-ink);
+  background: #fff;
+  box-shadow: 0 12px 48px rgb(26 31 34 / 24%);
+  overscroll-behavior: contain;
 }
-
-.raid-active-map__actions-close { width: 100%; min-height: 44px; border: 0; color: #5f6863; background: transparent; text-align: right; }
+.raid-active-map__actions::backdrop { background: rgb(19 25 23 / 24%); }
+.raid-active-map__actions[open] { animation: raid-action-enter 180ms ease-out; }
+.raid-action-sheet { padding: 14px 18px 18px; }
+.raid-action-sheet__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.raid-action-sheet__header h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+.raid-active-map .raid-icon-button { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; color: #626c66; background: #f2f3f0; transform: none; }
+.raid-action-sheet__list { display: grid; }
+.raid-active-map .raid-action-sheet__item { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 58px; padding: 14px 4px; border: 0; border-radius: 0; background: transparent; text-align: left; font-size: .95rem; font-weight: 600; transform: none; }
+.raid-active-map .raid-action-sheet__item + .raid-action-sheet__item { border-top: 1px solid #eeefec; }
+.raid-active-map .raid-action-sheet__item--finish { color: #d93128; }
+.raid-active-map .raid-action-sheet__item:hover { background: #f7f8f5; }
+.raid-action-sheet__hint { margin: 4px 0 10px; color: var(--kb-muted); font-size: .85rem; line-height: 1.5; }
+.raid-active-map .raid-action-sheet__cancel { width: 100%; border: 0; background: transparent; margin-top: 10px; color: #626c66; transform: none; }
+.raid-action-sheet .result-finish-review--sheet { gap: 16px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.result-finish-review--sheet > p { margin: 0; color: #626c66; font-size: .88rem; line-height: 1.5; }
+.result-finish-review--sheet .result-finish-review__saved { color: #26724e; }
+.result-finish-review--sheet .result-inventory { grid-template-columns: repeat(2, minmax(0, 1fr)); border: 0; border-radius: 12px; }
+.result-finish-review--sheet .result-partial-confirm { padding: 12px; font-size: .82rem; }
+.result-finish-review--sheet .result-partial-confirm input { flex: 0 0 20px; margin-top: 3px; }
+.raid-action-sheet .kb-primary { width: 100%; min-height: 48px; }
+.raid-paused-banner { position: absolute; z-index: 24; bottom: max(14px, env(safe-area-inset-bottom)); left: 12px; right: 12px; display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 12px; width: min(480px, calc(100% - 24px)); box-sizing: border-box; margin: 0 auto; padding: 16px; border-radius: 22px; background: #fff; box-shadow: 0 8px 30px #18211c26; }
+.raid-paused-banner__icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #f3f3f0; }
+.raid-paused-banner strong { font-size: .95rem; }
+.raid-paused-banner p { margin: 3px 0 0; color: #69716d; font-size: .8rem; }
+.raid-paused-banner .kb-primary { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; }
+.raid-active-map .route-recorder__secondary { width: 100%; white-space: normal; min-width: 0; }
+.raid-active-map .raid-arrival-pill { border-radius: 20px; border: 0; padding: 12px 16px; background: #fff; transform: none; }
+@keyframes raid-action-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .raid-active-map__actions[open] { animation: none; } }
 
 .raid-presence-gate { display: grid; gap: 12px; margin-top: 12px; }
 .raid-presence-gate__summary { align-self: start; border-radius: 999px; padding: 6px 9px; color: #6f6251; background: #f2eee5; font-size: .72rem; font-style: normal; font-weight: 760; white-space: nowrap; }
