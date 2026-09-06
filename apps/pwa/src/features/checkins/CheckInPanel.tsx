@@ -483,6 +483,7 @@ export function CheckInPanel({
             ? { label: 'Найти точку рядом', action: locate }
             : null
   const primaryRequiresOnline = Boolean(pendingClaim || pendingFallback || manualResponse || (viewerIsOrganizer && !selectedPointId))
+  const gallery = media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><img src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>
 
   return (
     <section className={`${presentation === 'map-sheet' ? 'checkin-panel checkin-panel--map' : 'kb-card checkin-panel'}`}>
@@ -545,10 +546,11 @@ export function CheckInPanel({
           <label>Подпись к фото <input maxLength={160} value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
           <label className="kb-link-button checkin-photo">{manualResponse ? 'Фото для подтверждения' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy)} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
           </div>
+          {presentation === 'map-sheet' && gallery}
         </details>
       )}
 
-      {media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><img src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>}
+      {presentation !== 'map-sheet' && gallery}
       {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || (staleProjection && !(primaryKind === 'check_in' && canEnqueue)) || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
     </section>
   )
