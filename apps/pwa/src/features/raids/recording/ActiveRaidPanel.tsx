@@ -9,6 +9,7 @@ import { FinishRaidPanel } from '../../results/FinishRaidPanel'
 import { RaidRouteMap } from './RaidRouteMap'
 import { useRaidProximity } from './useRaidProximity'
 import { RaidControlIcon } from '../RaidControlIcon'
+import { useSlideSheet } from './useSlideSheet'
 
 export function ActiveRaidPanel({
   identityId,
@@ -40,7 +41,6 @@ export function ActiveRaidPanel({
   const [sheetOpen, setSheetOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
-  const actionsDialog = useRef<HTMLDialogElement>(null)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   const previousRaidState = useRef(raid.state)
   const [inspectedPoint, setInspectedPoint] = useState<RaidMapPoint | null>(null)
@@ -65,9 +65,11 @@ export function ActiveRaidPanel({
   const recoveryLabel = recorder.phase === 'standby' ? 'Записывать на этом устройстве' : recorder.phase === 'blocked' ? 'Включить GPS' : 'Восстановить GPS'
   const hasCheckInAttention = checkInAttention.count > 0
   const arrivalAvailable = raid.state === 'active' && Boolean(activePoint || hasCheckInAttention)
+  const actionsSheet = useSlideSheet<HTMLDialogElement>(actionsOpen, () => setActionsOpen(false))
+  const arrivalSheet = useSlideSheet<HTMLElement>(sheetOpen && arrivalAvailable && !inspectedPoint && !actionsOpen, () => setSheetOpen(false))
   const recorderLabel = viewerIsNavigator ? ({
     fresh: 'Маршрут записывается',
-    waiting: 'Ждём первую GPS-точку',
+    waiting: 'Ищем GPS-сигнал',
     recovering: 'Запускаем запись маршрута',
     stale: 'GPS давно не обновлялся',
     standby: 'Запись на другом устройстве',
@@ -76,16 +78,6 @@ export function ActiveRaidPanel({
     paused: 'Запись на паузе',
     ineligible: 'Запись недоступна',
   } as const)[recorder.phase] : null
-
-  useEffect(() => {
-    const dialog = actionsDialog.current
-    if (actionsOpen) {
-      if (!dialog?.open) dialog?.showModal()
-    } else if (dialog?.open) {
-      dialog.close()
-      actionsTrigger.current?.focus({ preventScroll: true })
-    }
-  }, [actionsOpen])
 
   useEffect(() => {
     if (previousRaidState.current !== raid.state) {
@@ -140,9 +132,10 @@ export function ActiveRaidPanel({
       <button ref={actionsTrigger} aria-haspopup="dialog" aria-expanded={actionsOpen} aria-label="Действия рейда" onClick={() => { setFinishOpen(false); setActionsOpen(true) }} type="button"><RaidControlIcon name="more" /></button>
     </header>
 
-    <dialog ref={actionsDialog} className="raid-active-map__actions" aria-labelledby="raid-actions-title" onCancel={() => setActionsOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setActionsOpen(false) }}>
-      {actionsOpen && <div className="raid-action-sheet">
-        <header className="raid-action-sheet__header">
+    <dialog {...actionsSheet} className="raid-active-map__actions" aria-labelledby="raid-actions-title" onClose={() => actionsTrigger.current?.focus({ preventScroll: true })} onCancel={(event) => { event.preventDefault(); setActionsOpen(false) }} onClick={(event) => { if (event.target === event.currentTarget) setActionsOpen(false) }}>
+      <div className="raid-action-sheet">
+        <div className="raid-sheet-grip" data-sheet-drag="true" aria-hidden="true"><span /></div>
+        <header className="raid-action-sheet__header" data-sheet-drag="true">
           <h2 id="raid-actions-title">{finishOpen ? 'Завершить рейд?' : 'Ваш рейд'}</h2>
           <button className="raid-icon-button" aria-label="Закрыть меню рейда" onClick={() => setActionsOpen(false)} type="button"><RaidControlIcon name="close" /></button>
         </header>
@@ -154,13 +147,13 @@ export function ActiveRaidPanel({
           {raid.allowedActions.includes('finish') && <button className="raid-action-sheet__item raid-action-sheet__item--finish" type="button" onClick={() => setFinishOpen(true)}><RaidControlIcon name="finish" /><span>Завершить рейд</span></button>}
           {!serverActionAvailable && !raid.allowedActions.includes('finish') && <p className="raid-action-sheet__hint">Пауза и завершение доступны вожаку рейда.</p>}
         </div>}
-      </div>}
+      </div>
     </dialog>
 
     {!actionsOpen && (pageMessage || resourceError || (raid.state === 'active' && recorder.message) || showRecovery) && <section className="raid-active-map__notice" aria-label="Состояние активного рейда" data-phase={recorder.phase}>
       {resourceError && <p className="kb-error" role="alert">{resourceError}</p>}
       {pageMessage && <p className="kb-notice" role="status">{pageMessage}</p>}
-      {raid.state === 'active' && recorder.message && <p className="kb-error" role="alert">{recorder.message}</p>}
+      {raid.state === 'active' && recorder.message && <p className={recorder.phase === 'waiting' ? 'raid-gps-waiting' : 'kb-error'} role={recorder.phase === 'waiting' ? 'status' : 'alert'}>{recorder.message}</p>}
       {showRecovery && <button className="kb-primary route-recorder__secondary" type="button" onClick={recorder.recover}>{recoveryLabel}</button>}
     </section>}
 
@@ -170,11 +163,11 @@ export function ActiveRaidPanel({
       <b>{activePoint ? 'Отметиться' : 'Открыть'}</b>
     </button>}
 
-    <aside className="raid-arrival-sheet" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'} hidden={!sheetOpen || !arrivalAvailable || Boolean(inspectedPoint) || actionsOpen}>
-      <button className="raid-arrival-sheet__collapse" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
-      <div className="raid-arrival-sheet__heading">
-        <div><small>{activePoint ? `Вы на точке · ${Math.round(activePoint.distanceMeters)} м` : 'Требуется действие'}</small><h2>{activePoint?.name ?? 'Завершите отметку'}</h2></div>
-        <span className="raid-arrival-sheet__pulse" aria-hidden="true" />
+    <aside {...arrivalSheet} className="raid-arrival-sheet" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'}>
+      <button className="raid-arrival-sheet__collapse" data-sheet-drag="true" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
+      <div className="raid-arrival-sheet__heading" data-sheet-drag="true">
+        <div><small>{activePoint ? 'ТОЧКА РЯДОМ' : 'ТРЕБУЕТСЯ ДЕЙСТВИЕ'}</small><h2>{activePoint?.name ?? 'Завершите отметку'}</h2><p>{activePoint ? 'Ещё одно место в истории вашей Кабанды.' : 'Сохранённые отметки и подтверждения.'}</p></div>
+        {activePoint && <span className="raid-arrival-sheet__distance">{Math.round(activePoint.distanceMeters)}<small>метров</small></span>}
       </div>
       {!viewerIsOrganizer && activePoint && <p className="raid-arrival-sheet__waiting">Вы на месте. Подтвердите своё посещение.</p>}
       <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onAttentionChange={setCheckInAttention} onCanonicalRefresh={onCanonicalRefresh} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={Boolean(repeatPointId && activePoint?.pointSnapshotId === repeatPointId && !raid.routeTemplateId)} onRepeatSaved={() => { setRepeatPointId(null); setSheetOpen(false) }} />

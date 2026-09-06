@@ -47,6 +47,18 @@ describe('route recorder truth', () => {
     expect(shouldDeferServiceWorkerUpdate('error')).toBe(false)
   })
 
+  it('waits through a temporary signal loss without claiming a fresh fix or stopping the watch', () => {
+    const input = { eligible: true, paused: false, visible: true, ownsWriterLease: true,
+      watchActive: true, lastPersistedSampleAt: '2026-08-28T08:00:14.000Z',
+      blocked: false, failed: false, recovering: false, signalUnavailable: true, now }
+    expect(deriveRecorderPhase(input)).toBe('waiting')
+    expect(deriveRecorderPhase({ ...input, signalUnavailable: false })).toBe('fresh')
+    expect(deriveRecorderPhase({ ...input, blocked: true })).toBe('blocked')
+    expect(deriveRecorderPhase({ ...input, paused: true })).toBe('paused')
+    expect(deriveRecorderPhase({ ...input, visible: false })).toBe('standby')
+    expect(shouldDeferServiceWorkerUpdate('waiting')).toBe(true)
+  })
+
   it('shows an update notice only when a real update must wait for route safety', () => {
     expect(shouldShowServiceWorkerUpdateNotice(false, 'fresh')).toBe(false)
     expect(shouldShowServiceWorkerUpdateNotice(true, 'ineligible')).toBe(false)

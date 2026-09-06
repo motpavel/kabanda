@@ -21,6 +21,7 @@ export function deriveRecorderPhase(input: {
   blocked: boolean
   failed: boolean
   recovering: boolean
+  signalUnavailable?: boolean
   now?: number
 }): RecorderPhase {
   if (!input.eligible) return 'ineligible'
@@ -29,6 +30,7 @@ export function deriveRecorderPhase(input: {
   if (input.failed) return 'error'
   if (!input.visible || !input.ownsWriterLease) return 'standby'
   if (input.recovering) return 'recovering'
+  if (input.signalUnavailable) return 'waiting'
   if (!input.watchActive) return 'waiting'
   return isPersistedSampleFresh(input.lastPersistedSampleAt, input.now) ? 'fresh' : 'stale'
 }

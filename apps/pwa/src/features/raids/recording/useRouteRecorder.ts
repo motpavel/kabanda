@@ -208,6 +208,7 @@ export function useRouteRecorder(input: {
     let blocked = false
     let failed = false
     let recovering = true
+    let signalUnavailable = false
     let lastPersistedSampleAt: string | null = null
 
     const safeSetPhase = (next: RecorderPhase) => {
@@ -231,6 +232,7 @@ export function useRouteRecorder(input: {
         blocked,
         failed,
         recovering,
+        signalUnavailable,
       }))
     }
     const stopWatch = () => {
@@ -314,7 +316,7 @@ export function useRouteRecorder(input: {
     flushRef.current = flush
 
     const startPageRecorder = async () => {
-      if (cancelled || starting || document.visibilityState !== 'visible') return
+      if (cancelled || starting || blocked || failed || document.visibilityState !== 'visible') return
       if (fence && watchId !== null) return
       starting = true
       blocked = false
@@ -381,6 +383,7 @@ export function useRouteRecorder(input: {
                 document.visibilityState !== 'visible'
               ) return
               recovering = false
+              signalUnavailable = false
               setMessage(null)
               lastPersistedSampleAt = record.capturedAt
               const nextStats = await refreshStats()
@@ -396,8 +399,17 @@ export function useRouteRecorder(input: {
             })
           },
           (error) => {
-            if (cancelled) return
+            if (cancelled || !fence || document.visibilityState !== 'visible') return
             recovering = false
+            // iOS can report kCLErrorDomain/0 as POSITION_UNAVAILABLE. This is
+            // a failed fix, not a terminated watch. Keep the writer fence and
+            // watch alive: the next real sample resumes recording normally.
+            if (error.code === 2 || error.code === 3) {
+              signalUnavailable = true
+              setMessage('GPS временно недоступен. Ждём сигнал — сохранённый маршрут не потеряется.')
+              updateDerivedPhase()
+              return
+            }
             blocked = error.code === error.PERMISSION_DENIED
             failed = !blocked
             void emitAlphaDiagnostic({

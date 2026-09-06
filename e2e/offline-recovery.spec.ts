@@ -168,6 +168,7 @@ test('offline route, check-in and photo survive reload and replay once', async (
   await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
+  await context.setGeolocation({ latitude: 56.86004, longitude: 53.21004, accuracy: 8 })
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {

@@ -127,6 +127,26 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Обновить геолокацию', exact: true }).click()
   await page.getByRole('button', { name: 'Обновить мою геолокацию', exact: true }).click()
   await expect(page.getByText('Все готовы', { exact: true })).toBeVisible({ timeout: 15_000 })
+  // Fault injection stays in this synthetic browser, never in the live raid.
+  await page.evaluate(() => {
+    const geo = navigator.geolocation
+    const watch = geo.watchPosition.bind(geo)
+    const clear = geo.clearWatch.bind(geo)
+    const callbacks = new Map<number, PositionErrorCallback>()
+    Object.assign(window, {
+      qaGpsFailure: (code: number) => {
+        for (const callback of callbacks.values()) callback({ code, message: 'kCLErrorDomain error 0', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 })
+        return callbacks.size
+      },
+      qaGpsWatches: () => callbacks.size,
+    })
+    geo.watchPosition = (success, failure, options) => {
+      const id = watch(success, failure, options)
+      if (failure && options?.timeout === 15_000) callbacks.set(id, failure)
+      return id
+    }
+    geo.clearWatch = (id) => { callbacks.delete(id); clear(id) }
+  })
   await page.getByRole('button', { name: 'Все здесь — начать рейд' }).click()
 
   await expect(page.getByLabel(/Активный рейд Свободный рейд/)).toBeVisible()
@@ -196,6 +216,16 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   }, { timeout: 30_000 }).toBeGreaterThan(1)
   await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toHaveCount(1, { timeout: 10_000 })
   await expect(page.getByLabel('Моё положение')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { qaGpsWatches: () => number }).qaGpsWatches())).toBe(1)
+  for (const code of [2, 3, 2]) {
+    await page.evaluate((code) => (window as unknown as { qaGpsFailure: (code: number) => number }).qaGpsFailure(code), code)
+    await expect(page.getByText('GPS временно недоступен.', { exact: false })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Восстановить GPS', exact: true })).toHaveCount(0)
+    expect(await page.evaluate(() => (window as unknown as { qaGpsWatches: () => number }).qaGpsWatches())).toBe(1)
+  }
+  await context.setGeolocation({ latitude: 56.86006, longitude: 53.21006, accuracy: 8 })
+  await expect(page.getByText('Маршрут записывается', { exact: true })).toBeVisible()
+  await expect(page.getByText('GPS временно недоступен.', { exact: false })).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
   const nearbyMarker = page.locator('.raid-live-point--nearby').first()
@@ -207,10 +237,27 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(nearbyMarker).toHaveCSS('border-top-width', '9px')
   await expect(nearbyMarker).toHaveCSS('border-top-color', 'rgb(234, 62, 53)')
   await page.screenshot({ path: testInfo.outputPath('active-raid-marker.png') })
+  const arrivalSheet = page.getByRole('complementary', { name: 'Подтверждение точки' })
+  await arrivalSheet.locator('summary').click()
+  await arrivalSheet.getByLabel('Подпись к фото').fill('Пауза у точки')
+  const handle = arrivalSheet.getByRole('button', { name: 'Свернуть подтверждение точки' })
+  const handleBox = (await handle.boundingBox())!
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2 + 150, { steps: 12 })
+  await page.mouse.up()
+  await expect(arrivalSheet).not.toBeVisible()
+  await page.getByRole('button', { name: /Вы рядом с точкой/ }).click()
+  await expect(arrivalSheet.getByLabel('Подпись к фото')).toHaveValue('Пауза у точки')
+  await arrivalSheet.locator('summary').click()
+  await page.screenshot({ path: testInfo.outputPath('point-check-in-redesign.png'), animations: 'disabled' })
   await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
   await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Отметиться у точки' }).click()
+  // A check-in requests a NEW fix; feed one after the tap, as a moving device
+  // does, rather than relying on Chromium reusing an earlier injected sample.
+  await context.setGeolocation({ latitude: 56.86011, longitude: 53.21011, accuracy: 8 })
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
 
   await expect.poll(async () => {
@@ -244,6 +291,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await historySheet.getByRole('button', { name: 'Отметиться ещё раз' }).click()
   await context.setGeolocation({ latitude: 56.86015, longitude: 53.21015, accuracy: 8 })
   await page.getByRole('button', { name: 'Подтвердить новое посещение' }).click()
+  await context.setGeolocation({ latitude: 56.86016, longitude: 53.21016, accuracy: 8 })
   await expect.poll(async () => {
     const points = await api<{ points: Array<{ sourcePointId: string }> }>(page, 'GET', `/api/raids/${raid.id}/map-points`)
     return (await api<{ personalCount: number }>(page, 'GET', `/api/kabandas/${kabanda.id}/points/${points.points[0]!.sourcePointId}/history`)).personalCount
@@ -252,10 +300,20 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(historySheet.getByLabel('Личных посещений: 2')).toBeVisible()
   await historySheet.getByRole('button', { name: 'Свернуть' }).click()
 
+  await page.evaluate(() => (window as unknown as { qaGpsFailure: (code: number) => number }).qaGpsFailure(1))
+  await expect(page.getByRole('button', { name: 'Включить GPS', exact: true })).toBeVisible()
+  await page.waitForTimeout(4_200) // Cross writer renewal: denied permission must not auto-restart.
+  expect(await page.evaluate(() => (window as unknown as { qaGpsWatches: () => number }).qaGpsWatches())).toBe(0)
+  await page.getByRole('button', { name: 'Включить GPS', exact: true }).click()
+  await context.setGeolocation({ latitude: 56.86017, longitude: 53.21017, accuracy: 8 })
+  await expect(page.getByText('Маршрут записывается', { exact: true })).toBeVisible()
+
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Завершить рейд?' })).toBeVisible()
   await expect(page.locator('.result-finish-review--sheet')).toHaveCSS('border-width', '0px')
+  const drainButton = page.getByRole('button', { name: 'Отправить сохранённое', exact: true })
+  if (await drainButton.isVisible()) await drainButton.click()
   await page.screenshot({ path: testInfo.outputPath('raid-finish-mobile.png') })
   await page.getByRole('button', { name: 'Завершить рейд', exact: true }).click()
   await page.getByRole('button', { name: 'Зафиксировать итог' }).click()

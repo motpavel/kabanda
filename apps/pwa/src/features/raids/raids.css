@@ -830,6 +830,8 @@
 
 .raid-active-map__notice p { margin: 0; }
 .raid-active-map__notice .route-recorder__secondary { min-height: 42px; }
+.raid-gps-waiting { padding: 2px 4px; color: #626c66; font-size: .8rem; line-height: 1.45; }
+.raid-active-map__notice[data-phase='waiting'] { border: 0; background: #fff; box-shadow: 0 4px 18px #18211c18; }
 
 .raid-map-controls {
   position: absolute;
@@ -964,13 +966,13 @@
   bottom: 0;
   left: 0;
   width: min(620px, 100%);
-  max-height: min(76vh, 680px);
+  max-height: min(72dvh, 680px);
   margin: 0 auto;
   overflow: auto;
   border-radius: 26px 26px 0 0;
-  padding: 8px 18px calc(18px + env(safe-area-inset-bottom));
-  background: #fffdf8;
-  box-shadow: 0 -14px 36px rgb(26 31 34 / 24%);
+  padding: 0 20px calc(18px + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -8px 36px rgb(26 31 34 / 16%);
   overscroll-behavior: contain;
 }
 
@@ -989,20 +991,40 @@
 }
 
 .raid-arrival-sheet__collapse span { width: 44px; height: 5px; border-radius: 999px; background: #d1d4d0; }
-.raid-arrival-sheet__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 2px 2px 12px; }
+.raid-arrival-sheet__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 0 0 18px; }
 .raid-arrival-sheet__heading div { min-width: 0; }
-.raid-arrival-sheet__heading small { color: #c6342d; font-size: .75rem; font-weight: 760; }
-.raid-arrival-sheet__heading h2 { margin: 3px 0 0; overflow: hidden; font-size: 1.22rem; text-overflow: ellipsis; white-space: nowrap; }
-.raid-arrival-sheet__waiting { margin: 0 0 8px; border-radius: 14px; padding: 14px; background: #f1f2ee; color: #5f6863; }
+.raid-arrival-sheet__heading small { color: #c6342d; font-size: .66rem; font-weight: 700; letter-spacing: .04em; }
+.raid-arrival-sheet__heading h2 { margin: 6px 0; font-size: 1.3rem; line-height: 1.15; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.raid-arrival-sheet__heading p { margin: 0; color: #6d7470; font-size: .78rem; line-height: 1.45; }
+.raid-arrival-sheet__distance { display: grid; place-items: center; flex: 0 0 60px; width: 60px; min-height: 60px; padding: 8px; border-radius: 18px; color: #c6342d; background: #fff0ed; font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.raid-arrival-sheet__distance small { font-size: .62rem; font-weight: 500; letter-spacing: 0; }
+.raid-arrival-sheet__waiting { margin: 0 0 12px; padding: 0; color: #5f6863; font-size: .8rem; }
 
 .checkin-panel--map { gap: .65rem; }
 .checkin-panel--map > .kb-section-head { display: none; }
 .checkin-panel--map .checkin-points { display: none; }
 .checkin-panel--map .raid-primary { position: static; min-height: 48px; margin-top: 4px; }
 .checkin-panel--map .checkin-photo { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--kb-line); border-radius: 12px; padding: 10px; background: #fff; color: var(--kb-ink); }
-.checkin-panel--map .checkin-participants label { align-items: center; }
-.checkin-panel--map .checkin-participants input { flex: 0 0 18px; margin: 0; }
-.checkin-panel--map .checkin-participants > small { color: var(--kb-muted); line-height: 1.4; }
+.checkin-panel--map .checkin-participants { gap: 0; }
+.checkin-panel--map .checkin-participants legend { margin-bottom: 4px; color: var(--kb-ink); font-size: .88rem; font-weight: 650; }
+.checkin-panel--map .checkin-participants label { display: grid; grid-template-columns: 38px minmax(0, 1fr) 22px; align-items: center; min-height: 62px; gap: 11px; padding: 10px 0; border: 0; border-radius: 0; background: transparent; }
+.checkin-panel--map .checkin-participants label + label { border-top: 1px solid #f0f1ee; }
+.checkin-participant__avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #202926; color: #fff; font-size: .92rem; font-weight: 600; }
+.checkin-panel--map .checkin-participants input { grid-column: 3; grid-row: 1; width: 22px; height: 22px; margin: 0; accent-color: #eb4136; }
+.checkin-panel--map .checkin-participant__name { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: .87rem; font-weight: 600; line-height: 1.3; }
+.checkin-participant__name small { display: block; margin-top: 4px; color: #6d7470; font-size: .71rem; font-weight: 400; }
+.checkin-panel--map .checkin-participants > small { margin: 8px 0; color: var(--kb-muted); font-size: .73rem; line-height: 1.45; }
+.checkin-panel--map .checkin-attestation { align-items: center; margin: 4px 0; padding: 12px; border: 0; border-radius: 12px; background: #f5f6f3; }
+.checkin-panel--map .checkin-attestation strong { font-size: .8rem; }
+.checkin-panel--map .checkin-attestation small { font-size: .71rem; line-height: 1.4; }
+.checkin-media-details { border-top: 1px solid #eceeeb; }
+.checkin-media-details summary { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 8px 0; list-style: none; cursor: pointer; color: #626c66; font-size: .82rem; }
+.checkin-media-details summary::-webkit-details-marker { display: none; }
+.checkin-media-details summary span { font-size: 1.3rem; }
+.checkin-media-details[open] summary span { transform: rotate(45deg); }
+.checkin-media-details .checkin-media-compose { padding-bottom: 12px; }
+.checkin-media-details input { min-width: 0; max-width: 100%; font-size: 16px; }
+.checkin-panel--map .kb-notice { border: 0; padding: 10px 0; background: transparent; font-size: .8rem; }
 
 .raid-active-map__actions {
   position: fixed;
@@ -1021,8 +1043,11 @@
   overscroll-behavior: contain;
 }
 .raid-active-map__actions::backdrop { background: rgb(19 25 23 / 24%); }
-.raid-active-map__actions[open] { animation: raid-action-enter 180ms ease-out; }
-.raid-action-sheet { padding: 14px 18px 18px; }
+.raid-action-sheet { padding: 0 18px 18px; }
+.raid-sheet-grip { display: grid; place-items: center; min-height: 28px; }
+.raid-sheet-grip span { width: 36px; height: 4px; background: #d1d4d0; border-radius: 99px; }
+[data-sheet-drag] { touch-action: none; user-select: none; }
+.raid-arrival-sheet[data-sheet-state='closing'], .raid-active-map__actions[data-sheet-state='closing'] { pointer-events: none; }
 .raid-action-sheet__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .raid-action-sheet__header h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
 .raid-active-map .raid-icon-button { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; color: #626c66; background: #f2f3f0; transform: none; }
@@ -1047,8 +1072,6 @@
 .raid-paused-banner .kb-primary { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; }
 .raid-active-map .route-recorder__secondary { width: 100%; white-space: normal; min-width: 0; }
 .raid-active-map .raid-arrival-pill { border-radius: 20px; border: 0; padding: 12px 16px; background: #fff; transform: none; }
-@keyframes raid-action-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .raid-active-map__actions[open] { animation: none; } }
 
 .raid-presence-gate { display: grid; gap: 12px; margin-top: 12px; }
 .raid-presence-gate__summary { align-self: start; border-radius: 999px; padding: 6px 9px; color: #6f6251; background: #f2eee5; font-size: .72rem; font-style: normal; font-weight: 760; white-space: nowrap; }

@@ -40,8 +40,11 @@ export function useRaidProximity(identityId: string, raidId: string, enabled: bo
           void reportRaidPresence(raidId, nextCoordinate).catch(() => undefined)
         }
       } catch { setStatus('offline') }
-    } catch {
-      setStatus('blocked')
+    } catch (error) {
+      // Unavailable/timeout does not mean the user denied permission, and an
+      // old nearby result must not keep claiming that the rider is on a point.
+      setNearby([])
+      setStatus(error && typeof error === 'object' && 'code' in error && error.code === 1 ? 'blocked' : 'locating')
     } finally {
       inFlight.current = false
     }

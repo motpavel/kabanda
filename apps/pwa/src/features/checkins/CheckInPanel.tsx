@@ -408,7 +408,7 @@ export function CheckInPanel({
       })
       if (!draft) throw new Error('IDENTITY_CHANGED')
       await refreshLocal()
-      setMessage('Фото сохранено локально вместе с SHA-256. Upload capability в хранилище не попадёт.')
+      setMessage('Фото сохранено локально. Оно появится в рейде после отправки.')
       void flush()
     } catch {
       setMessage('Фото не сохранено: проверьте место в хранилище, формат и активный аккаунт.')
@@ -502,10 +502,16 @@ export function CheckInPanel({
         ))}</fieldset>
       )}
 
-      {(selectedPointId || manualResponse) && viewerIsOrganizer && (
-        <fieldset className="checkin-participants"><legend>Кто остановился у точки</legend>{participants.map((participant) => (
-          <label key={participant.id}><input type="checkbox" disabled={participant.id === identityId} checked={participant.id === identityId || validSelectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} /><span>{participant.displayName}{participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : ''}</span></label>
-        ))}<small>Участники рядом выбраны по GPS. Добавьте остальных, если они с вами.</small></fieldset>
+      {(selectedPointId || manualResponse) && (viewerIsOrganizer || presentation === 'map-sheet') && (
+        <fieldset className="checkin-participants"><legend>{presentation === 'map-sheet' ? 'Кто с вами' : 'Кто остановился у точки'}</legend>{participants.map((participant) => (
+          <label key={participant.id}>
+            {presentation === 'map-sheet' && <span className="checkin-participant__avatar" aria-hidden="true">{participant.displayName.trim().slice(0, 1).toUpperCase()}</span>}
+            <input aria-label={participant.displayName} type="checkbox" disabled={!viewerIsOrganizer || participant.id === identityId} checked={participant.id === identityId || validSelectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} />
+            <span className="checkin-participant__name">{participant.displayName}{presentation === 'map-sheet'
+              ? <small>{participant.id === identityId ? 'Вы · отмечаетесь на точке' : nearbyParticipantIds.includes(participant.id) ? 'Рядом по GPS' : validSelectedParticipants.includes(participant.id) ? 'Выбраны вами' : 'Присутствие не подтверждено'}</small>
+              : participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : ''}</span>
+          </label>
+        ))}{viewerIsOrganizer && <small>Рядом по GPS — уже выбраны. Добавьте тех, кто приехал с вами.</small>}</fieldset>
       )}
 
       {!viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
@@ -513,7 +519,7 @@ export function CheckInPanel({
       )}
 
       {viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
-        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setAttestedParticipantKey(event.target.checked ? selectedParticipantKey : null)} /><span><strong>Подтверждаю как организатор</strong><small>Подтверждение действует только для этого состава. При изменении списка его нужно поставить заново.</small></span></label>
+        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setAttestedParticipantKey(event.target.checked ? selectedParticipantKey : null)} /><span><strong>Все выбранные участники здесь</strong><small>Вы подтверждаете их присутствие как вожак.</small></span></label>
       )}
 
       {manualResponse && (
@@ -528,19 +534,22 @@ export function CheckInPanel({
 
       {message && <p className="kb-notice" role="status">{message}</p>}
 
-      {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || (staleProjection && !(primaryKind === 'check_in' && canEnqueue)) || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
       {pendingClaim && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => claimAction(pendingClaim, 'decline')}>Это ошибка — отклонить</button>}
       {pendingFallback && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => fallbackAction(pendingFallback, 'decline')}>Не могу подтвердить</button>}
       {Boolean(local?.unsynced) && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => void flush()}>Синхронизировать сохранённое</button>}
 
       {canEnqueue && (
-        <div className="checkin-media-compose">
+        <details className="checkin-media-details" open={manualResponse ? true : undefined}>
+          <summary>Фото с остановки <span aria-hidden="true">+</span></summary>
+          <div className="checkin-media-compose">
           <label>Подпись к фото <input maxLength={160} value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
-          <label className="kb-link-button checkin-photo">{manualResponse ? 'Добавить fallback-фото' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy)} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
-        </div>
+          <label className="kb-link-button checkin-photo">{manualResponse ? 'Фото для подтверждения' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy)} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
+          </div>
+        </details>
       )}
 
       {media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><img src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>}
+      {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || (staleProjection && !(primaryKind === 'check_in' && canEnqueue)) || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
     </section>
   )
 }

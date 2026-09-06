@@ -9,16 +9,34 @@ export function getOneShotCoordinate(timeoutMs = 15_000): Promise<OneShotCoordin
       reject(new Error('GEOLOCATION_UNAVAILABLE'))
       return
     }
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
+    let settled = false
+    let watchId: number | undefined
+    const finish = (coordinate: OneShotCoordinate | null, error?: unknown) => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      if (watchId !== undefined) navigator.geolocation.clearWatch(watchId)
+      if (coordinate) resolve(coordinate)
+      else reject(error)
+    }
+    const deadline = setTimeout(() => finish(null, new Error('GPS_TIMEOUT')), timeoutMs)
+    // A short, independent watch tolerates a temporarily unavailable fix.
+    // Never borrow recorder/cache evidence; settle only on a fresh sample.
+    try {
+      watchId = navigator.geolocation.watchPosition((position) => {
+        const age = Date.now() - position.timestamp
+        if (!Number.isFinite(age) || age < -5_000 || age > 5_000) return
+        finish({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracyMeters: position.coords.accuracy,
         capturedAt: new Date(position.timestamp).toISOString(),
-      }),
-      reject,
-      { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs },
-    )
+        })
+      }, (error) => {
+        if (error.code !== 2 && error.code !== 3) finish(null, error)
+      }, { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs })
+      if (settled) navigator.geolocation.clearWatch(watchId)
+    } catch (error) { finish(null, error) }
   })
 }
 

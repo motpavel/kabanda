@@ -1,5 +1,46 @@
-import { describe, expect, it } from 'vitest'
-import { eligibleManualVerifier, sha256Hex, validateMediaFile } from './platform'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { eligibleManualVerifier, getOneShotCoordinate, sha256Hex, validateMediaFile } from './platform'
+
+describe('fresh independent check-in GPS', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  function gps() {
+    let success!: PositionCallback
+    let failure!: PositionErrorCallback
+    const clearWatch = vi.fn()
+    const watchPosition = vi.fn((ok: PositionCallback, bad: PositionErrorCallback) => { success = ok; failure = bad; return 12 })
+    vi.stubGlobal('navigator', { geolocation: { watchPosition, clearWatch } })
+    return { clearWatch, sample: (age = 0) => success({ timestamp: Date.now() - age,
+      coords: { latitude: 56.86, longitude: 53.21, accuracy: 8 } } as GeolocationPosition),
+    error: (code: number) => failure({ code } as GeolocationPositionError) }
+  }
+  it('keeps waiting through transient failures and discards stale evidence', async () => {
+    const mock = gps()
+    const result = getOneShotCoordinate()
+    mock.error(2)
+    mock.error(3)
+    mock.sample(60_000)
+    expect(mock.clearWatch).not.toHaveBeenCalled()
+    mock.sample()
+    await expect(result).resolves.toMatchObject({ latitude: 56.86, longitude: 53.21, accuracyMeters: 8 })
+    expect(mock.clearWatch).toHaveBeenCalledExactlyOnceWith(12)
+  })
+  it('rejects denied permission immediately and removes the subscription', async () => {
+    const mock = gps()
+    const result = getOneShotCoordinate()
+    mock.error(1)
+    await expect(result).rejects.toMatchObject({ code: 1 })
+    expect(mock.clearWatch).toHaveBeenCalledExactlyOnceWith(12)
+  })
+  it('has a hard deadline even when the provider never calls back', async () => {
+    vi.useFakeTimers()
+    const mock = gps()
+    const result = getOneShotCoordinate(1000)
+    const assertion = expect(result).rejects.toThrow('GPS_TIMEOUT')
+    await vi.advanceTimersByTimeAsync(1000)
+    await assertion
+    expect(mock.clearWatch).toHaveBeenCalledExactlyOnceWith(12)
+  })
+})
 
 describe('check-in media boundaries', () => {
   it('hashes source bytes with a stable sha256', async () => {
