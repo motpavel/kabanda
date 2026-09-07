@@ -1127,7 +1127,7 @@
 .result-route > h2 { margin: 0 0 16px; }
 .result-route .result-route__map { position: relative; inset: auto; width: 100%; height: min(52dvh, 440px); min-height: 320px; margin: 0 0 20px; border-radius: 16px; overflow: hidden; }
 .result-route .raid-map-controls { top: 16px; right: 12px; }
-.result-route .raid-map-controls__follow { display: none; }
+.result-route .raid-map-controls button.raid-map-controls__follow { display: none; }
 .result-route__points { margin: 0; padding-left: 22px; }
 .result-route__points li::marker { color: #26734b; }
 .kb-shell .result-route__points button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; border: 0; border-bottom: 1px solid #eceeeb; border-radius: 0; padding: 10px 4px; color: inherit; background: transparent; text-align: left; }
