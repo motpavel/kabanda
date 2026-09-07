@@ -1,3 +1,4 @@
+import type { RaidDestination } from '@kabanda/contracts'
 export type RaidState =
   | 'draft'
   | 'planned'
@@ -65,6 +66,7 @@ export interface NavigatorLeaseProjection {
 }
 
 export interface RaidProjection {
+  destination?: RaidDestination | null
   createdAt?: string
   startedAt?: string | null
   pointCategory?: 'stores' | 'attractions' | null

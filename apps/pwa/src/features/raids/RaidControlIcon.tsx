@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 
-export function RaidControlIcon({ name }: { name: 'back' | 'more' | 'close' | 'pause' | 'play' | 'finish' | 'plus' | 'minus' | 'location' }) {
+export function RaidControlIcon({ name }: { name: 'back' | 'more' | 'close' | 'pause' | 'play' | 'finish' | 'plus' | 'minus' | 'location' | 'pin' }) {
   const paths: Record<typeof name, ReactNode> = {
+    pin: <><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
     back: <path d="m12 5-7 7 7 7M5 12h14" />,
     more: <><circle cx="12" cy="5" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="19" r="1" fill="currentColor" /></>,
     close: <path d="m6 6 12 12M6 18 18 6" />,

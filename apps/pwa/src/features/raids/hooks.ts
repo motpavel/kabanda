@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { getRaid } from './api'
 import { readRaidProjection, saveRaidProjection } from './cache'
@@ -10,6 +10,7 @@ function canUseStale(error: unknown): boolean {
 
 export function useRaidProjection(identityId: string, raidId: string, staleOnly = false) {
   const [raid, setRaid] = useState<RaidProjection | null>(null)
+  const latestApplied = useRef<{ identityId: string; raid: RaidProjection } | null>(null)
   const [stale, setStale] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -17,6 +18,9 @@ export function useRaidProjection(identityId: string, raidId: string, staleOnly 
 
   const applyRaid = useCallback(
     async (next: RaidProjection) => {
+      const current = latestApplied.current
+      if (current?.identityId === identityId && current.raid.id === next.id && current.raid.version > next.version) return
+      latestApplied.current = { identityId, raid: next }
       setRaid(next)
       setStale(false)
       setSavedAt(null)

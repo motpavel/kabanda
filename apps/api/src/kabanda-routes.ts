@@ -222,7 +222,7 @@ export async function registerKabandaRoutes(
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)
     const params = z.object({ id: z.uuid(), pointId: z.uuid() }).parse(request.params)
-    const query = z.object({ offset: z.coerce.number().int().min(0).max(10000).default(0) }).parse(request.query)
-    return dependencies.kabandas.getPointVisitHistory(user.id, params.id, params.pointId, query.offset)
+    const query = z.object({ offset: z.coerce.number().int().min(0).max(10000).default(0), visitorId: z.uuid().optional() }).parse(request.query)
+    return dependencies.kabandas.getPointVisitHistory(user.id, params.id, params.pointId, query.offset, query.visitorId)
   })
 }

@@ -130,7 +130,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 }
 
 export interface KabandaService {
-  getPointVisitHistory(userId: string, kabandaId: string, pointId: string, offset?: number): Promise<PointVisitHistory>
+  getPointVisitHistory(userId: string, kabandaId: string, pointId: string, offset?: number, visitorId?: string): Promise<PointVisitHistory>
   listKabandas(userId: string): Promise<KabandaSummary[]>
   createKabanda(userId: string, name: string, avatar: string, idempotencyKey: string): Promise<KabandaSummary>
   updateKabanda(
@@ -169,8 +169,8 @@ export interface KabandaService {
 }
 
 export class DatabaseKabandaService implements KabandaService {
-  getPointVisitHistory(userId: string, kabandaId: string, pointId: string, offset = 0) {
-    return readPointVisitHistory(this.pool, userId, kabandaId, pointId, offset)
+  getPointVisitHistory(userId: string, kabandaId: string, pointId: string, offset = 0, visitorId?: string) {
+    return readPointVisitHistory(this.pool, userId, kabandaId, pointId, offset, visitorId)
   }
   constructor(
     private readonly pool: Pool,

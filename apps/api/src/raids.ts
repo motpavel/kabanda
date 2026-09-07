@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
-import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_SOURCE } from '@kabanda/contracts'
+import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_SOURCE, type RaidDestination } from '@kabanda/contracts'
 import sharp, { type Metadata, type Sharp } from 'sharp'
 import {
   getRaidAllowedActions,
@@ -252,6 +252,7 @@ export type FinishRaidResponse = {
 export type SettleRaidResponse = { raid: RaidProjection; result: RaidResult }
 
 export type RaidProjection = {
+  destination?: RaidDestination | null
   createdAt?: string
   startedAt?: string | null
   pointCategory?: 'stores' | 'attractions' | null
@@ -437,6 +438,8 @@ export const processMedia: MediaProcessor = async (bytes, declaredContentType) =
 }
 
 type RaidRow = {
+  destination_point_id: string | null
+  destination_selected_at: Date | null
   created_at: Date
   point_category: 'stores' | 'attractions' | null
   meeting_place: string | null
@@ -508,6 +511,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 }
 
 export interface RaidService {
+  setDestination(actorUserId: string, raidId: string, input: { expectedVersion: number; pointSnapshotId: string }, operationId: string): Promise<RaidCommandResponse>
   createDraft(
     actorUserId: string,
     kabandaId: string,
@@ -1149,6 +1153,37 @@ export class DatabaseRaidService implements RaidService {
     } finally {
       client.release()
     }
+  }
+
+  async setDestination(
+    actorUserId: string, raidId: string,
+    input: { expectedVersion: number; pointSnapshotId: string }, operationId: string,
+  ): Promise<RaidCommandResponse> {
+    const requestFingerprint = fingerprint('set-destination', raidId, input)
+    return transaction(this.pool, async (client) => {
+      await this.lockOperation(client, actorUserId, operationId)
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireActiveParticipant(raid)
+      if (raid.navigator_user_id !== actorUserId) throw this.forbiddenCommand()
+      const replay = await this.replay<RaidCommandResponse>(client, actorUserId, operationId, requestFingerprint)
+      if (replay) return replay
+      this.requireVersion(raid, input.expectedVersion)
+      const point = await client.query('SELECT 1 FROM raid_point_snapshots WHERE id = $1 AND raid_id = $2', [input.pointSnapshotId, raidId])
+      if (!point.rowCount) throw this.notFound()
+      if (raid.route_template_id) {
+        const visited = await client.query('SELECT 1 FROM raid_point_credits WHERE raid_id = $1 AND point_snapshot_id = $2 AND user_id = $3', [raidId, input.pointSnapshotId, actorUserId])
+        if (visited.rowCount) throw new RaidError('RAID_POINT_ALREADY_VISITED', 409, 'Эта точка маршрута уже посещена')
+      }
+      const updated = await client.query<{ updated_at: Date }>(
+        `UPDATE raids SET destination_point_id = $2, destination_selected_at = clock_timestamp(),
+          version = version + 1, updated_at = clock_timestamp() WHERE id = $1 RETURNING updated_at`,
+        [raidId, input.pointSnapshotId],
+      )
+      const response = await this.buildResponse(client, actorUserId, raidId, operationId, 'set-destination', updated.rows[0]!.updated_at)
+      await this.storeReceipt(client, { actorUserId, operationId, raidId, command: 'set-destination', requestFingerprint,
+        expectedVersion: input.expectedVersion, fromState: raid.state, mutatesState: true, response })
+      return response
+    })
   }
 
   async getMapPoints(
@@ -3442,7 +3477,7 @@ export class DatabaseRaidService implements RaidService {
        RETURNING id, user_id, point_snapshot_id, source, created_at`,
       [raidId, pointSnapshotId, attemptId, [...new Set(userIds)], source],
     )
-    await client.query(
+    const visits = await client.query<{ user_id: string }>(
       `INSERT INTO raid_point_visit_events (credit_id, evidence_attempt_id, user_id, source)
        SELECT c.id, $3, c.user_id, $5 FROM raid_point_credits c
        JOIN raids r ON r.id = c.raid_id
@@ -3450,8 +3485,16 @@ export class DatabaseRaidService implements RaidService {
          AND a.point_snapshot_id = c.point_snapshot_id
        WHERE c.raid_id = $1 AND c.point_snapshot_id = $2 AND c.user_id = ANY($4::uuid[])
          AND (c.evidence_attempt_id = $3 OR (a.repeat_visit AND r.route_template_id IS NULL))
-       ON CONFLICT (evidence_attempt_id, user_id) DO NOTHING`,
+       ON CONFLICT (evidence_attempt_id, user_id) DO NOTHING RETURNING user_id`,
       [raidId, pointSnapshotId, attemptId, [...new Set(userIds)], source],
+    )
+    // Only a newly confirmed navigator visit completes the shared destination.
+    // Claims and verified photo fallback follow the same rule as GPS check-ins.
+    if (visits.rowCount) await client.query(
+      `UPDATE raids SET destination_point_id = NULL, destination_selected_at = NULL,
+         version = version + 1, updated_at = clock_timestamp()
+       WHERE id = $1 AND destination_point_id = $2 AND navigator_user_id = ANY($3::uuid[])`,
+      [raidId, pointSnapshotId, visits.rows.map((visit) => visit.user_id)],
     )
     return result.rows.map((row) => ({
       id: row.id,
@@ -3581,7 +3624,7 @@ export class DatabaseRaidService implements RaidService {
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
          r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.created_at, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
-         r.state, r.version,
+         r.state, r.version, r.destination_point_id, r.destination_selected_at,
          m.role AS membership_role, p.state AS participant_state
        FROM raids r
        JOIN kabandas k ON k.id = r.kabanda_id AND k.archived_at IS NULL
@@ -3660,7 +3703,7 @@ export class DatabaseRaidService implements RaidService {
       `SELECT r.id, r.kabanda_id, r.organizer_user_id, r.navigator_user_id,
          r.title, r.description, r.route_template_id, r.point_category, r.meeting_place, r.created_at, r.scheduled_at, r.started_at, r.finalizing_at,
          r.finalization_deadline_at, r.finalization_partial, clock_timestamp() AS server_now,
-         r.state, r.version,
+         r.state, r.version, r.destination_point_id, r.destination_selected_at,
          m.role AS membership_role, p.state AS participant_state
        FROM raids r
        JOIN kabanda_memberships m
@@ -3701,7 +3744,17 @@ export class DatabaseRaidService implements RaidService {
       raid.state === 'finalizing'
         ? await this.finalizationProjection(client, raid.id)
         : null
+    const destinationPoint = raid.destination_point_id && ['active', 'paused'].includes(raid.state)
+      ? (await client.query<{ id: string; source_point_id: string; name: string; latitude: number; longitude: number }>(
+        `SELECT id, source_point_id, name, ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+         FROM raid_point_snapshots WHERE id = $1 AND raid_id = $2`, [raid.destination_point_id, raid.id],
+      )).rows[0] : null
     return {
+      destination: destinationPoint && raid.destination_selected_at ? {
+        pointSnapshotId: destinationPoint.id, sourcePointId: destinationPoint.source_point_id, name: destinationPoint.name,
+        latitude: Number(destinationPoint.latitude), longitude: Number(destinationPoint.longitude),
+        selectedAt: raid.destination_selected_at.toISOString(),
+      } : null,
       id: raid.id,
       kabandaId: raid.kabanda_id,
       title: raid.title,

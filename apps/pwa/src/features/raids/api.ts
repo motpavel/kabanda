@@ -174,3 +174,10 @@ export function reportReadiness(
     },
   )
 }
+
+export async function setRaidDestination(raidId: string, input: { expectedVersion: number; pointSnapshotId: string }, operationId: string): Promise<RaidProjection> {
+  const response = await requestJson<{ raid: RaidProjection }>(`/api/raids/${encodeURIComponent(raidId)}/destination`, {
+    method: 'PUT', headers: { 'Idempotency-Key': operationId }, body: JSON.stringify(input),
+  })
+  return response.raid
+}

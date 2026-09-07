@@ -70,6 +70,7 @@ export function CheckInPanel({
   onAttentionChange,
   repeatVisit = false,
   onRepeatSaved,
+  onSaved,
   onRefused,
 }: {
   identityId: string
@@ -83,6 +84,7 @@ export function CheckInPanel({
   onAttentionChange?: (state: { count: number; key: string; actionKey: string }) => void
   repeatVisit?: boolean
   onRepeatSaved?: () => void
+  onSaved?: () => void
   onRefused?: (message: string) => void
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
@@ -350,6 +352,7 @@ export function CheckInPanel({
       await refreshLocal()
       setMessage('Чекин сохранён на телефоне. Подтверждение появится после отправки на сервер.')
       if (repeatVisit) onRepeatSaved?.()
+      onSaved?.()
       void flush()
     } catch {
       setMessage('Не удалось сохранить чекин на телефоне. Проверьте свободное место и повторите.')
@@ -488,7 +491,7 @@ export function CheckInPanel({
       : primaryKind === 'submit_fallback'
         ? { label: 'Отправить на ручную проверку', action: submitFallback }
         : primaryKind === 'check_in'
-          ? { label: repeatVisit ? 'Пометить ещё раз' : 'Пометить точку', action: submit }
+          ? { label: 'Пометить точку', action: submit }
             : primaryKind === 'locate' && presentation !== 'map-sheet'
             ? { label: 'Найти точку рядом', action: locate }
             : null
@@ -522,7 +525,7 @@ export function CheckInPanel({
             <span className="checkin-participant__name">{participant.displayName}{presentation !== 'map-sheet' && (participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : '')}</span>
           </label>
         ))}</fieldset>
-        {viewerIsOrganizer && <p className="checkin-participant-hint">Участники рядом по GPS уже выбраны. Добавьте тех, кто с вами, но у кого проблемы с геолокацией.</p>}
+        {viewerIsOrganizer && presentation !== 'map-sheet' && <p className="checkin-participant-hint">Участники рядом по GPS уже выбраны. Добавьте тех, кто с вами, но у кого проблемы с геолокацией.</p>}
         </div>
       )}
 
@@ -531,7 +534,7 @@ export function CheckInPanel({
       )}
 
       {viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
-        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setAttestedParticipantKey(event.target.checked ? selectedParticipantKey : null)} /><span><strong>Все выбранные участники здесь</strong><small>Вы подтверждаете их присутствие как вожак.</small></span></label>
+        <label className="checkin-attestation"><input type="checkbox" checked={organizerAttestation} onChange={(event) => setAttestedParticipantKey(event.target.checked ? selectedParticipantKey : null)} /><span><strong>Все выбранные участники здесь</strong>{presentation !== 'map-sheet' && <small>Вы подтверждаете их присутствие как вожак.</small>}</span></label>
       )}
 
       {manualResponse && (

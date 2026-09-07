@@ -520,13 +520,13 @@
 .route-live-map__rider {
   display: block;
   box-sizing: border-box;
-  width: 46px;
-  height: 46px;
+  width: 31px;
+  height: 31px;
   transform: translate(-50%, -50%);
-  border: 2px solid rgb(255 255 255 / 96%);
+  border: 1.5px solid rgb(255 255 255 / 96%);
   border-radius: 50%;
-  background: #fff url('/brand/kabanda-logo-reference.png') center / 40px 40px no-repeat;
-  box-shadow: 0 5px 16px rgb(35 42 53 / 32%), 0 0 0 1px rgb(35 42 53 / 10%);
+  background: #fff url('/brand/kabanda-logo-reference.png') center / 27px 27px no-repeat;
+  box-shadow: 0 3px 11px rgb(35 42 53 / 32%), 0 0 0 1px rgb(35 42 53 / 10%);
   pointer-events: none;
 }
 
@@ -866,6 +866,10 @@
 
 .raid-active-map .raid-map-controls button:last-child { border-bottom: 0; }
 .raid-map-controls button:disabled { color: #a5aaa6; }
+.raid-active-map .raid-map-controls__follow[aria-pressed='true'],
+.raid-active-map .raid-map-controls__follow[aria-pressed='true']:hover,
+.raid-active-map .raid-map-controls__follow[aria-pressed='true']:active { color: #c6342d; background: #fff0ed; }
+.raid-active-map .raid-map-controls button:focus-visible { outline: 2px solid #c6342d; outline-offset: -3px; }
 
 /* Map layout buttons must outrank the app's generic .kb-shell button rules,
    including hover/active, without moving their geographic anchor. */
@@ -876,33 +880,33 @@
   position: relative;
   display: block;
   box-sizing: border-box;
-  width: 27px;
-  height: 27px;
+  width: 18px;
+  height: 18px;
   min-height: 0;
   padding: 0;
   cursor: pointer;
   transform: translate(-50%, -50%);
-  border: 7px solid var(--raid-point-border);
+  border: 5px solid var(--raid-point-border);
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 3px 10px rgb(23 27 29 / 28%);
+  box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgb(23 27 29 / 32%);
 }
 
 .raid-active-map .raid-live-point--visited,
 .raid-active-map .raid-live-point--visited:hover,
 .raid-active-map .raid-live-point--visited:active {
-  --raid-point-border: #8c928f;
-  background: #d8dbd8;
-  box-shadow: 0 2px 6px rgb(23 27 29 / 18%);
-  opacity: .75;
+  --raid-point-border: #85d69a;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px #fff, 0 3px 9px rgb(23 27 29 / 26%);
+  opacity: 1;
 }
 
 .raid-active-map .raid-live-point--nearby,
 .raid-active-map .raid-live-point--nearby:hover,
 .raid-active-map .raid-live-point--nearby:active {
-  width: 35px;
-  height: 35px;
-  border-width: 9px;
+  width: 24px;
+  height: 24px;
+  border-width: 6px;
   animation: raid-point-attention 900ms ease-in-out infinite alternate;
 }
 
@@ -978,6 +982,7 @@
 }
 
 .raid-arrival-sheet[hidden] { display: none; }
+.raid-arrival-sheet--checkin { max-height: min(84dvh, 760px); }
 
 .raid-active-map .raid-arrival-sheet__collapse {
   display: grid;
@@ -1007,16 +1012,17 @@
 .checkin-panel--map .raid-primary { position: static; min-height: 48px; margin-top: 4px; }
 .checkin-panel--map .checkin-photo { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--kb-line); border-radius: 12px; padding: 10px; background: #fff; color: var(--kb-ink); }
 .checkin-participant-group { min-width: 0; }
-.checkin-panel--map .checkin-participant-group { padding: 16px; border-radius: 16px; background: #f2f5f2; }
+.checkin-panel--map .checkin-participant-group { padding: 12px; border-radius: 16px; background: #f2f5f2; }
 .checkin-panel--map .checkin-participants { gap: 0; }
-.checkin-panel--map .checkin-participants legend { margin-bottom: 6px; padding: 0; color: var(--kb-ink); font-size: .88rem; font-weight: 650; }
-.checkin-panel--map .checkin-participants label { display: grid; grid-template-columns: 38px minmax(0, 1fr) 22px; align-items: center; min-height: 56px; gap: 11px; padding: 9px 0; border: 0; border-radius: 0; background: transparent; }
+.checkin-panel--map .checkin-participants legend { margin-bottom: 4px; padding: 0; color: var(--kb-ink); font-size: .88rem; font-weight: 650; }
+.checkin-panel--map .checkin-participants label { display: grid; grid-template-columns: 30px minmax(0, 1fr) 22px; align-items: center; min-height: 44px; gap: 10px; margin: 0; padding: 6px 0; border: 0; border-radius: 0; background: transparent; }
 .checkin-panel--map .checkin-participants label + label { border-top: 1px solid #e0e6e1; }
-.checkin-participant__avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #202926; color: #fff; font-size: .92rem; font-weight: 600; }
-.checkin-panel--map .checkin-participants input { grid-column: 3; grid-row: 1; width: 22px; height: 22px; margin: 0; accent-color: #eb4136; }
+.checkin-participant__avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #202926; color: #fff; font-size: .78rem; font-weight: 600; }
+.checkin-panel--map .checkin-participants input { grid-column: 3; grid-row: 1; width: 22px; min-height: 22px; height: 22px; margin: 0; padding: 0; accent-color: #eb4136; }
 .checkin-panel--map .checkin-participant__name { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: .87rem; font-weight: 600; line-height: 1.3; }
 .checkin-participant-hint { margin: 8px 0 0; color: var(--kb-muted); font-size: .73rem; line-height: 1.5; }
-.checkin-panel--map .checkin-attestation { align-items: center; margin: 4px 0; padding: 12px; border: 0; border-radius: 12px; background: #f5f6f3; }
+.checkin-panel--map .checkin-attestation { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; padding: 10px 12px; border: 0; border-radius: 12px; background: #f5f6f3; }
+.checkin-panel--map .checkin-attestation input { flex: 0 0 22px; width: 22px; height: 22px; min-height: 22px; margin: 0; padding: 0; }
 .checkin-panel--map .checkin-attestation strong { font-size: .8rem; }
 .checkin-panel--map .checkin-attestation small { font-size: .71rem; line-height: 1.4; }
 .checkin-media-details { border-top: 1px solid #eceeeb; }
@@ -1027,7 +1033,7 @@
 .checkin-media-details__camera { flex: 0 0 22px; }
 .checkin-media-details__toggle { margin-left: auto; }
 .checkin-panel--map .checkin-media-details { border: 0; }
-.checkin-panel--map .checkin-media-details summary { gap: 12px; min-height: 52px; padding: 12px 16px; border-radius: 14px; color: var(--kb-ink); background: #fff; box-shadow: inset 0 0 0 1.5px #d9dfda; font-size: .88rem; font-weight: 600; }
+.checkin-panel--map .checkin-media-details summary { gap: 12px; min-height: 44px; padding: 10px 14px; border-radius: 14px; color: var(--kb-ink); background: #fff; box-shadow: inset 0 0 0 1.5px #d9dfda; font-size: .88rem; font-weight: 600; }
 .checkin-panel--map .checkin-media-details summary:hover { background: #f7f9f6; }
 .checkin-panel--map .checkin-media-details summary:focus-visible { outline: 2px solid var(--kb-ink); outline-offset: 3px; }
 .checkin-panel--map .checkin-media-details[open] summary { margin-bottom: 12px; }

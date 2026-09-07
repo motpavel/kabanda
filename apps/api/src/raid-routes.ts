@@ -228,6 +228,14 @@ export async function registerRaidRoutes(
       .send({ track: await dependencies.raids.getRouteTrack(user.id, raidId) })
   })
 
+  app.put('/api/raids/:raidId/destination', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const input = commandSchema.extend({ pointSnapshotId: z.uuid() }).strict().parse(request.body)
+    return dependencies.raids.setDestination(user.id, raidId, input, operationId(request))
+  })
+
   app.get('/api/raids/:raidId/map-points', async (request, reply) => {
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)

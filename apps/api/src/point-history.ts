@@ -5,7 +5,7 @@ import { KabandaError } from './kabandas.js'
 // Read confirmed visits, not attempts: retries and delayed outbox replay must
 // never inflate the personal count. Completed raids use the frozen result.
 export async function readPointVisitHistory(
-  pool: Pool, userId: string, kabandaId: string, pointId: string, offset = 0,
+  pool: Pick<Pool, 'query'>, userId: string, kabandaId: string, pointId: string, offset = 0, visitorId?: string,
 ): Promise<PointVisitHistory> {
   const access = await pool.query(
     `SELECT 1 FROM kabanda_memberships m
@@ -18,6 +18,7 @@ export async function readPointVisitHistory(
   const result = await pool.query<{
     id: string; raid_id: string | null; title: string; state: string | null
     visited_at: Date; mine: boolean; visits: PointVisitHistory['entries'][number]['visits']
+    visitors: PointVisitHistory['visitors']
     participants: PointVisitHistory['entries'][number]['participants']; personal_visits: string; personal_total: string; total_count: string
   }>(
     `WITH visible_credits AS (
@@ -60,19 +61,32 @@ export async function readPointVisitHistory(
          '[]'::jsonb
        FROM point_visits v JOIN users u ON u.id = v.user_id
        WHERE v.kabanda_id = $2 AND v.point_id = $3
+     ), visitor_counts AS (
+       SELECT v."userId" AS user_id,
+         (array_agg(v."displayName" ORDER BY v."visitedAt" DESC))[1] AS display_name,
+         count(*)::int AS visit_count, max(v."visitedAt") AS last_visit
+       FROM entries CROSS JOIN LATERAL jsonb_to_recordset(visits)
+         AS v("userId" uuid, "displayName" text, "visitedAt" timestamptz)
+       GROUP BY v."userId"
      ), totals AS (
-       SELECT coalesce(sum(personal_visits::int), 0)::text AS personal_total, count(*)::text AS total_count FROM entries
+       SELECT coalesce(sum(personal_visits::int), 0)::text AS personal_total,
+         count(*) FILTER (WHERE $5::uuid IS NULL OR visits @> jsonb_build_array(jsonb_build_object('userId', $5::uuid)))::text AS total_count,
+         coalesce((SELECT jsonb_agg(jsonb_build_object('userId', user_id, 'displayName', display_name,
+           'count', visit_count) ORDER BY last_visit DESC, user_id) FROM visitor_counts), '[]'::jsonb) AS visitors
+       FROM entries
      )
      SELECT page.*, totals.* FROM totals LEFT JOIN LATERAL (
-       SELECT * FROM entries ORDER BY visited_at DESC, id DESC LIMIT 20 OFFSET $4
+       SELECT * FROM entries
+       WHERE $5::uuid IS NULL OR visits @> jsonb_build_array(jsonb_build_object('userId', $5::uuid))
+       ORDER BY visited_at DESC, id DESC LIMIT 20 OFFSET $4
      ) page ON true`,
-    [userId, kabandaId, pointId, offset],
+    [userId, kabandaId, pointId, offset, visitorId ?? null],
   )
   const totalCount = Number(result.rows[0]?.total_count ?? 0)
   const entries = result.rows.filter((row) => row.id).map((row) => ({
     id: row.id, raidId: row.raid_id, title: row.title, state: row.state,
     visitedAt: row.visited_at.toISOString(), mine: row.mine, personalVisits: Number(row.personal_visits), visits: row.visits, participants: row.participants,
   }))
-  return { personalCount: Number(result.rows[0]?.personal_total ?? 0), entries,
+  return { visitors: result.rows[0]?.visitors ?? [], personalCount: Number(result.rows[0]?.personal_total ?? 0), entries,
     nextOffset: offset + entries.length < totalCount ? offset + entries.length : null }
 }

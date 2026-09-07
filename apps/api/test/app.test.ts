@@ -89,6 +89,7 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
     recoverNavigatorLease: vi.fn(),
     submitRouteBatch: vi.fn(),
     getRouteTrack: vi.fn().mockResolvedValue({ segments: [], pointCount: 0, truncated: false, updatedAt: null, serverAt: '2026-08-28T12:00:00.000Z' }),
+    setDestination: vi.fn(),
     getMapPoints: vi.fn().mockResolvedValue({ points: [] }),
     reportPresence: vi.fn().mockResolvedValue({ radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: '2026-08-28T12:00:00.000Z' }),
     getPresenceRoster: vi.fn().mockResolvedValue({ radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: '2026-08-28T12:00:00.000Z' }),

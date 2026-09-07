@@ -55,6 +55,7 @@ export function RaidRouteMap({
   live,
   location,
   highlightedPointId,
+  destinationPointId = null,
   onSelectPoint,
 }: {
   identityId: string
@@ -63,6 +64,7 @@ export function RaidRouteMap({
   live: boolean
   location: OneShotCoordinate | null
   highlightedPointId: string | null
+  destinationPointId?: string | null
   onSelectPoint: (point: RaidMapPoint) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -73,6 +75,8 @@ export function RaidRouteMap({
   const riderRef = useRef<YandexMapObject | null>(null)
   const firstViewApplied = useRef(false)
   const firstLocationApplied = useRef(false)
+  const [following, setFollowing] = useState(false)
+  const mapGesture = useRef<{ id: number; x: number; y: number } | null>(null)
   const [providerState, setProviderState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [track, setTrack] = useState<RouteTrackProjection | null>(null)
   const [points, setPoints] = useState<RaidMapPoint[]>([])
@@ -202,16 +206,19 @@ export function RaidRouteMap({
     }
     for (const point of points) {
       const highlighted = point.id === highlightedPointId
-      const markerClass = `raid-live-point${point.visitedByMe ? ' raid-live-point--visited' : ''}${highlighted && !point.visitedByMe ? ' raid-live-point--nearby' : ''}`
+      const isDestination = point.id === destinationPointId
+      const visited = point.visitedByMe
+      const markerClass = `raid-live-point${visited ? ' raid-live-point--visited' : ''}${highlighted && !visited ? ' raid-live-point--nearby' : ''}${isDestination ? ' raid-live-point--destination' : ''}`
       const marker = new runtime.Placemark([point.latitude, point.longitude], {
         markerClass,
-        ariaLabel: `${point.name}. ${point.visitedByMe ? 'Вы уже были. История посещений' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда. История посещений'}`,
+        ariaLabel: `${point.name}. ${isDestination ? 'Цель рейда. ' : ''}${point.visitedByMe ? 'Вы уже были. История посещений' : point.visitedByTeam ? 'Кабанда уже была. История посещений' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда. История посещений'}`,
       }, {
         iconLayout: pointLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: highlighted ? 22 : 14 },
+        iconShape: { type: 'Circle', coordinates: [0, 0], radius: highlighted && !visited && !isDestination ? 22 : 16 },
         hasBalloon: false,
         hasHint: false,
-        zIndex: highlighted ? 8 : point.visitedByTeam ? 1 : 4,
+        interactiveZIndex: false,
+        zIndex: isDestination ? 25 : highlighted ? 24 : 20,
       })
       marker.events.add('click', (event) => { event.stopPropagation?.(); onSelectPoint(point) })
       pointObjectsRef.current.push(marker)
@@ -223,7 +230,7 @@ export function RaidRouteMap({
       map.setCenter(view.center, view.zoom, { duration: 0 })
       firstViewApplied.current = true
     }
-  }, [highlightedPointId, onSelectPoint, planned, points, providerState])
+  }, [destinationPointId, highlightedPointId, onSelectPoint, planned, points, providerState])
 
   useEffect(() => {
     const map = mapRef.current
@@ -239,9 +246,10 @@ export function RaidRouteMap({
     )
     const rider = new runtime.Placemark(markerCoordinate, {}, {
       iconLayout: riderLayout,
-      iconShape: { type: 'Circle', coordinates: [0, 0], radius: 23 },
+      iconShape: { type: 'Circle', coordinates: [0, 0], radius: 16 },
       hasBalloon: false,
       hasHint: false,
+      interactiveZIndex: false,
       zIndex: 10,
     })
     riderRef.current = rider
@@ -262,18 +270,46 @@ export function RaidRouteMap({
     if (map) map.setZoom(Math.max(3, Math.min(19, map.getZoom() + delta)), { duration: 180 })
   }
 
-  const centerLocation = () => {
+  useEffect(() => {
     const map = mapRef.current
-    if (map && location) map.setCenter([location.latitude, location.longitude], 15, { duration: 260, timingFunction: 'ease-in-out' })
+    if (!following || providerState !== 'ready' || !map || !location) return
+    firstLocationApplied.current = true
+    firstViewApplied.current = true
+    map.setCenter([location.latitude, location.longitude], map.getZoom(), {
+      duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260,
+      timingFunction: 'ease-in-out',
+    })
+  }, [following, location, providerState])
+
+  const stopFollowing = () => {
+    setFollowing(false)
+    // A late first GPS fix or track response must not undo manual browsing.
+    firstLocationApplied.current = true
+    firstViewApplied.current = true
   }
 
   return <div className="route-live-map-shell">
     {planned && <p className="raid-route-legend">Пунктир — порядок точек, не навигация · чёрный — пройденный путь</p>}
-    <div className="route-live-map" ref={containerRef} />
+    <div className="route-live-map" ref={containerRef}
+      onPointerDownCapture={(event) => {
+        if (!event.isPrimary) { stopFollowing(); return }
+        if (event.button !== 0) return
+        mapGesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+      }}
+      onPointerMoveCapture={(event) => {
+        const start = mapGesture.current
+        if (start?.id === event.pointerId && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) stopFollowing()
+      }}
+      onPointerUpCapture={() => { mapGesture.current = null }}
+      onPointerCancelCapture={() => { if (mapGesture.current) stopFollowing(); mapGesture.current = null }}
+      onWheelCapture={stopFollowing}
+      onDoubleClickCapture={stopFollowing}
+      onKeyDownCapture={(event) => { if (event.key.startsWith('Arrow')) stopFollowing() }}
+    />
     <nav className="raid-map-controls" aria-label="Управление картой">
       <button aria-label="Увеличить карту" onClick={() => changeZoom(1)} type="button"><RaidControlIcon name="plus" /></button>
       <button aria-label="Уменьшить карту" onClick={() => changeZoom(-1)} type="button"><RaidControlIcon name="minus" /></button>
-      <button aria-label="Показать моё местоположение" disabled={!location} onClick={centerLocation} type="button"><RaidControlIcon name="location" /></button>
+      <button aria-label="Показать моё местоположение" aria-pressed={following} className="raid-map-controls__follow" disabled={!location || providerState !== 'ready'} onClick={() => setFollowing((current) => !current)} type="button"><RaidControlIcon name="location" /></button>
     </nav>
     {providerState === 'loading' && <p className="route-live-map__state" role="status">Загружаем карту…</p>}
     {providerState === 'failed' && <p className="route-live-map__state route-live-map__state--error" role="alert">Карта не загрузилась. Трек продолжает записываться.</p>}

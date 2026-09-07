@@ -10,9 +10,9 @@ test('map marker buttons keep their shape, color and anchor under app button sty
     document.body.innerHTML = '<main class="kb-shell"><section class="raid-active-map"><button class="raid-live-point" aria-label="Normal" style="position:absolute;left:100px;top:180px"></button><button class="raid-live-point raid-live-point--nearby" aria-label="Nearby" style="position:absolute;left:100px;top:280px"></button><button class="raid-live-point raid-live-point--visited" aria-label="Visited" style="position:absolute;left:100px;top:380px"></button></section></main>'
   })
   for (const [name, size, border, color] of [
-    ['Normal', 27, 7, 'rgb(234, 62, 53)'],
-    ['Nearby', 35, 9, 'rgb(234, 62, 53)'],
-    ['Visited', 27, 7, 'rgb(140, 146, 143)'],
+    ['Normal', 18, 5, 'rgb(234, 62, 53)'],
+    ['Nearby', 24, 6, 'rgb(234, 62, 53)'],
+    ['Visited', 18, 5, 'rgb(133, 214, 154)'],
   ] as const) {
     const marker = page.getByRole('button', { name, exact: true })
     const assertShape = async () => {

@@ -211,6 +211,7 @@ export type CreateRaidTemplate = z.infer<typeof createRaidTemplateSchema>
 export type ReverseGeocodeQuery = z.infer<typeof reverseGeocodeQuerySchema>
 export type ReverseGeocodeResult = z.infer<typeof reverseGeocodeResultSchema>
 export interface PointVisitHistory {
+  visitors: Array<{ userId: string; displayName: string; count: number }>
   personalCount: number
   nextOffset: number | null
   entries: Array<{
@@ -226,3 +227,12 @@ export interface PointVisitHistory {
   }>
 }
 export { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_SOURCE, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores.js'
+
+export interface RaidDestination {
+  pointSnapshotId: string
+  sourcePointId: string
+  name: string
+  latitude: number
+  longitude: number
+  selectedAt: string
+}
