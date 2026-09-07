@@ -22,6 +22,17 @@ describe('live raid route map', () => {
     expect(view.zoom).toBe(13)
   })
 
+  it('keeps both endpoints and labels inside a narrow completed-ride map', () => {
+    const points = [{ latitude: 56.82, longitude: 53.16 }, { latitude: 56.88, longitude: 53.23 }]
+    const viewport = { width: 330, height: 440 }
+    const view = routeTrackView(points, viewport)
+    const scale = 256 * 2 ** view.zoom
+    const y = (latitude: number) => Math.log(Math.tan(Math.PI / 4 + latitude * Math.PI / 360)) / (2 * Math.PI)
+    expect((points[1]!.longitude - points[0]!.longitude) / 360 * scale).toBeLessThanOrEqual(viewport.width - 160)
+    expect((y(points[1]!.latitude) - y(points[0]!.latitude)) * scale).toBeLessThanOrEqual(viewport.height - 144)
+    expect(Number.isFinite(routeTrackView([points[0]!], viewport).zoom)).toBe(true)
+  })
+
   it('never labels the team track endpoint as the viewer location', () => {
     expect(userMarkerCoordinate(null)).toBeNull()
     expect(userMarkerCoordinate({

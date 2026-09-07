@@ -20,7 +20,7 @@ export async function shareResultCard(
   const file = typeof File === 'function' ? new File([blob], filename, { type: 'image/png' }) : null
   const data: ShareData = {
     title,
-    text: 'Канонический итог рейда КАБАНДЫ',
+    text: 'Ещё одна поездка с Кабандой 🚲',
     ...(file ? { files: [file] } : {}),
   }
   if (file && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare(data)) {

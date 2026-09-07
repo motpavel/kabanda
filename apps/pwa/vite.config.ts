@@ -66,7 +66,7 @@ export default defineConfig({
         theme_color: '#232a35',
         background_color: '#f7f7f5',
         display: 'standalone',
-        orientation: 'any',
+        orientation: 'portrait-primary',
         start_url: `${base}app`,
         scope: base,
         icons: [

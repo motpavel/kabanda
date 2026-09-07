@@ -19,7 +19,7 @@ export function CompletedRaidRoute({ identityId, raid }: { identityId: string; r
   return <section className="kb-card result-route" aria-label="Маршрут и посещения рейда">
     <h2>Маршрут рейда</h2>
     <div className="raid-active-map result-route__map">
-      <RaidRouteMap identityId={identityId} raidId={raid.id} live={false} location={null} highlightedPointId={null} onSelectPoint={setSelected} />
+      <RaidRouteMap identityId={identityId} raidId={raid.id} live={false} completed location={null} highlightedPointId={null} onSelectPoint={setSelected} />
     </div>
     {points.length > 0 && <>
       <h3>Посещённые точки</h3>

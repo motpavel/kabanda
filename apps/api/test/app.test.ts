@@ -430,6 +430,7 @@ describe('API foundation', () => {
     expect(first.equals(second)).toBe(true)
     expect(first.length).toBeLessThan(1024 * 1024)
     expect(first.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+    expect([first.readUInt32BE(16), first.readUInt32BE(20)]).toEqual([1080, 1350])
     const chunkTypes: string[] = []
     for (let offset = 8; offset + 12 <= first.length; ) {
       const length = first.readUInt32BE(offset)

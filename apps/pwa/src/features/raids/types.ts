@@ -134,6 +134,8 @@ export interface RouteTrackPoint {
 
 export interface RouteTrackProjection {
   segments: RouteTrackPoint[][]
+  startPoint?: RouteTrackPoint | null
+  endPoint?: RouteTrackPoint | null
   pointCount: number
   truncated: boolean
   updatedAt: string | null

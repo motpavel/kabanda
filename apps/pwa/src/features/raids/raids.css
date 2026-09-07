@@ -1139,3 +1139,15 @@
 .result-route__history .kb-section-head h3 { margin: 0 0 14px; }
 .result-route__history .kb-section-head button { flex: 0 0 44px; }
 .result-route .result-route__map { z-index: 0; isolation: isolate; }
+
+.result-share img { max-width: 420px; aspect-ratio: 4 / 5; object-fit: contain; justify-self: center; }
+.kb-shell .result-share__button { display: flex; justify-content: center; width: 100%; min-height: 48px; border: 1.5px solid #d63830; color: #c6342d; background: #fff; font-weight: 700; }
+.kb-shell a.result-next.kb-primary { display: block; border: 1px solid #e54536; border-radius: 14px; padding: 15px 18px; color: #fff; background: #e54536; font-weight: 700; text-decoration: none; }
+.kb-shell a.result-history-link { display: block; width: 100%; min-height: 44px; padding: 12px; color: #626b65; background: transparent; text-align: center; text-decoration: none; font-size: .88rem; }
+.kb-shell a.result-history-link:hover { color: #202522; text-decoration: underline; }
+
+.raid-track-endpoint { position: absolute; display: flex; align-items: center; gap: 7px; height: 26px; transform: translate(-7px, -13px); color: #202522; pointer-events: none; white-space: nowrap; }
+.raid-track-endpoint i { display: block; flex: 0 0 14px; width: 14px; height: 14px; border: 3px solid #fff; border-radius: 50%; background: #37a263; box-shadow: 0 1px 5px #0005; }
+.raid-track-endpoint b { display: block; border: 1px solid #d9dfda; border-radius: 7px; padding: 4px 7px; background: #fff; box-shadow: 0 2px 8px #0002; font-size: 11px; font-weight: 750; line-height: 1.2; }
+.raid-track-endpoint--finish i, .raid-track-endpoint--both i { border-radius: 3px; background: repeating-conic-gradient(#202522 0% 25%, #fff 0% 50%) 50% / 6px 6px; }
+.raid-track-endpoint--start { flex-direction: row-reverse; transform: translate(calc(-100% + 7px), -13px); }

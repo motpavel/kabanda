@@ -1,3 +1,5 @@
+import { renderRaidShareCard } from './raid-share-card.js'
+export { escapeShareCardXml, renderRaidShareCard } from './raid-share-card.js'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_SOURCE, type RaidDestination } from '@kabanda/contracts'
 import sharp, { type Metadata, type Sharp } from 'sharp'
@@ -32,40 +34,6 @@ export function deriveMediaUploadCapability(
   return createHmac('sha256', secret)
     .update(`raid-media-upload:v1:${raidId}:${intentId}:${actorUserId}`)
     .digest('base64url')
-}
-
-export function escapeShareCardXml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;')
-}
-
-export async function renderRaidShareCard(result: RaidResult): Promise<Buffer> {
-  const title = escapeShareCardXml(result.raid.title.slice(0, 120))
-  const date = escapeShareCardXml(result.raid.completedAt.slice(0, 10))
-  const distanceKm = (result.team.distanceMeters / 1000).toFixed(1)
-  const durationMinutes = Math.round(result.team.durationSeconds / 60)
-  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
-    <rect width="1200" height="630" fill="#1a1410"/>
-    <rect x="42" y="42" width="1116" height="546" rx="34" fill="#f4e9d4"/>
-    <text x="92" y="126" font-family="DejaVu Sans, sans-serif" font-size="46" font-weight="700" fill="#3b2c22">KABANDA</text>
-    <text x="92" y="202" font-family="DejaVu Sans, sans-serif" font-size="42" font-weight="700" fill="#245d3b">${title}</text>
-    <text x="92" y="254" font-family="DejaVu Sans, sans-serif" font-size="25" fill="#795c3f">${date}</text>
-    <text x="92" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">DISTANCE</text>
-    <text x="92" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${distanceKm} km</text>
-    <text x="390" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">TIME</text>
-    <text x="390" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${durationMinutes} min</text>
-    <text x="680" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">POINTS</text>
-    <text x="680" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${result.team.uniquePoints}</text>
-    <text x="940" y="366" font-family="DejaVu Sans, sans-serif" font-size="26" fill="#795c3f">TEAM</text>
-    <text x="940" y="428" font-family="DejaVu Sans, sans-serif" font-size="48" font-weight="700" fill="#245d3b">${result.participants.length}</text>
-  </svg>`)
-  return sharp(svg, { density: 144 })
-    .png({ compressionLevel: 9, adaptiveFiltering: false })
-    .toBuffer()
 }
 
 export type CreateRaidInput = {
@@ -130,6 +98,8 @@ export type RouteTrackPoint = {
 
 export type RouteTrackProjection = {
   segments: RouteTrackPoint[][]
+  startPoint?: RouteTrackPoint | null
+  endPoint?: RouteTrackPoint | null
   pointCount: number
   truncated: boolean
   updatedAt: string | null
@@ -1086,6 +1056,8 @@ export class DatabaseRaidService implements RaidService {
         longitude: number
         continues_previous: boolean
         server_at: Date
+        start_point: RouteTrackPoint | null
+        end_point: RouteTrackPoint | null
       }>(
         `WITH ordered AS (
            SELECT s.lease_id, l.generation, s.sequence, s.captured_at, s.geom, s.accuracy_m,
@@ -1115,6 +1087,8 @@ export class DatabaseRaidService implements RaidService {
              AND EXISTS (SELECT 1 FROM raid_activity_windows w
                WHERE w.raid_id = $1 AND previous_at >= w.opened_at
                  AND captured_at <= coalesce(w.closed_at, clock_timestamp()))) AS continues_previous,
+           first_value(jsonb_build_object('latitude', ST_Y(geom::geometry), 'longitude', ST_X(geom::geometry), 'capturedAt', captured_at)) OVER (ORDER BY generation, sequence ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS start_point,
+           last_value(jsonb_build_object('latitude', ST_Y(geom::geometry), 'longitude', ST_X(geom::geometry), 'capturedAt', captured_at)) OVER (ORDER BY generation, sequence ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS end_point,
            clock_timestamp() AS server_at
          FROM ordered
          WHERE accuracy_m <= 50
@@ -1145,6 +1119,8 @@ export class DatabaseRaidService implements RaidService {
       }
       return {
         segments,
+        startPoint: result.rows[0]?.start_point ?? segments[0]?.[0] ?? null,
+        endPoint: result.rows[0]?.end_point ?? null,
         pointCount: rows.length,
         truncated: result.rows.length > rows.length,
         updatedAt: rows.at(-1)?.captured_at.toISOString() ?? null,
@@ -2605,15 +2581,15 @@ export class DatabaseRaidService implements RaidService {
   }
 
   async getShareCard(actorUserId: string, raidId: string): Promise<Buffer> {
-    const result = await this.pool.query<{ share_png: Buffer }>(
-      `SELECT rr.share_png FROM raid_results rr
+    const result = await this.pool.query<{ result_json: RaidResult }>(
+      `SELECT rr.result_json FROM raid_results rr
        JOIN kabanda_memberships m
          ON m.kabanda_id = rr.kabanda_id AND m.user_id = $2 AND m.removed_at IS NULL
        WHERE rr.raid_id = $1`,
       [raidId, actorUserId],
     )
     if (!result.rows[0]) throw this.notFound()
-    return result.rows[0].share_png
+    return renderRaidShareCard(result.rows[0].result_json)
   }
 
   async getRaid(actorUserId: string, raidId: string): Promise<RaidProjection> {

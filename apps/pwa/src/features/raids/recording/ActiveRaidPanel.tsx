@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RaidPrimaryAction } from '../state'
 import type { RaidMapPoint, RaidProjection } from '../types'
+import { PointInfoSheet } from '../../checkins/PointInfoSheet'
 import { PointVisitHistory } from '../../checkins/PointVisitHistory'
 import { selectActivePrimaryAction } from './state'
 import { useRouteRecorder } from './useRouteRecorder'
@@ -102,8 +103,6 @@ export function ActiveRaidPanel({
   const arrivalAvailable = raid.state === 'active' && Boolean(activePoint || hasCheckInAttention)
   const actionsSheet = useSlideSheet<HTMLDialogElement>(actionsOpen, () => setActionsOpen(false))
   const arrivalSheet = useSlideSheet<HTMLElement>(sheetOpen && arrivalAvailable && !inspectedPoint && !actionsOpen, () => setSheetOpen(false))
-  const historySheet = useSlideSheet<HTMLElement>(historyOpen && !actionsOpen, () => setHistoryOpen(false))
-  useEffect(() => { historySheet.ref.current?.scrollTo({ top: 0 }) }, [historyPoint?.id, historySheet.ref])
   const recorderLabel = viewerIsNavigator ? ({
     fresh: 'Маршрут записывается',
     waiting: 'Ищем GPS-сигнал',
@@ -248,13 +247,8 @@ export function ActiveRaidPanel({
       <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onRefused={onCheckInRefused} onAttentionChange={setCheckInAttention} onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={repeatArrival} onSaved={onCheckInSaved} />
     </aside>
 
-    <aside {...historySheet} className="raid-arrival-sheet raid-point-history-sheet" aria-label={historyPoint ? `История точки: ${historyPoint.name}` : 'История точки'} onKeyDown={(event) => { if (event.key === 'Escape') setHistoryOpen(false) }}>
-      <button className="raid-arrival-sheet__collapse" data-sheet-drag="true" aria-label="Свернуть историю точки" onClick={() => setHistoryOpen(false)} type="button"><span /></button>
+    <PointInfoSheet open={historyOpen && !actionsOpen} onClose={() => setHistoryOpen(false)} title={historyPoint?.name ?? ''} kicker={historyPoint?.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : 'ТОЧКА РЕЙДА'} distance={inspectedDistanceLabel}>
       {historyPoint && <>
-        <div className="raid-arrival-sheet__heading" data-sheet-drag="true">
-          <div><small>{historyPoint.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : 'ТОЧКА РЕЙДА'}</small><h2>{historyPoint.name}</h2></div>
-          {inspectedDistanceLabel && <span className="raid-arrival-sheet__distance">{inspectedDistanceLabel.value}<small>{inspectedDistanceLabel.unit}</small></span>}
-        </div>
         <PointVisitHistory key={`${identityId}:${historyPoint.sourcePointId}`} identityId={identityId} kabandaId={raid.kabandaId} pointId={historyPoint.sourcePointId} currentRaidId={raid.id} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen} />
         {raid.state === 'active' && inspectedNearby && !(raid.routeTemplateId && inspectedVisited) && <div className="raid-point-history-sheet__action">
           <button type="button" className="kb-primary raid-primary" disabled={pendingCheckIns > 0} onClick={() => {
@@ -271,7 +265,7 @@ export function ActiveRaidPanel({
           </button>
         </div>}
       </>}
-    </aside>
+    </PointInfoSheet>
 
     {destination && raid.state === 'active' && !arrivalAvailable && !inspectedPoint && !actionsOpen && <button className="raid-arrival-pill raid-destination-pill" type="button" onClick={() => inspectPoint({ id: destination.pointSnapshotId, sourcePointId: destination.sourcePointId, name: destination.name, latitude: destination.latitude, longitude: destination.longitude, position: 0, visitedByMe: false, visitedByTeam: false })}>
       <RaidControlIcon name="pin" /><span><strong>Двигаемся сюда</strong><small>{destination.name}</small></span><b aria-hidden="true">›</b>

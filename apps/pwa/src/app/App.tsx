@@ -11,6 +11,7 @@ import { RecordingRuntimeProvider } from '../features/raids/recording/runtime'
 import { parseRaidRoute } from '../features/raids/routing'
 import { AlphaDiagnosticsConsent } from './AlphaDiagnosticsConsent'
 import { InstallProvider } from '../features/install/InstallGuidance'
+import { PortraitMode } from './PortraitMode'
 import { RetainedScreen } from './RetainedScreen'
 
 export function App() {
@@ -20,7 +21,7 @@ export function App() {
   if (window.location.pathname.endsWith('/prototype')) return <PrototypePage />
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab')) return <CapabilityLabPage />
-  return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PwaUpdateGate /><AlphaDiagnosticsConsent /></RecordingRuntimeProvider></InstallProvider>
+  return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PortraitMode /><PwaUpdateGate /><AlphaDiagnosticsConsent /></RecordingRuntimeProvider></InstallProvider>
 }
 
 function AppRoute() {

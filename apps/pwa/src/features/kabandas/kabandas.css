@@ -479,7 +479,7 @@
 .kb-yandex-marker::before { position: absolute; inset: 4px; border-radius: inherit; background: #fff; content: ""; }
 .kb-yandex-marker::after { position: absolute; inset: -9px; border-radius: 50%; content: ""; }
 .kb-yandex-marker--attractions { background: #60bdea !important; }
-.kb-yandex-marker.visited, .kb-yandex-marker.visited.selected { background: #929a96 !important; }
+.kb-yandex-marker.visited, .kb-yandex-marker.visited.selected { background: #85d69a !important; }
 .kb-yandex-marker.selected {
   width: 23px;
   min-height: 23px !important;
@@ -674,7 +674,7 @@
 .kb-dot { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgb(65 75 68 / 20%); }
 .kb-dot--stores { background: #ed1c24; }
 .kb-dot--attractions { background: #60bdea; }
-.kb-dot.visited { background: #929a96; }
+.kb-dot.visited { background: #85d69a; }
 .kb-empty-inline { display: grid; gap: 5px; padding: 40px 12px; color: var(--kb-muted); text-align: center; }
 .kb-empty-inline strong { color: var(--kb-ink); }
 
@@ -1129,3 +1129,6 @@
 @media (max-width: 360px) {
   .rt-editor-nav__brand img.kb-brand__wordmark[alt] { width: 86px; height: 33px; }
 }
+
+.kb-map-screen:has(.point-info-sheet:not([hidden])) { z-index: 81; }
+.kb-yandex-marker.selected:not(.visited) { background: #ea3e35 !important; }

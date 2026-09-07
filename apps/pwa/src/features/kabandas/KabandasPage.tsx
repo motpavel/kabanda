@@ -2,6 +2,7 @@ import '@fontsource-variable/manrope'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
+import { PointInfoSheet } from '../checkins/PointInfoSheet'
 import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
@@ -31,7 +32,7 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
-import { IZHEVSK_KB_STORES, IZHEVSK_KB_STORES_UPDATED_AT } from './izhevsk-kb-stores'
+import { IZHEVSK_KB_STORES } from './izhevsk-kb-stores'
 import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
 import { HomeDashboard } from '../home/HomeDashboard'
@@ -421,7 +422,7 @@ function KabandaWorkspace({
     return () => {
       active = false
     }
-  }, [kabanda, user.id, webglAvailable])
+  }, [kabanda, user.id, webglAvailable, active, section])
 
   useEffect(() => {
     if (section !== 'kabanda' && section !== 'home') return
@@ -550,13 +551,10 @@ function KabandaWorkspace({
               {activeProviderState === 'failed' && visiblePoints.length > 0 && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком.</p>}
             </div>
           )}
-          {selectedPoint && (
-            <aside className="kb-point-sheet" aria-label={`Точка: ${selectedPoint.name}`}>
-              <button className="kb-point-sheet-close" type="button" aria-label="Закрыть информацию о точке" onClick={() => setSelectedPointId(null)}>×</button>
-              <PointDetail point={selectedPoint} />
-              {selectedPoint.category === 'attractions' && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedPoint.id}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedPoint.id} />}
-            </aside>
-          )}
+          <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.category === 'stores' ? selectedPoint.address ?? selectedPoint.name : selectedPoint?.name ?? ''} kicker={selectedPoint?.category === 'stores' ? 'КРАСНОЕ&БЕЛОЕ' : 'ТОЧКА ГОРОДА'}>
+            {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
+            {selectedPoint?.category === 'attractions' && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedPoint.id}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedPoint.id} onOpenRaid={() => setSelectedPointId(null)} />}
+          </PointInfoSheet>
         </div>
       </section>
     ) : null
@@ -847,7 +845,7 @@ function Brand() {
 
 function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {
   if (!points.length) return <div className="kb-empty-inline"><strong>Точек пока нет</strong><span>Когда вожак добавит места, они появятся здесь.</span></div>
-  return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${point.visitedByMe ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
+  return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 
 type MapView = {
@@ -879,6 +877,14 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     const container = containerRef.current
     if (!container) return
     let active = true
+    const resize = new ResizeObserver(() => {
+      const map = mapRef.current
+      if (!map) return
+      const center = map.getCenter(), zoom = map.getZoom()
+      map.container?.fitToViewport?.()
+      map.setCenter(center, zoom, { duration: 0 })
+    })
+    resize.observe(container)
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
     setProviderState('checking')
 
@@ -907,6 +913,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     })
 
     return () => {
+      resize.disconnect()
       active = false
       setMapReady(false)
       markersRef.current.clear()
@@ -931,7 +938,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
 
     for (const point of points) {
       const selected = selectedId === point.id
-      const markerClass = `kb-yandex-marker kb-yandex-marker--${point.category}${point.visitedByMe ? ' visited' : ''}${selected ? ' selected' : ''}`
+      const markerClass = `kb-yandex-marker kb-yandex-marker--${point.category}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}${selected ? ' selected' : ''}`
       const ariaLabel = point.category === 'stores'
         ? `${point.name}. ${point.address}`
         : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`
@@ -946,7 +953,8 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         hasHint: false,
         openBalloonOnClick: false,
         openHintOnHover: false,
-        zIndex: selected ? 2 : 1,
+        interactiveZIndex: false,
+        zIndex: selected ? 24 : 20,
       })
       placemark.events.add('click', (event) => {
         event.stopPropagation?.()
@@ -965,9 +973,9 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
   useEffect(() => {
     for (const [id, marker] of markersRef.current) {
       const selected = id === selectedId
-      marker.placemark.properties.set('markerClass', `kb-yandex-marker kb-yandex-marker--${marker.point.category}${marker.point.visitedByMe ? ' visited' : ''}${selected ? ' selected' : ''}`)
+      marker.placemark.properties.set('markerClass', `kb-yandex-marker kb-yandex-marker--${marker.point.category}${(marker.point.visitedByMe || marker.point.visitedByTeam) ? ' visited' : ''}${selected ? ' selected' : ''}`)
       marker.placemark.properties.set('selected', String(selected))
-      marker.placemark.options.set('zIndex', selected ? 2 : 1)
+      marker.placemark.options.set('zIndex', selected ? 24 : 20)
     }
   }, [selectedId])
 
@@ -1002,7 +1010,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         iconShape: { type: 'Circle', coordinates: [0, 0], radius: 23 },
         hasBalloon: false,
         hasHint: false,
-        zIndex: 3,
+        zIndex: 10,
       })
       map.geoObjects.add(userMarkerRef.current)
       setUserLocated(true)
@@ -1032,21 +1040,5 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       </div>
     </div>
     {geolocationError ? <p className="kb-map-geolocation-error" role="alert">{geolocationError}</p> : null}
-  </>
-}
-
-function PointDetail({ point }: { point: MapPoint }) {
-  if (point.category === 'stores') {
-    return <>
-      <p className="kb-point-eyebrow">Красное&amp;Белое</p>
-      <h2>{point.address}</h2>
-      <p className="kb-point-place">Ижевск</p>
-      {point.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{point.hours}</strong></p>}
-      <p className="kb-point-source">Официальный каталог сети · обновлено {new Date(`${IZHEVSK_KB_STORES_UPDATED_AT}T00:00:00`).toLocaleDateString('ru-RU')}</p>
-    </>
-  }
-  return <>
-    <h2>{point.name}</h2>
-    <p className="kb-point-place">Ижевск</p>
   </>
 }

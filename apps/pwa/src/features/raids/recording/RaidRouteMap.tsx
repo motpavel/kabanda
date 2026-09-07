@@ -10,6 +10,7 @@ import { getRaidMapPoints, getRouteTrack } from '../api'
 import type { RaidMapPoint, RouteTrackPoint, RouteTrackProjection } from '../types'
 import { readRaidMapCache, saveRaidMapCache } from './map-cache'
 import { RaidControlIcon } from '../RaidControlIcon'
+import { trackEndpoints } from './track-endpoints'
 import { displayTrackSegment } from './track-display'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
@@ -24,7 +25,7 @@ function sameMapPoints(current: readonly RaidMapPoint[], next: readonly RaidMapP
   })
 }
 
-export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude' | 'longitude'> & Partial<Pick<RouteTrackPoint, 'capturedAt'>>)[]) {
+export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude' | 'longitude'> & Partial<Pick<RouteTrackPoint, 'capturedAt'>>)[], viewport?: { width: number; height: number }) {
   if (!points.length) return { center: IZHEVSK_CENTER, zoom: 12 }
   let minLatitude = points[0]!.latitude
   let maxLatitude = minLatitude
@@ -35,6 +36,19 @@ export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude
     maxLatitude = Math.max(maxLatitude, point.latitude)
     minLongitude = Math.min(minLongitude, point.longitude)
     maxLongitude = Math.max(maxLongitude, point.longitude)
+  }
+  if (viewport && viewport.width > 0 && viewport.height > 0) {
+    const mercatorY = (latitude: number) => Math.log(Math.tan(Math.PI / 4 + Math.max(-85, Math.min(85, latitude)) * Math.PI / 360))
+    const top = mercatorY(maxLatitude), bottom = mercatorY(minLatitude)
+    const horizontalSpan = (maxLongitude - minLongitude) / 360
+    const verticalSpan = (top - bottom) / (2 * Math.PI)
+    // Keep endpoint labels and attribution inside the embedded completed-ride map.
+    const scaleX = Math.max(80, viewport.width - 160) / (256 * Math.max(horizontalSpan, 1e-10))
+    const scaleY = Math.max(80, viewport.height - 144) / (256 * Math.max(verticalSpan, 1e-10))
+    return {
+      center: [(2 * Math.atan(Math.exp((top + bottom) / 2)) - Math.PI / 2) * 180 / Math.PI, (minLongitude + maxLongitude) / 2] as const,
+      zoom: Math.max(1, Math.min(17, Math.floor(Math.log2(Math.min(scaleX, scaleY))))),
+    }
   }
   const span = Math.max(maxLatitude - minLatitude, maxLongitude - minLongitude)
   const zoom = span > .08 ? 12 : span > .04 ? 13 : span > .02 ? 14 : span > .01 ? 15 : span > .005 ? 16 : 17
@@ -51,6 +65,7 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
 export function RaidRouteMap({
   identityId,
   planned = false,
+  completed = false,
   raidId,
   live,
   location,
@@ -60,6 +75,7 @@ export function RaidRouteMap({
 }: {
   identityId: string
   planned?: boolean
+  completed?: boolean
   raidId: string
   live: boolean
   location: OneShotCoordinate | null
@@ -86,6 +102,14 @@ export function RaidRouteMap({
     const container = containerRef.current
     if (!container) return
     let active = true
+    const resize = new ResizeObserver(() => {
+      const map = mapRef.current
+      if (!map) return
+      const center = map.getCenter(), zoom = map.getZoom()
+      map.container?.fitToViewport?.()
+      map.setCenter(center, zoom, { duration: 0 })
+    })
+    resize.observe(container)
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
     void loadYandexMaps(apiKey).then((runtime) => {
       if (!active) return
@@ -102,6 +126,7 @@ export function RaidRouteMap({
       if (active) setProviderState('failed')
     })
     return () => {
+      resize.disconnect()
       active = false
       mapRef.current?.destroy()
       mapRef.current = null
@@ -179,12 +204,21 @@ export function RaidRouteMap({
       map.geoObjects.add(line)
     }
 
+    const endpointLayout = runtime.templateLayoutFactory.createClass('<span class="raid-track-endpoint raid-track-endpoint--{{ properties.kind }}" role="img" aria-label="{{ properties.label }}"><i></i><b>{{ properties.label }}</b></span>')
+    for (const endpoint of trackEndpoints(track, completed)) {
+      const marker = new runtime.Placemark([endpoint.point.latitude, endpoint.point.longitude], { kind: endpoint.kind, label: endpoint.label }, {
+        iconLayout: endpointLayout, hasBalloon: false, hasHint: false, interactiveZIndex: false, zIndex: 15,
+      })
+      routeObjectsRef.current.push(marker)
+      map.geoObjects.add(marker)
+    }
+
     if (!firstViewApplied.current && trackPoints.length > 0) {
-      const view = routeTrackView(trackPoints)
+      const view = routeTrackView([...trackPoints, ...trackEndpoints(track, completed).map(({ point }) => point)], completed ? containerRef.current?.getBoundingClientRect() : undefined)
       map.setCenter(view.center, view.zoom, { duration: 0 })
       firstViewApplied.current = true
     }
-  }, [providerState, track])
+  }, [providerState, track, completed])
 
   useEffect(() => {
     const map = mapRef.current
@@ -226,11 +260,11 @@ export function RaidRouteMap({
     }
 
     if (!firstViewApplied.current && points.length > 0) {
-      const view = routeTrackView(points)
+      const view = routeTrackView(points, completed ? containerRef.current?.getBoundingClientRect() : undefined)
       map.setCenter(view.center, view.zoom, { duration: 0 })
       firstViewApplied.current = true
     }
-  }, [destinationPointId, highlightedPointId, onSelectPoint, planned, points, providerState])
+  }, [completed, destinationPointId, highlightedPointId, onSelectPoint, planned, points, providerState])
 
   useEffect(() => {
     const map = mapRef.current

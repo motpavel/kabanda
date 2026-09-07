@@ -482,3 +482,9 @@ footer {
   }
 }
 [hidden] { display: none !important; }
+.portrait-mode { inset: 0; width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border: 0; padding: 24px; color: #202522; background: #fffdf8; outline: none; }
+.portrait-mode[open] { display: grid; place-items: center; text-align: center; }
+.portrait-mode::backdrop { background: #fffdf8; }
+.portrait-mode svg { color: #d63830; }
+.portrait-mode h2 { margin: 14px 0 8px; font-size: 1.3rem; }
+.portrait-mode p { margin: 0; color: #69716d; }

@@ -114,9 +114,9 @@ export function ResultPanel({
         {rows.map((row) => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}
       </div>
       <section className="kb-card"><p className="kb-kicker">Участники</p><ul className="result-participants">{result.participants.map((participant) => <li key={participant.userId}><strong>{participant.displayName}</strong><span>{participant.metrics.uniquePoints} точек · {participant.metrics.photos} фото</span></li>)}</ul></section>
-      {card && <section className="kb-card result-share"><img src={card.url} alt="Приватная карточка результата без маршрута и внутренних ID" /><button className="kb-link-button" type="button" onClick={share}>Поделиться карточкой</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
+      {card && <section className="kb-card result-share"><img src={card.url} alt="Карточка с итогами рейда" /><button className="result-share__button" type="button" onClick={share}>Поделиться карточкой</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
       <ResultNextRaidAction enabled={!staleOnly && online} kabandaId={result.raid.kabandaId} />
-      <a className="kb-link-button" href={`${appPath('app')}?kabanda=${encodeURIComponent(result.raid.kabandaId)}&tab=raids`}>К завершённым рейдам</a>
+      <a className="result-history-link" href={`${appPath('app')}?kabanda=${encodeURIComponent(result.raid.kabandaId)}&tab=raids`}>К завершённым рейдам</a>
     </section>
   )
 }
