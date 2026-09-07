@@ -10,6 +10,7 @@ import { getRaidMapPoints, getRouteTrack } from '../api'
 import type { RaidMapPoint, RouteTrackPoint, RouteTrackProjection } from '../types'
 import { readRaidMapCache, saveRaidMapCache } from './map-cache'
 import { RaidControlIcon } from '../RaidControlIcon'
+import { displayTrackSegment } from './track-display'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 
@@ -156,7 +157,7 @@ export function RaidRouteMap({
     const trackPoints = track.segments.flat()
     for (const segment of track.segments) {
       if (segment.length < 2) continue
-      const coordinates = segment.map(({ latitude, longitude }) => [latitude, longitude] as const)
+      const coordinates = displayTrackSegment(segment)
       const casing = new runtime.Polyline(coordinates, {}, {
         strokeColor: '#ffffff',
         strokeOpacity: .96,

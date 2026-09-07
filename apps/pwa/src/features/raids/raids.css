@@ -829,6 +829,7 @@
 }
 
 .raid-active-map__notice p { margin: 0; }
+.raid-checkin-refusal { padding: 2px 4px; color: #963d23; font-size: .9rem; line-height: 1.45; }
 .raid-active-map__notice .route-recorder__secondary { min-height: 42px; }
 .raid-gps-waiting { padding: 2px 4px; color: #626c66; font-size: .8rem; line-height: 1.45; }
 .raid-active-map__notice[data-phase='waiting'] { border: 0; background: #fff; box-shadow: 0 4px 18px #18211c18; }

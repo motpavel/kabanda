@@ -39,6 +39,7 @@ export function ActiveRaidPanel({
   const recorder = useRouteRecorder({ identityId, raid, staleProjection, onCanonicalRefresh, onApplyRaid })
   const proximity = useRaidProximity(identityId, raid.id, raid.state === 'active')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [checkInNotice, setCheckInNotice] = useState<{ text: string } | null>(null)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
@@ -51,6 +52,17 @@ export function ActiveRaidPanel({
   const [checkInAttention, setCheckInAttention] = useState({ count: 0, key: '', actionKey: '' })
   const lastPresentedPoint = useRef<string | null>(null)
   const lastPresentedAttention = useRef('')
+  const onCheckInRefused = useCallback((text: string) => {
+    setCheckInNotice({ text })
+    setSheetOpen(false)
+    setRepeatPointId(null)
+    void proximity.refresh()
+  }, [proximity.refresh])
+  useEffect(() => {
+    if (!checkInNotice) return
+    const timer = window.setTimeout(() => setCheckInNotice(null), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [checkInNotice])
   const activePoint = raid.state === 'active' ? (proximity.nearby.find((point) => point.pointSnapshotId === selectedArrivalId &&
       (!point.creditedByMe || (point.pointSnapshotId === repeatPointId && !raid.routeTemplateId)))
     ?? proximity.nearby.find(({ creditedByMe }) => !creditedByMe) ?? null) : null
@@ -152,7 +164,8 @@ export function ActiveRaidPanel({
       </div>
     </dialog>
 
-    {!actionsOpen && (pageMessage || resourceError || (raid.state === 'active' && recorder.message) || showRecovery) && <section className="raid-active-map__notice" aria-label="Состояние активного рейда" data-phase={recorder.phase}>
+    {!actionsOpen && (checkInNotice || pageMessage || resourceError || (raid.state === 'active' && recorder.message) || showRecovery) && <section className="raid-active-map__notice" aria-label="Состояние активного рейда" data-phase={recorder.phase}>
+      {checkInNotice && <p className="raid-checkin-refusal" role="status">{checkInNotice.text}</p>}
       {resourceError && <p className="kb-error" role="alert">{resourceError}</p>}
       {pageMessage && <p className="kb-notice" role="status">{pageMessage}</p>}
       {raid.state === 'active' && recorder.message && <p className={recorder.phase === 'waiting' ? 'raid-gps-waiting' : 'kb-error'} role={recorder.phase === 'waiting' ? 'status' : 'alert'}>{recorder.message}</p>}
@@ -161,18 +174,18 @@ export function ActiveRaidPanel({
 
     {arrivalAvailable && !sheetOpen && !inspectedPoint && !actionsOpen && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button">
       <span aria-hidden="true" />
-      <span><strong>{activePoint ? 'Вы рядом с точкой' : pendingCheckIns > 0 ? 'Сохранено без сети' : 'Нужно закончить отметку'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : pendingCheckIns > 0 ? `${pendingCheckIns} действий ждут синхронизации` : 'Есть подтверждение или ручная проверка'}</small></span>
+      <span><strong>{activePoint ? 'Вы рядом с точкой' : pendingCheckIns > 0 ? 'Сохранено без сети' : 'Сохранённые отметки'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : pendingCheckIns > 0 ? `${pendingCheckIns} действий ждут синхронизации` : 'Подтверждения и проверка по фото'}</small></span>
       <b>{activePoint ? 'Пометить' : 'Открыть'}</b>
     </button>}
 
     <aside {...arrivalSheet} className="raid-arrival-sheet" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'}>
       <button className="raid-arrival-sheet__collapse" data-sheet-drag="true" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
       <div className="raid-arrival-sheet__heading" data-sheet-drag="true">
-        <div><small>{activePoint ? 'ТОЧКА РЯДОМ' : 'ТРЕБУЕТСЯ ДЕЙСТВИЕ'}</small><h2>{activePoint?.name ?? 'Завершите отметку'}</h2>{!activePoint && <p>Сохранённые отметки и подтверждения.</p>}</div>
+        <div><small>{activePoint ? 'ТОЧКА РЯДОМ' : 'ОТМЕТКИ'}</small><h2>{activePoint?.name ?? 'Сохранённые отметки'}</h2></div>
         {activePoint && <span className="raid-arrival-sheet__distance">{Math.round(activePoint.distanceMeters)}<small>метров</small></span>}
       </div>
       {!viewerIsOrganizer && activePoint && <p className="raid-arrival-sheet__waiting">Вы на месте. Подтвердите своё посещение.</p>}
-      <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onAttentionChange={setCheckInAttention} onCanonicalRefresh={onCanonicalRefresh} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={Boolean(repeatPointId && activePoint?.pointSnapshotId === repeatPointId && !raid.routeTemplateId)} onRepeatSaved={() => { setRepeatPointId(null); setSheetOpen(false) }} />
+      <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onRefused={onCheckInRefused} onAttentionChange={setCheckInAttention} onCanonicalRefresh={onCanonicalRefresh} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={Boolean(repeatPointId && activePoint?.pointSnapshotId === repeatPointId && !raid.routeTemplateId)} onRepeatSaved={() => { setRepeatPointId(null); setSheetOpen(false) }} />
     </aside>
 
     {inspectedPoint && <aside hidden={actionsOpen} className="raid-point-history-sheet" aria-label={`История точки: ${inspectedPoint.name}`}>

@@ -1,4 +1,5 @@
 import { replayOneCheckInOrMedia, replayOneIssuedMedia } from '../checkins/replay'
+import { checkInNeedsAction } from '../checkins/refusal'
 import { offlineDb } from '../offline/db'
 import { getActiveIdentityId } from '../offline/ledger'
 import type { FinishLocalReview } from './types'
@@ -28,7 +29,7 @@ export async function getFinishLocalReview(
       checkInsPending: boundedCount(checkIns.filter(({ status }) => checkInPending.has(status)).length),
       mediaPending: boundedCount(media.filter(({ status }) => mediaPending.has(status)).length),
       needsAction: boundedCount(
-        checkIns.filter(({ status }) => status === 'needs_action').length +
+        checkIns.filter((row) => checkInNeedsAction(row, media)).length +
         media.filter(({ status }) => status === 'rejected').length,
       ),
     },

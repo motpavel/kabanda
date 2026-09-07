@@ -2,6 +2,8 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { offlineDb } from '../offline/db'
 import { activateIdentity } from '../offline/ledger'
+import { getFinishLocalReview } from '../results/local'
+import { getIdentityLocalInventory } from '../offline/inventory'
 import {
   acquireCheckInSenderLease,
   claimNextCheckIn,
@@ -64,7 +66,7 @@ describe('identity-bound check-in outbox', () => {
     expect(await settleCheckIn(fence!, queued!.operationId, {
       operationId: queued!.operationId,
       outcome: 'needs_manual_verification',
-      reason: 'too_far',
+      reason: 'accuracy_insufficient',
       attemptId: 'attempt-a',
       point: { pointSnapshotId: 'point-a', sourcePointId: 'source-a', name: 'Точка' },
       credits: [],
@@ -86,6 +88,57 @@ describe('identity-bound check-in outbox', () => {
       operationId: 'another-operation', outcome: 'accepted', reason: null, attemptId: 'attempt-a',
       point: { pointSnapshotId: 'point-a', sourcePointId: 'source-a', name: 'Точка' }, credits: [], claims: [],
     }, now + 2)).toBe(false)
+  })
+
+  it('settles too_far without a blocker or retry and allows the next point and a fresh return', async () => {
+    const first = await enqueueCheckIn('user-a', 'kabanda-a', 'raid-a', {
+      pointSnapshotId: 'point-a', evidence, presentParticipantIds: ['user-a'], organizerAttestation: false,
+    })
+    const fence = (await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-a'))!
+    await claimNextCheckIn(fence)
+    const receipt = {
+      operationId: first!.operationId, outcome: 'needs_manual_verification' as const, reason: 'too_far' as const,
+      attemptId: 'attempt-a', point: { pointSnapshotId: 'point-a', sourcePointId: 'source-a', name: 'Точка A' }, credits: [], claims: [],
+    }
+    expect(await settleCheckIn(fence, first!.operationId, receipt)).toBe(true)
+    expect(await getCheckInLocalState('user-a', 'raid-a')).toMatchObject({ unsynced: 0, needsAction: [] })
+    expect(await offlineDb.checkInOutbox.get(first!.operationId)).toMatchObject({ status: 'rejected', response: receipt, evidence })
+    expect(await claimNextCheckIn(fence)).toBeNull()
+    for (const pointSnapshotId of ['point-b', 'point-a']) {
+      const fresh = await enqueueCheckIn('user-a', 'kabanda-a', 'raid-a', {
+        pointSnapshotId, evidence, presentParticipantIds: ['user-a'], organizerAttestation: false,
+      })
+      expect(fresh!.operationId).not.toBe(first!.operationId)
+      expect((await claimNextCheckIn(fence))!.operationId).toBe(fresh!.operationId)
+      await settleCheckIn(fence, fresh!.operationId, { ...receipt, operationId: fresh!.operationId, outcome: 'accepted', reason: null })
+    }
+  })
+
+  it('unblocks legacy too_far receipts after reload, including finish and account inventories, without deleting evidence', async () => {
+    const queued = (await enqueueCheckIn('user-a', 'kabanda-a', 'raid-a', {
+      pointSnapshotId: 'point-a', evidence, presentParticipantIds: ['user-a'], organizerAttestation: false,
+    }))!
+    await offlineDb.checkInOutbox.update(queued.operationId, {
+      status: 'needs_action', response: { reason: 'too_far', attemptId: 'old-attempt' },
+    })
+    expect((await getFinishLocalReview('user-a', 'raid-a'))!.inventory.needsAction).toBe(0)
+    expect((await getIdentityLocalInventory('user-a'))!.needsAction).toBe(0)
+    expect((await getCheckInLocalState('user-a', 'raid-a')).needsAction).toEqual([])
+    expect((await offlineDb.checkInOutbox.get(queued.operationId))!.evidence).toEqual(evidence)
+    // Existing user-initiated photo review and its bytes must not be discarded.
+    const photo = await persistMediaDraft({
+      identityId: 'user-a', kabandaId: 'kabanda-a', raidId: 'raid-a', blob: new Blob(['photo']),
+      sourceSha256: 'photo-hash', sizeBytes: 5, contentType: 'image/jpeg', caption: null,
+      purpose: 'fallback', attemptId: 'old-attempt',
+    })
+    expect((await getCheckInLocalState('user-a', 'raid-a')).needsAction).toHaveLength(1)
+    expect(await (await offlineDb.mediaDrafts.get(photo!.operationId))!.blob.text()).toBe('photo')
+    await offlineDb.mediaDrafts.delete(photo!.operationId)
+    await offlineDb.checkInOutbox.update(queued.operationId, { fallbackSubmission: {
+      operationId: 'fallback-op', status: 'pending', fallbackId: null, updatedAt: new Date().toISOString(),
+      input: { attemptId: 'old-attempt', mediaId: 'photo', verifierUserId: 'user-b', presentParticipantIds: ['user-a'], reason: 'Был на месте' },
+    } })
+    expect((await getCheckInLocalState('user-a', 'raid-a')).needsAction).toHaveLength(1)
   })
 
   it('quarantines another identity and persists only Blob/hash, never upload capability', async () => {
@@ -206,7 +259,7 @@ describe('identity-bound check-in outbox', () => {
     const fence = await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-a', now)
     await claimNextCheckIn(fence!, now + 1)
     await settleCheckIn(fence!, queued!.operationId, {
-      operationId: queued!.operationId, outcome: 'needs_manual_verification', reason: 'too_far',
+      operationId: queued!.operationId, outcome: 'needs_manual_verification', reason: 'accuracy_insufficient',
       attemptId: 'attempt-a', point: { pointSnapshotId: 'point-a', sourcePointId: 'source-a', name: 'Точка' },
       credits: [], claims: [],
     }, now + 2)

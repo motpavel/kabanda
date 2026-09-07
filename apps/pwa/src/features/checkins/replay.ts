@@ -22,6 +22,7 @@ import {
 export type CheckInReplayResult =
   | { kind: 'idle' }
   | { kind: 'accepted' | 'needs_action'; operationId: string }
+  | { kind: 'refused'; operationId: string; reason: 'too_far' }
   | { kind: 'media'; operationId: string; mediaId: string }
   | { kind: 'replaced_expired_intent' }
   | { kind: 'retryable' }
@@ -84,7 +85,9 @@ export async function replayOneCheckInOrMedia(input: {
       })
       const settled = await settleCheckIn(fence, checkIn.operationId, response)
       return settled
-        ? { kind: response.outcome === 'accepted' ? 'accepted' : 'needs_action', operationId: checkIn.operationId }
+        ? response.outcome !== 'accepted' && response.reason === 'too_far'
+          ? { kind: 'refused', operationId: checkIn.operationId, reason: 'too_far' }
+          : { kind: response.outcome === 'accepted' ? 'accepted' : 'needs_action', operationId: checkIn.operationId }
         : { kind: 'fence_lost' }
     } catch (error) {
       const terminal = isTerminal(error)

@@ -16,6 +16,7 @@ import {
 import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, validateMediaFile } from './platform'
 import { replayOneCheckInOrMedia } from './replay'
 import { loadCheckInExtras } from './refresh'
+import { checkInRefusalMessage } from './refusal'
 import {
   activeParticipantSelection,
   canQueueLocalCheckIn,
@@ -69,6 +70,7 @@ export function CheckInPanel({
   onAttentionChange,
   repeatVisit = false,
   onRepeatSaved,
+  onRefused,
 }: {
   identityId: string
   raid: RaidProjection
@@ -81,6 +83,7 @@ export function CheckInPanel({
   onAttentionChange?: (state: { count: number; key: string; actionKey: string }) => void
   repeatVisit?: boolean
   onRepeatSaved?: () => void
+  onRefused?: (message: string) => void
 }) {
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const [selectedPointId, setSelectedPointId] = useState('')
@@ -138,6 +141,8 @@ export function CheckInPanel({
   useEffect(() => {
     setAttestedParticipantKey(null)
   }, [selectedParticipantKey])
+
+  useEffect(() => { setMessage(null) }, [selectedPointId])
 
   useEffect(() => {
     if (!nearbyPoints) return
@@ -259,6 +264,11 @@ export function CheckInPanel({
             online: navigator.onLine,
           })
           if (result.kind === 'idle' || result.kind === 'retryable' || result.kind === 'fence_lost') break
+          if (result.kind === 'refused') {
+            const text = checkInRefusalMessage(result.reason)
+            setMessage(onRefused ? null : text)
+            onRefused?.(text)
+          }
           if (result.kind === 'terminal') {
             setMessage(`Сервер отклонил локальную операцию: ${result.code}.`)
             break
@@ -271,7 +281,7 @@ export function CheckInPanel({
     } finally {
       replaying.current = false
     }
-  }, [canMutate, identityId, onCanonicalRefresh, raid.id, refreshCanonicalExtras, refreshLocal, senderTabId])
+  }, [canMutate, identityId, onCanonicalRefresh, onRefused, raid.id, refreshCanonicalExtras, refreshLocal, senderTabId])
 
   useEffect(() => {
     void refreshLocal().then(() => void flush())
@@ -526,7 +536,7 @@ export function CheckInPanel({
 
       {manualResponse && (
         <div className="checkin-manual">
-          <p className="kb-error">Причина сервера: {manualResponse.reason}. Географический check-in не принят.</p>
+      <p className="kb-error">{checkInRefusalMessage(manualResponse.reason)}</p>
           <label>Причина ручной проверки<textarea disabled={Boolean(reservedFallback)} maxLength={240} rows={2} value={reservedFallback?.input.reason ?? fallbackReason} onChange={(event) => setFallbackReason(event.target.value)} /></label>
           <label>Другой verifier<select disabled={Boolean(reservedFallback)} value={reservedFallback?.input.verifierUserId ?? verifierId} onChange={(event) => setVerifierId(event.target.value)}><option value="">Выберите участника</option>{participants.filter(({ id }) => id !== identityId).map((participant) => <option key={participant.id} value={participant.id}>{participant.displayName}</option>)}</select></label>
           {reservedFallback && <p className="kb-muted">Повтор отправит сохранённый fallback с тем же idempotency key.</p>}

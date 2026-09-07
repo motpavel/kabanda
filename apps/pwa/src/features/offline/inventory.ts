@@ -1,4 +1,5 @@
 import { offlineDb } from './db'
+import { checkInNeedsAction } from '../checkins/refusal'
 
 export interface IdentityLocalInventory {
   activeRecordings: number
@@ -41,7 +42,7 @@ export async function getIdentityLocalInventory(identityId: string): Promise<Ide
         routePending: route.filter(({ status }) => routePendingStatuses.has(status)).length,
         checkInsPending: checkIns.filter(({ status }) => checkInPendingStatuses.has(status)).length,
         mediaPending: media.filter(({ status }) => mediaPendingStatuses.has(status)).length,
-        needsAction: checkIns.filter(({ status }) => status === 'needs_action').length +
+        needsAction: checkIns.filter((row) => checkInNeedsAction(row, media)).length +
           media.filter(({ status }) => status === 'rejected').length,
         legacyPending: legacy.filter(({ status }) => legacyPendingStatuses.has(status)).length,
       }

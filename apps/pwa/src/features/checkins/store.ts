@@ -1,4 +1,5 @@
 import { offlineDb } from '../offline/db'
+import { checkInNeedsAction } from './refusal'
 import type {
   CheckInOutboxRecord,
   CheckInSenderLeaseRecord,
@@ -156,7 +157,7 @@ export async function settleCheckIn(
       if (!row || row.identityId !== fence.identityId || row.raidId !== fence.raidId || row.status !== 'sending') return false
       await offlineDb.checkInOutbox.put({
         ...row,
-        status: response.outcome === 'accepted' ? 'accepted' : 'needs_action',
+        status: response.outcome === 'accepted' ? 'accepted' : response.reason === 'too_far' ? 'rejected' : 'needs_action',
         claimUntil: null,
         response,
         lastErrorCode: response.reason,
@@ -435,7 +436,7 @@ export async function getCheckInLocalState(identityId: string, raidId: string) {
   return {
     unsynced: checkIns.filter(({ status }) => ['pending', 'sending', 'retryable'].includes(status)).length +
       media.filter(({ status }) => ['local', 'intent', 'uploading', 'retryable'].includes(status)).length,
-    needsAction: checkIns.filter(({ status }) => status === 'needs_action'),
+    needsAction: checkIns.filter((row) => checkInNeedsAction(row, media)),
     media,
   }
 }
