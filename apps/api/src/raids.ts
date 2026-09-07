@@ -253,6 +253,7 @@ export type SettleRaidResponse = { raid: RaidProjection; result: RaidResult }
 
 export type RaidProjection = {
   createdAt?: string
+  startedAt?: string | null
   pointCategory?: 'stores' | 'attractions' | null
   meetingPlace?: string | null
   routeTemplateId?: string | null
@@ -3705,6 +3706,7 @@ export class DatabaseRaidService implements RaidService {
       kabandaId: raid.kabanda_id,
       title: raid.title,
       createdAt: raid.created_at.toISOString(),
+      startedAt: raid.started_at?.toISOString() ?? null,
       description: raid.description,
       routeTemplateId: raid.route_template_id,
       pointCategory: raid.point_category,

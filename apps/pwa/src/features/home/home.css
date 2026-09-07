@@ -41,14 +41,12 @@
 .kb-home-explore p { margin-bottom: 14px; font-size: .8rem; line-height: 1.5; color: #4a543d; }
 .kb-home-explore span { display: inline-flex; align-items: center; gap: 7px; font-size: .82rem; font-weight: 700; }
 .kb-home-explore > svg { width: 66px; height: 66px; stroke-width: 1; color: #627240; }
-.kb-home .raid-home-card--current { color: #fff; background: #202522; }
-.kb-home .raid-home-card--current .kb-home-section-heading a { color: #ffc6bd; }
+.kb-home .raid-home-current .kb-home-section-heading { margin-bottom: 8px; }
+.kb-home .raid-home-current .kb-home-section-heading h2 { color: #d92824; font-size: 14px; font-weight: 760; line-height: 1.35; letter-spacing: .025em; text-transform: uppercase; }
 .kb-home-raid-summary { margin: 12px 0 18px; }
 .kb-home-raid-summary h3 { margin: 8px 0; font-size: 1.32rem; line-height: 1.25; overflow-wrap: anywhere; }
 .kb-home-raid-summary p { margin-bottom: 8px; color: var(--home-muted); font-size: .78rem; }
-.kb-home .raid-home-card--current .kb-home-raid-summary p { color: #cdd5ce; }
 .kb-home-raid-status { display: inline-block; font-size: .73rem; font-weight: 700; color: var(--home-action); }
-.kb-home .raid-home-card--current .kb-home-raid-status { color: #ffc6bd; }
 .kb-home-raid-description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
 .kb-home .raid-primary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 14px; border-color: var(--home-action); background: var(--home-action); color: #fff; box-shadow: none; font-size: .86rem; }
 .kb-home .raid-primary:hover { background: #b92521; border-color: #b92521; }

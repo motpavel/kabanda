@@ -4,6 +4,7 @@ import { appPath } from '../../lib/paths'
 import { HomeIcon } from '../home/HomeIcon'
 import type { KabandaSummary } from '../kabandas/types'
 import { listActionableRaids } from './api'
+import { CurrentRaidCard } from './CurrentRaidCard'
 import {
   readActionableRaidProjections,
   saveRaidProjection,
@@ -110,9 +111,9 @@ export function RaidHomeCard({
   }
 
   return (
-    <section className={`kb-card raid-home-card${current ? ' raid-home-card--current' : ''}`} aria-busy={resourceState === 'loading'}>
+    <section className={current ? 'raid-home-current' : 'kb-card raid-home-card'} aria-busy={resourceState === 'loading'}>
       <div className="kb-home-section-heading">
-        <h2>{current ? 'Вы в рейде' : 'Ближайшие рейды'}</h2>
+        <h2>{current ? 'Сейчас' : 'Ближайшие рейды'}</h2>
         <a href={`${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=raids`}>Все <HomeIcon name="arrow" /></a>
       </div>
 
@@ -150,7 +151,9 @@ export function RaidHomeCard({
         </div>
       )}
 
-      {selected && (
+      {current && <CurrentRaidCard kabanda={kabanda} raid={current} stale={stale} online={online} onRefresh={() => void refresh()} />}
+
+      {selected && !current && (
         <div className="kb-home-raid-summary">
           <span className="kb-home-raid-status">{stateLabel(selected.state)}</span>
           <h3>{selected.title}</h3>
@@ -167,7 +170,7 @@ export function RaidHomeCard({
         {!resourcePolicy.canMutate && <p>Создание рейда доступно после подключения к сети и обновления.</p>}
       </div>}
 
-      {primary && selected && (
+      {primary && selected && !current && (
         <button className="kb-primary raid-primary" type="button" onClick={primary.kind === 'refresh' ? refresh : openRaid}>
           {primary.label}
         </button>

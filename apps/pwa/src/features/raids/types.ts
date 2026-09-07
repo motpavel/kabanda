@@ -66,6 +66,7 @@ export interface NavigatorLeaseProjection {
 
 export interface RaidProjection {
   createdAt?: string
+  startedAt?: string | null
   pointCategory?: 'stores' | 'attractions' | null
   meetingPlace?: string | null
   routeTemplateId?: string | null
