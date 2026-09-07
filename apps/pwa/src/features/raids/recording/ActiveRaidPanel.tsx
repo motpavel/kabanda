@@ -61,8 +61,11 @@ export function ActiveRaidPanel({
   const serverActionAvailable = serverPrimary?.kind === 'command' || serverPrimary?.kind === 'refresh'
   const primary = selectActivePrimaryAction(recorder.phase, serverActionAvailable)
   const viewerIsNavigator = raid.navigatorUserId === identityId
-  const showRecovery = viewerIsNavigator && raid.state === 'active' && primary === 'recover'
-  const recoveryLabel = recorder.phase === 'standby' ? 'Записывать на этом устройстве' : recorder.phase === 'blocked' ? 'Включить GPS' : 'Восстановить GPS'
+  // Only changing the recording device or recovering local storage needs intent.
+  // GPS outages recover automatically; denied permission is explained in the notice.
+  const showRecovery = viewerIsNavigator && raid.state === 'active' && primary === 'recover' &&
+    (recorder.phase === 'standby' || recorder.phase === 'error')
+  const recoveryLabel = recorder.phase === 'standby' ? 'Записывать на этом устройстве' : 'Повторить сохранение'
   const hasCheckInAttention = checkInAttention.count > 0
   const arrivalAvailable = raid.state === 'active' && Boolean(activePoint || hasCheckInAttention)
   const actionsSheet = useSlideSheet<HTMLDialogElement>(actionsOpen, () => setActionsOpen(false))
@@ -134,10 +137,9 @@ export function ActiveRaidPanel({
 
     <dialog {...actionsSheet} className="raid-active-map__actions" aria-labelledby="raid-actions-title" onClose={() => actionsTrigger.current?.focus({ preventScroll: true })} onCancel={(event) => { event.preventDefault(); setActionsOpen(false) }} onClick={(event) => { if (event.target === event.currentTarget) setActionsOpen(false) }}>
       <div className="raid-action-sheet">
-        <div className="raid-sheet-grip" data-sheet-drag="true" aria-hidden="true"><span /></div>
+        <button className="raid-sheet-grip" data-sheet-drag="true" aria-label="Свернуть действия рейда" onClick={() => setActionsOpen(false)} type="button"><span /></button>
         <header className="raid-action-sheet__header" data-sheet-drag="true">
           <h2 id="raid-actions-title">{finishOpen ? 'Завершить рейд?' : 'Ваш рейд'}</h2>
-          <button className="raid-icon-button" aria-label="Закрыть меню рейда" onClick={() => setActionsOpen(false)} type="button"><RaidControlIcon name="close" /></button>
         </header>
         {finishOpen ? <>
           <FinishRaidPanel presentation="sheet" identityId={identityId} raid={raid} flushRoute={recorder.flush} onApplyRaid={onApplyRaid} onCanonicalRefresh={onCanonicalRefresh} />

@@ -2786,7 +2786,7 @@ export class DatabaseRaidService implements RaidService {
            JOIN points p
              ON p.id = cp.point_id AND p.archived_at IS NULL
            WHERE pc.kabanda_id = $2 AND pc.archived_at IS NULL
-             AND p.verification_status = 'field_verified'
+             AND p.verification_status IN ('source_checked', 'field_verified')
              AND p.source NOT IN ('kb_store', 'raid_template')
            ORDER BY p.id, pc.created_at DESC, pc.id
            ON CONFLICT (raid_id, source_point_id) DO NOTHING`,

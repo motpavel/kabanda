@@ -161,6 +161,7 @@ export async function attachVerifiedPoint(
   kabandaId: string,
   databaseUrl = requireE2EDatabaseUrl(),
   runId = requireE2ERunId(),
+  catalogue = false,
 ): Promise<{ collectionId: string; reportId: string }> {
   if (!uuidPattern.test(kabandaId)) throw new Error('kabandaId must be a UUID')
   const pool = new Pool({ connectionString: databaseUrl, max: 1 })
@@ -175,27 +176,38 @@ export async function attachVerifiedPoint(
     )
     const ownerId = owner.rows[0]?.id
     if (!ownerId) throw new Error('Kabanda is not owned by this exact E2E run')
-    const stableKey = `kabanda-e2e-${runId}`
+    const stableKey = `kabanda-e2e-${runId}${catalogue ? '-catalogue' : ''}`
     const point: ManifestPoint = {
       stableKey,
-      name: 'Синтетическая точка E2E',
+      name: catalogue ? 'Дальняя точка каталога E2E' : 'Синтетическая точка E2E',
       ...E2E_POINT,
+      ...(catalogue ? { latitude: 56.88, longitude: 53.23 } : {}),
       source: 'synthetic-e2e',
       sourceId: stableKey,
       sourceUrl: 'https://example.test/kabanda-e2e-fixture',
       license: 'test-only',
-      verificationStatus: 'field_verified',
+      verificationStatus: catalogue ? 'source_checked' : 'field_verified',
       verifiedAt: '2026-08-28T00:00:00.000Z',
       notes: 'Synthetic disposable fixture; contains no real route or person data.',
     }
-    const checksum = createHash('sha256').update(JSON.stringify(point)).digest('hex')
+    // A manifest replaces collection membership, so keep the first fixture
+    // when adding the distant catalogue point for the resume regression.
+    const rows: ManifestPoint[] = catalogue ? [{
+      ...point,
+      ...E2E_POINT,
+      stableKey: `kabanda-e2e-${runId}`,
+      sourceId: `kabanda-e2e-${runId}`,
+      name: 'Синтетическая точка E2E',
+      verificationStatus: 'field_verified',
+    }, point] : [point]
+    const checksum = createHash('sha256').update(JSON.stringify(rows)).digest('hex')
     const imported = await new DatabaseKabandaService(pool).importManifest(
       ownerId,
       kabandaId,
-      `e2e-${runId}`,
+      `e2e-${runId}${catalogue ? '-catalogue' : ''}`,
       checksum,
       'Synthetic E2E points',
-      [point],
+      rows,
     )
     return { collectionId: imported.collectionId, reportId: imported.reportId }
   } finally {

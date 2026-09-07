@@ -1036,24 +1036,25 @@
 
 .raid-active-map__actions {
   position: fixed;
-  inset: auto 0 max(12px, env(safe-area-inset-bottom));
+  inset: auto 0 0;
   box-sizing: border-box;
-  width: min(420px, calc(100% - 24px));
+  width: min(620px, 100%);
+  max-width: 100%;
   max-height: calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   margin: 0 auto;
   overflow: auto;
   border: 0;
-  border-radius: 24px;
+  border-radius: 26px 26px 0 0;
   padding: 0;
   color: var(--kb-ink);
   background: #fff;
-  box-shadow: 0 12px 48px rgb(26 31 34 / 24%);
+  box-shadow: 0 -8px 36px rgb(26 31 34 / 16%);
   overscroll-behavior: contain;
 }
 .raid-active-map__actions::backdrop { background: rgb(19 25 23 / 24%); }
-.raid-action-sheet { padding: 0 18px 18px; }
-.raid-sheet-grip { display: grid; place-items: center; min-height: 28px; }
-.raid-sheet-grip span { width: 36px; height: 4px; background: #d1d4d0; border-radius: 99px; }
+.raid-action-sheet { padding: 0 20px calc(18px + env(safe-area-inset-bottom)); }
+.raid-active-map .raid-sheet-grip { display: grid; place-items: center; width: 100%; min-height: 44px; padding: 0; border: 0; border-radius: 0; background: transparent; transform: none; }
+.raid-sheet-grip span { width: 44px; height: 5px; background: #d1d4d0; border-radius: 99px; }
 [data-sheet-drag] { touch-action: none; user-select: none; }
 .raid-arrival-sheet[data-sheet-state='closing'], .raid-active-map__actions[data-sheet-state='closing'] { pointer-events: none; }
 .raid-action-sheet__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }

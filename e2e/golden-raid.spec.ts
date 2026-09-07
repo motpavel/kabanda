@@ -8,6 +8,7 @@ import {
 } from './support.js'
 
 test('owner completes one canonical raid and opens the next raid form', async ({ context, page }, testInfo) => {
+  test.setTimeout(150_000)
   const identity = fixture<FixtureIdentity>('prepare')
   const pageErrors: Error[] = []
   page.on('pageerror', (error) => pageErrors.push(error))
@@ -94,6 +95,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
+  fixture('attach-catalogue', kabanda.id)
   await page.getByRole('link', { name: 'Создать рейд', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Выйти в рейд' })).toBeVisible()
   await page.getByRole('button', { name: /Свободная охота/ }).click()
@@ -160,11 +162,29 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await actionsTrigger.click()
   const actionsDialog = page.getByRole('dialog')
   await expect(actionsDialog.getByRole('button')).toHaveText(['', 'Поставить на паузу', 'Завершить рейд'])
+  await expect(actionsDialog.getByRole('button', { name: 'Закрыть меню рейда' })).toHaveCount(0)
+  await expect(actionsDialog.getByRole('button', { name: 'Свернуть действия рейда' })).toBeVisible()
+  await expect(actionsDialog).toHaveCSS('border-bottom-left-radius', '0px')
+  await expect(actionsDialog).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+  const sheetBox = (await actionsDialog.boundingBox())!
+  expect(sheetBox.width).toBe(390)
+  expect(Math.abs(sheetBox.y + sheetBox.height - 844)).toBeLessThan(2)
   await expect(actionsDialog.locator('.result-inventory')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('raid-actions-mobile.png'), animations: 'disabled' })
   await page.keyboard.press('Escape')
   await expect(actionsDialog).not.toBeVisible()
   await expect(actionsTrigger).toBeFocused()
+  await actionsTrigger.click()
+  await page.mouse.click(20, 200) // The exposed map dismisses the sheet, not the raid.
+  await expect(actionsDialog).not.toBeVisible()
+  await actionsTrigger.click()
+  await expect(actionsDialog).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+  const gripBox = (await actionsDialog.getByRole('button', { name: 'Свернуть действия рейда' }).boundingBox())!
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2 + 150, { steps: 12 })
+  await page.mouse.up()
+  await expect(actionsDialog).not.toBeVisible()
   await actionsTrigger.click()
   await actionsDialog.getByRole('button', { name: 'Поставить на паузу' }).click()
   await expect(page.getByRole('region', { name: 'Рейд на паузе', exact: true })).toBeVisible()
@@ -187,6 +207,8 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await actionsDialog.getByRole('button', { name: 'Продолжить рейд' }).click()
   await expect(actionsDialog).not.toBeVisible()
   await expect(page.getByRole('region', { name: 'Рейд на паузе', exact: true })).toHaveCount(0)
+  await expect(page.locator('.raid-live-point')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /^Дальняя точка каталога E2E\./ })).toBeVisible()
   await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
     const response = await api<{ raid: { routeStatus: { status: string } } }>(
@@ -302,25 +324,29 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Пометить ещё раз' }).click()
   await context.setGeolocation({ latitude: 56.86016, longitude: 53.21016, accuracy: 8 })
   await expect.poll(async () => {
-    const points = await api<{ points: Array<{ sourcePointId: string }> }>(page, 'GET', `/api/raids/${raid.id}/map-points`)
-    return (await api<{ personalCount: number }>(page, 'GET', `/api/kabandas/${kabanda.id}/points/${points.points[0]!.sourcePointId}/history`)).personalCount
+    const points = await api<{ points: Array<{ sourcePointId: string; name: string }> }>(page, 'GET', `/api/raids/${raid.id}/map-points`)
+    return (await api<{ personalCount: number }>(page, 'GET', `/api/kabandas/${kabanda.id}/points/${points.points.find(p => p.name === 'Синтетическая точка E2E')!.sourcePointId}/history`)).personalCount
   }).toBe(2)
   await visitedMarker.click()
   await expect(historySheet.getByLabel('Личных посещений: 2')).toBeVisible()
   await historySheet.getByRole('button', { name: 'Свернуть' }).click()
 
   await page.evaluate(() => (window as unknown as { qaGpsFailure: (code: number) => number }).qaGpsFailure(1))
-  await expect(page.getByRole('button', { name: 'Включить GPS', exact: true })).toBeVisible()
+  await expect(page.getByText('Разрешите геолокацию в настройках телефона или браузера.', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Включить GPS|Восстановить GPS/ })).toHaveCount(0)
   await page.waitForTimeout(4_200) // Cross writer renewal: denied permission must not auto-restart.
   expect(await page.evaluate(() => (window as unknown as { qaGpsWatches: () => number }).qaGpsWatches())).toBe(0)
-  await page.getByRole('button', { name: 'Включить GPS', exact: true }).click()
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await context.setGeolocation({ latitude: 56.86017, longitude: 53.21017, accuracy: 8 })
   await expect(page.getByText('Маршрут записывается', { exact: true })).toBeVisible()
+  await page.reload() // A resumed free raid keeps distant points after reopening.
+  await expect(page.locator('.raid-live-point')).toHaveCount(2)
 
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Завершить рейд?' })).toBeVisible()
   await expect(page.locator('.result-finish-review--sheet')).toHaveCSS('border-width', '0px')
+  await expect(page.getByRole('button', { name: /^(Отправить сохранённое|Завершить рейд)$/ })).toBeVisible()
   const drainButton = page.getByRole('button', { name: 'Отправить сохранённое', exact: true })
   if (await drainButton.isVisible()) await drainButton.click()
   await page.screenshot({ path: testInfo.outputPath('raid-finish-mobile.png') })

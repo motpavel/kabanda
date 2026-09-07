@@ -15,10 +15,10 @@ requireE2ERunId()
 let result: unknown
 if (command === 'prepare') {
   result = await prepareE2EIdentity(databaseUrl)
-} else if (command === 'attach-point') {
+} else if (command === 'attach-point' || command === 'attach-catalogue') {
   const kabandaId = args[0]
   if (!kabandaId) throw new Error('attach-point requires kabandaId')
-  result = await attachVerifiedPoint(kabandaId, databaseUrl)
+  result = await attachVerifiedPoint(kabandaId, databaseUrl, undefined, command === 'attach-catalogue')
 } else if (command === 'inspect-raid') {
   const raidId = args[0]
   if (!raidId) throw new Error('inspect-raid requires raidId')

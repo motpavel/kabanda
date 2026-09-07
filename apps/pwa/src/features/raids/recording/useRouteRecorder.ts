@@ -27,6 +27,7 @@ import type {
   WriterFence,
 } from './types'
 import { useRecordingRuntime } from './runtime'
+import { watchRecoveringPosition } from './gps-watch'
 
 const emptyStats: RecorderLocalStats = {
   pendingCount: 0,
@@ -201,7 +202,9 @@ export function useRouteRecorder(input: {
 
     let cancelled = false
     let fence: WriterFence | null = null
-    let watchId: number | null = null
+    let stopGps: (() => void) | null = null
+    let permission: PermissionStatus | null = null
+    let checkingPermission = false
     let wakeSentinel: WakeLockSentinel | null = null
     let starting = false
     let replaying = false
@@ -227,7 +230,7 @@ export function useRouteRecorder(input: {
         paused: false,
         visible: document.visibilityState === 'visible',
         ownsWriterLease: Boolean(fence),
-        watchActive: watchId !== null,
+        watchActive: stopGps !== null,
         lastPersistedSampleAt,
         blocked,
         failed,
@@ -236,8 +239,8 @@ export function useRouteRecorder(input: {
       }))
     }
     const stopWatch = () => {
-      if (watchId !== null) navigator.geolocation?.clearWatch(watchId)
-      watchId = null
+      stopGps?.()
+      stopGps = null
     }
     const releaseWakeLock = async () => {
       const current = wakeSentinel
@@ -317,7 +320,7 @@ export function useRouteRecorder(input: {
 
     const startPageRecorder = async () => {
       if (cancelled || starting || blocked || failed || document.visibilityState !== 'visible') return
-      if (fence && watchId !== null) return
+      if (fence && stopGps !== null) return
       starting = true
       blocked = false
       failed = false
@@ -351,7 +354,7 @@ export function useRouteRecorder(input: {
           return
         }
         if (cancelled || document.visibilityState !== 'visible') return
-        watchId = navigator.geolocation.watchPosition(
+        stopGps = watchRecoveringPosition(navigator.geolocation,
           (position) => {
             const callbackFence = fence
             if (!callbackFence || cancelled) return
@@ -379,7 +382,7 @@ export function useRouteRecorder(input: {
                 !fence ||
                 fence.writerGeneration !== callbackFence.writerGeneration ||
                 fence.fenceToken !== callbackFence.fenceToken ||
-                watchId === null ||
+                stopGps === null ||
                 document.visibilityState !== 'visible'
               ) return
               recovering = false
@@ -411,7 +414,6 @@ export function useRouteRecorder(input: {
               return
             }
             blocked = error.code === error.PERMISSION_DENIED
-            failed = !blocked
             void emitAlphaDiagnostic({
               kind: 'gps_stopped',
               reason: error.code === error.PERMISSION_DENIED
@@ -421,11 +423,10 @@ export function useRouteRecorder(input: {
                   : error.code === error.TIMEOUT ? 'timeout' : 'unknown',
             })
             setMessage(blocked
-              ? 'Доступ к геолокации запрещён. Разрешите его в настройках браузера.'
-              : `GPS остановился: ${error.message || 'неизвестная ошибка'}`)
-            void stopPageRecorder(true).then(updateDerivedPhase)
+              ? 'Разрешите геолокацию в настройках телефона или браузера. После разрешения запись продолжится автоматически.'
+              : 'GPS временно недоступен. Пробуем восстановить сигнал автоматически.')
+            if (blocked) void stopPageRecorder(true).then(updateDerivedPhase)
           },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
         )
         recovering = false
         updateDerivedPhase()
@@ -435,17 +436,40 @@ export function useRouteRecorder(input: {
       }
     }
 
+    const permissionChanged = () => {
+      if (cancelled || !blocked || permission?.state !== 'granted') return
+      blocked = false
+      setMessage(null)
+      void startPageRecorder()
+    }
+    const checkPermission = async () => {
+      if (cancelled || checkingPermission || !navigator.permissions || document.visibilityState !== 'visible') return
+      checkingPermission = true
+      try {
+        const next = await navigator.permissions.query({ name: 'geolocation' })
+        if (cancelled) return
+        if (permission !== next) {
+          permission?.removeEventListener('change', permissionChanged)
+          permission = next
+          permission.addEventListener('change', permissionChanged)
+        }
+        permissionChanged()
+      } catch { /* Older browsers keep the settings hint; never bypass a denial. */ }
+      finally { checkingPermission = false }
+    }
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') {
         void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'page_hidden' })
         void stopPageRecorder(true).then(updateDerivedPhase)
       } else {
+        void checkPermission()
         void startPageRecorder()
         void flush()
       }
     }
     const handleResume = () => {
       if (document.visibilityState === 'visible') {
+        void checkPermission()
         void startPageRecorder()
         void flush()
       }
@@ -475,6 +499,8 @@ export function useRouteRecorder(input: {
     }, WRITER_LEASE_RENEW_MS)
     const freshnessTimer = window.setInterval(updateDerivedPhase, 1_000)
     const replayTimer = window.setInterval(() => void flush(), 5_000)
+    const permissionTimer = window.setInterval(() => { if (blocked) void checkPermission() }, 10_000)
+    void checkPermission()
     void startPageRecorder()
 
     return () => {
@@ -487,6 +513,8 @@ export function useRouteRecorder(input: {
       window.clearInterval(leaseTimer)
       window.clearInterval(freshnessTimer)
       window.clearInterval(replayTimer)
+      window.clearInterval(permissionTimer)
+      permission?.removeEventListener('change', permissionChanged)
       stopWatch()
       const currentWake = wakeSentinel
       const currentFence = fence

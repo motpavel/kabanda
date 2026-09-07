@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { Pool } from 'pg'
 import sharp from 'sharp'
 import { DatabaseKabandaService, KabandaError, type ManifestPoint } from '../src/kabandas.js'
@@ -622,13 +623,44 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     const started = await raidService!.command(ownerId, ready.raid.id, 'start', { expectedVersion: ready.raid.version }, `start-hunt-${pointCategory}`)
     const rows = await pool!.query(`SELECT p.source, s.id, ST_Y(s.location::geometry) AS lat, ST_X(s.location::geometry) AS lon
       FROM raid_point_snapshots s JOIN points p ON p.id=s.source_point_id WHERE s.raid_id=$1`, [started.raid.id])
-    expect(rows.rowCount).toBe(pointCategory === 'stores' ? IZHEVSK_KB_STORES.length : 1)
+    expect(rows.rowCount).toBe(pointCategory === 'stores' ? IZHEVSK_KB_STORES.length : 2)
     expect(rows.rows.every((point) => pointCategory === 'stores' ? point.source === 'kb_store' : point.source !== 'kb_store')).toBe(true)
     const point = rows.rows[0]!
     await raidService!.createCheckin(ownerId, started.raid.id, { pointSnapshotId: point.id,
       evidence: { latitude: point.lat, longitude: point.lon, accuracyMeters: 8, capturedAt: new Date().toISOString() },
       presentParticipantIds: [], organizerAttestation: false }, randomUUID())
     expect((await raidService!.getMapPoints(ownerId, started.raid.id)).points.find((item) => item.id === point.id)?.visitedByMe).toBe(true)
+  })
+
+  it('repairs an older free hunt without losing visited points, then resumes with the whole catalogue', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('old-hunt')
+    const ready = await readyRaid(ownerId, kabanda.id, 'old-hunt', { pointCategory: 'attractions' })
+    // Recreate the former one-snapshot raid using only synthetic fixture data.
+    await pool!.query("UPDATE points SET verification_status='rejected' WHERE kabanda_id=$1 AND stable_key='izh-test-one'", [kabanda.id])
+    const started = await raidService!.command(ownerId, ready.raid.id, 'start', { expectedVersion: ready.raid.version }, 'old-hunt-start')
+    const original = (await raidService!.getMapPoints(ownerId, started.raid.id)).points
+    expect(original).toHaveLength(1)
+    await raidService!.createCheckin(ownerId, started.raid.id, {
+      pointSnapshotId: original[0]!.id,
+      evidence: { latitude: 56.86, longitude: 53.21, accuracyMeters: 8, capturedAt: new Date().toISOString() },
+      presentParticipantIds: [], organizerAttestation: false,
+    }, randomUUID())
+    await pool!.query("UPDATE points SET verification_status='source_checked' WHERE kabanda_id=$1 AND stable_key='izh-test-one'", [kabanda.id])
+    const paused = await raidService!.command(ownerId, started.raid.id, 'pause', { expectedVersion: started.raid.version }, 'old-hunt-pause')
+    const completed = await raidService!.createDraft(ownerId, kabanda.id, { title: 'Closed fixture', pointCategory: 'attractions' }, 'closed-fixture-raid')
+    await pool!.query("UPDATE raids SET state='completed', started_at=now(), finalizing_at=now(), finalization_deadline_at=now(), completed_at=now() WHERE id=$1", [completed.raid.id])
+    const repair = readFileSync(new URL('../../../infra/postgres/migrations/0017_free_hunt_catalogue.sql', import.meta.url), 'utf8')
+    await pool!.query(repair)
+    await pool!.query(repair)
+    const resumed = await raidService!.command(ownerId, started.raid.id, 'resume', { expectedVersion: paused.raid.version }, 'old-hunt-resume')
+    const points = (await raidService!.getMapPoints(ownerId, resumed.raid.id)).points
+    expect(points).toHaveLength(2)
+    expect(points).toContainEqual(expect.objectContaining({ id: original[0]!.id, visitedByMe: true }))
+    expect((await pool!.query('SELECT count(*) FROM raid_point_credits WHERE raid_id=$1', [started.raid.id])).rows[0].count).toBe('1')
+    expect((await pool!.query('SELECT count(*) FROM raid_point_snapshots WHERE raid_id=$1', [completed.raid.id])).rows[0].count).toBe('0')
+    const nearby = await raidService!.nearbyCheckins(ownerId, resumed.raid.id, { latitude: 56.85, longitude: 53.2, limit: 20 })
+    expect(nearby.points).toHaveLength(1)
+    expect(nearby.points[0]!.name).toBe('Точка один')
   })
 
   it('runs the server-owned lobby, readiness, start, pause, resume and cancel lifecycle', async () => {
@@ -1801,7 +1833,7 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     const { ownerId, organizerId, started } = await activeMemberOrganizerRaid('attestation')
     const snapshot = (
       await pool!.query<{ id: string }>(
-        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        "SELECT id FROM raid_point_snapshots WHERE raid_id = $1 AND name = 'Точка два'",
         [started.raid.id],
       )
     ).rows[0]!
@@ -1925,7 +1957,7 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'repeat-history')
     const raidId = acquired.raid.id
     const point = (await pool!.query<{ id: string; source_point_id: string }>(
-      'SELECT id, source_point_id FROM raid_point_snapshots WHERE raid_id=$1', [raidId],
+      "SELECT id, source_point_id FROM raid_point_snapshots WHERE raid_id=$1 AND name='Точка два'", [raidId],
     )).rows[0]!
     const memberId = await user('repeat-member@example.test')
     await pool!.query("INSERT INTO kabanda_memberships(kabanda_id,user_id,role) VALUES($1,$2,'member')", [kabanda.id, memberId])
@@ -1954,17 +1986,17 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     await expect(service!.getPointVisitHistory(memberId, kabanda.id, point.source_point_id)).rejects.toMatchObject({ statusCode: 404 })
   })
 
-  it('freezes field-verified points and issues one idempotent GPS credit', async () => {
+  it('freezes available catalogue points and issues one idempotent GPS credit', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('checkin-snapshot')
     const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'checkin-snapshot')
     const snapshots = await pool!.query<{
       id: string
       source_point_id: string
       name: string
-    }>('SELECT id, source_point_id, name FROM raid_point_snapshots WHERE raid_id = $1', [
+    }>('SELECT id, source_point_id, name FROM raid_point_snapshots WHERE raid_id = $1 ORDER BY name', [
       acquired.raid.id,
     ])
-    expect(snapshots.rows).toHaveLength(1)
+    expect(snapshots.rows).toHaveLength(2)
     expect(snapshots.rows[0]!.name).toBe('Точка два')
 
     await pool!.query(
@@ -2103,7 +2135,7 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     )
     const snapshot = (
       await pool!.query<{ id: string }>(
-        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        "SELECT id FROM raid_point_snapshots WHERE raid_id = $1 AND name = 'Точка два'",
         [acquired.raid.id],
       )
     ).rows[0]!
@@ -2522,7 +2554,7 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     )
     const snapshot = (
       await pool!.query<{ id: string }>(
-        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        "SELECT id FROM raid_point_snapshots WHERE raid_id = $1 AND name = 'Точка два'",
         [acquired.raid.id],
       )
     ).rows[0]!
@@ -2795,7 +2827,7 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     )
     const snapshot = (
       await pool!.query<{ id: string }>(
-        'SELECT id FROM raid_point_snapshots WHERE raid_id = $1 LIMIT 1',
+        "SELECT id FROM raid_point_snapshots WHERE raid_id = $1 AND name = 'Точка два'",
         [acquired.raid.id],
       )
     ).rows[0]!
