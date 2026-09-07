@@ -8,6 +8,7 @@ import { clearResultOperationAttempt, resultOperationStorageKey } from './operat
 import { shareResultCard } from './share'
 import { metricRows } from './state'
 import type { RaidResult } from './types'
+import { CompletedRaidRoute } from './CompletedRaidRoute'
 import { RaidCompletionHero } from './RaidCompletionHero'
 
 export function ResultPanel({
@@ -107,6 +108,7 @@ export function ResultPanel({
         {result.raid.partial && <p className="kb-stale">Неполный итог · несинхронизированные данные не включены</p>}
       </div>
       {staleAt && <p className="kb-stale">Сохранённая копия от {new Date(staleAt).toLocaleString('ru-RU')}.</p>}
+      <CompletedRaidRoute identityId={identityId} raid={raid} />
       <div className="result-metrics" role="table" aria-label="Личные и командные метрики">
         <div className="result-metrics__head" role="row"><span>Метрика</span><strong>Лично</strong><strong>Команда</strong></div>
         {rows.map((row) => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}

@@ -1,4 +1,4 @@
-.point-visit-history { color: #202522; font-size: .85rem; line-height: 1.45; }
+.point-visit-history { width: 100%; min-width: 0; color: #202522; font-size: .85rem; line-height: 1.45; }
 .point-visit-history > header { padding: 2px 0 14px; }
 .point-visit-history h3 { margin: 0; font-size: 1rem; font-weight: 750; letter-spacing: -.02em; }
 .point-visit-history__people { list-style: none; margin: 0; padding: 0; }
@@ -51,3 +51,10 @@
   .raid-live-point--destination::before { animation: none; transform: translate(-50%, -50%) scale(1.8); opacity: .3; }
   .raid-live-point--destination::after { animation: none; transform: translate(-50%, -50%) scale(2.6); opacity: .15; }
 }
+
+.raid-point-history-sheet .point-visit-history__people { width: calc(100% + 40px); margin-inline: -20px; }
+.raid-point-history-sheet .point-visit-history__person { padding-inline: 20px; }
+.raid-point-history-sheet .point-visit-history__detail { padding-inline: 32px 20px; }
+.point-visit-history__visits .point-visit-history__raid { width: 100%; min-height: 52px; }
+.point-visit-history__raid > span:first-child { min-width: 0; color: inherit; font: inherit; }
+.point-visit-history__raid time { display: block; margin-top: 4px; color: #6d7470; font-size: .73rem; font-weight: 400; line-height: 1.55; }

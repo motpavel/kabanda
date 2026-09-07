@@ -255,7 +255,7 @@ export function ActiveRaidPanel({
           <div><small>{historyPoint.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : 'ТОЧКА РЕЙДА'}</small><h2>{historyPoint.name}</h2></div>
           {inspectedDistanceLabel && <span className="raid-arrival-sheet__distance">{inspectedDistanceLabel.value}<small>{inspectedDistanceLabel.unit}</small></span>}
         </div>
-        <PointVisitHistory key={`${identityId}:${historyPoint.sourcePointId}`} identityId={identityId} kabandaId={raid.kabandaId} pointId={historyPoint.sourcePointId} currentRaidId={raid.id} active={historyOpen && !actionsOpen} />
+        <PointVisitHistory key={`${identityId}:${historyPoint.sourcePointId}`} identityId={identityId} kabandaId={raid.kabandaId} pointId={historyPoint.sourcePointId} currentRaidId={raid.id} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen} />
         {raid.state === 'active' && inspectedNearby && !(raid.routeTemplateId && inspectedVisited) && <div className="raid-point-history-sheet__action">
           <button type="button" className="kb-primary raid-primary" disabled={pendingCheckIns > 0} onClick={() => {
             setRepeatPointId(inspectedVisited ? historyPoint.id : null)

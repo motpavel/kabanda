@@ -13,7 +13,7 @@ function LoadingHistory() {
   return <div className="point-visit-history__loading" role="status" aria-label="Загружаем историю"><span /><span /><span /></div>
 }
 
-function ParticipantVisits({ url, userId, currentRaidId }: { url: string; userId: string; currentRaidId?: string }) {
+function ParticipantVisits({ url, userId, currentRaidId, onOpenRaid }: { url: string; userId: string; currentRaidId?: string; onOpenRaid?: () => void }) {
   const [history, setHistory] = useState<History | null>(null)
   const [offset, setOffset] = useState(0)
   const [busy, setBusy] = useState(true)
@@ -34,18 +34,18 @@ function ParticipantVisits({ url, userId, currentRaidId }: { url: string; userId
   return <div className="point-visit-history__detail">
     {busy && !history && <LoadingHistory />}
     {history && <ol className="point-visit-history__visits">{visitsForParticipant(history.entries, userId).map((visit) => <li key={visit.id}>
-      <div>
-        {visit.raidId ? <a href={`${appPath('app')}?raid=${encodeURIComponent(visit.raidId)}`}>{visit.title}<span aria-hidden="true">›</span></a> : <strong>{visit.title}</strong>}
-        <p><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}</time>{visit.raidId === currentRaidId && <span> · этот рейд</span>}</p>
-      </div>
+      {visit.raidId ? <a className="point-visit-history__raid" href={`${appPath('app')}?raid=${encodeURIComponent(visit.raidId)}`} onClick={onOpenRaid}>
+        <span><strong>{visit.title}</strong><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}{visit.raidId === currentRaidId && ' · этот рейд'}</time></span>
+        <span aria-hidden="true">›</span>
+      </a> : <div><strong>{visit.title}</strong><p><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}</time></p></div>}
     </li>)}</ol>}
     {error && <p role="alert">Не удалось загрузить посещения. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
     {history?.nextOffset != null && <button className="point-visit-history__more" type="button" disabled={busy} onClick={() => setOffset(history.nextOffset!)}>{busy ? 'Загружаем…' : 'Показать ещё'}</button>}
   </div>
 }
 
-export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, active = true }: {
-  kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; active?: boolean
+export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, active = true, onOpenRaid }: {
+  kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; active?: boolean; onOpenRaid?: () => void
 }) {
   const [history, setHistory] = useState<History | null>(null)
   const [error, setError] = useState(false)
@@ -86,7 +86,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
           <span className="point-visit-history__total">{formatVisitCount(visitor.count)}</span>
           {visitor.count > 0 && <svg className="point-visit-history__chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
         </button>
-        <div id={detailId} hidden={!expanded}>{expanded && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} />}</div>
+        <div id={detailId} hidden={!expanded}>{expanded && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div>
       </li>
     })}</ul>
   </section>

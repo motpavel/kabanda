@@ -312,7 +312,7 @@ export function RaidRouteMap({
       <button aria-label="Показать моё местоположение" aria-pressed={following} className="raid-map-controls__follow" disabled={!location || providerState !== 'ready'} onClick={() => setFollowing((current) => !current)} type="button"><RaidControlIcon name="location" /></button>
     </nav>
     {providerState === 'loading' && <p className="route-live-map__state" role="status">Загружаем карту…</p>}
-    {providerState === 'failed' && <p className="route-live-map__state route-live-map__state--error" role="alert">Карта не загрузилась. Трек продолжает записываться.</p>}
+    {providerState === 'failed' && <p className="route-live-map__state route-live-map__state--error" role="alert">Карта не загрузилась.{live ? ' Трек продолжает записываться.' : ' Проверьте соединение и откройте рейд снова.'}</p>}
     {providerState === 'ready' && dataState === 'loading' && <p className="route-live-map__state" role="status">Открываем точки рейда…</p>}
     {providerState === 'ready' && dataState === 'failed' && !track && <p className="route-live-map__state route-live-map__state--error" role="alert">Не удалось загрузить карту рейда. Повторим автоматически.</p>}
     {track?.truncated && <p className="route-live-map__state route-live-map__state--notice">Показана первая часть длинного трека.</p>}
