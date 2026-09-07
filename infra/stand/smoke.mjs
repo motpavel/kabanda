@@ -30,13 +30,13 @@ expectStatus(app, 200, 'PWA shell')
 const html = await app.text()
 if (!html.toLowerCase().includes('<!doctype html')) throw new Error('PWA shell is not HTML')
 if (app.headers.get('cache-control') !== 'no-store') throw new Error('PWA shell must not be cached')
-if (!html.includes('href="/pwa-192x192.png"') || !html.includes('href="/apple-touch-icon.png"')) {
+if (!html.includes('href="/kabanda-bike-192.png"') || !html.includes('href="/kabanda-bike-apple-180.png"')) {
   throw new Error('PWA shell must use canonical root icon paths')
 }
 
-const icon = await request('/pwa-192x192.png')
+const icon = await request('/kabanda-bike-192.png')
 expectStatus(icon, 200, 'PWA icon')
-const appleTouchIcon = await request('/apple-touch-icon.png')
+const appleTouchIcon = await request('/kabanda-bike-apple-180.png')
 expectStatus(appleTouchIcon, 200, 'apple touch icon')
 
 const manifest = await request('/manifest.webmanifest')
@@ -44,6 +44,13 @@ expectStatus(manifest, 200, 'manifest')
 if (manifest.headers.get('cache-control') !== 'no-store') throw new Error('manifest must not be cached')
 const manifestBody = await manifest.json()
 if (manifestBody.lang !== 'ru') throw new Error(`manifest language must be ru, received ${manifestBody.lang ?? 'none'}`)
+
+for (const entry of manifestBody.icons ?? []) {
+  const response = await request(new URL(entry.src, origin).pathname)
+  expectStatus(response, 200, `manifest icon ${entry.src}`)
+}
+const wordmark = await request('/brand/kabanda-wordmark.png')
+expectStatus(wordmark, 200, 'Kabanda wordmark')
 
 const serviceWorker = await request('/sw.js')
 expectStatus(serviceWorker, 200, 'service worker')
