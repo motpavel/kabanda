@@ -43,4 +43,7 @@
 .gps-experiment-log strong { overflow-wrap: anywhere; }
 .gps-experiment footer { font-size: 11px; text-align: center; color: #687269; padding: 14px; }
 .gps-experiment .gps-experiment-interval { font-variant-numeric: tabular-nums; }
+.gps-experiment .gps-experiment-audio-note { padding: 12px; border-radius: 12px; background: #fff1ef; color: #853e35; }
+.gps-experiment .gps-experiment-audio-status { padding: 10px 12px; border-radius: 10px; background: #f0f0e9; font-size: 12px; }
+.gps-experiment .gps-experiment-audio-status.is-playing { background: #e4f1df; color: #276142; }
 @media (max-width: 360px) { .gps-experiment { padding-inline: 12px; } .gps-experiment .gps-experiment-card { padding: 17px; } }

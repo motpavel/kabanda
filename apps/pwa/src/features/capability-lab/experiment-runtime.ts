@@ -3,7 +3,7 @@ import {
   type ExperimentEvent, type ExperimentRun,
 } from './experiment-data'
 
-export function createExperimentRecorder(run: ExperimentRun, notify: () => void, onError: (message: string) => void) {
+export function createExperimentRecorder(run: ExperimentRun, notify: () => void, onError: (message: string) => void, onStop: () => void = () => {}) {
   let alive = true
   let watch: number | null = null
   let worker: Worker | null = null
@@ -92,6 +92,7 @@ export function createExperimentRecorder(run: ExperimentRun, notify: () => void,
   const stop = (reason = 'user') => {
     if (stopPromise) return stopPromise
     alive = false
+    try { onStop() } catch (error) { log('cleanup.error', { detail: String(error) }) }
     if (watch !== null) navigator.geolocation.clearWatch(watch)
     worker?.terminate()
     timers.forEach(clearInterval)
@@ -156,10 +157,18 @@ export function createExperimentRecorder(run: ExperimentRun, notify: () => void,
         enableHighAccuracy: true, maximumAge: 0, timeout: 12_000,
       })
     }
-    if (run.mode !== 'watch') {
+    if (run.mode === 'poll' || run.mode === 'combined') {
       poll()
       timers.push(setInterval(poll, 10_000))
     }
   }
-  return { start, stop, get active() { return alive } }
+  return {
+    start, stop,
+    recordExternalEvent(event: Pick<ExperimentEvent, 'kind' | 'receivedAt' | 'monotonicAt' | 'visibility'> & Partial<ExperimentEvent>) {
+      // Media may start inside the user gesture before the run is inserted.
+      // Preserve its original callback time when draining those buffered events.
+      if (alive) log(event.kind, event)
+    },
+    get active() { return alive },
+  }
 }
