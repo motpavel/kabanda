@@ -842,7 +842,7 @@ function InviteCreator({ kabandaId, canInvite }: { kabandaId: string; canInvite:
 }
 
 function Brand() {
-  return <a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>
+  return <a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark.png')} alt="КАБАНДА" /></a>
 }
 
 function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {

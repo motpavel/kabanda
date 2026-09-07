@@ -92,7 +92,7 @@ export function InvitePage() {
     <main className="kb-shell kb-center kb-auth-shell">
       <section className="kb-auth-layout kb-invite-layout" aria-live="polite">
         <aside className="kb-auth-story" aria-label="Приглашение в Кабанду">
-          <a className="kb-brand" href={appPath('app')}><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><strong>КАБАНДА</strong></a>
+          <a className="kb-brand" href={appPath('app')}><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark.png')} alt="КАБАНДА" /></a>
           <div>
             <h1>{invite ? `Вас ждут в «${invite.kabanda.name}»` : 'Проверяем приглашение'}</h1>
           </div>

@@ -380,7 +380,7 @@ function EditorShell({ kabandaId, children }: { kabandaId: string; children: Rea
   return <main className="rt-editor-shell">
     <nav className="rt-editor-nav" aria-label="Навигация конструктора">
       <a href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`} aria-label="Вернуться к рейдам">← <span>Рейды</span></a>
-      <a className="rt-editor-nav__brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img alt="" src={appPath('brand/kabanda-logo-reference.png')} /><strong>КАБАНДА</strong></a>
+      <a className="rt-editor-nav__brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img alt="" src={appPath('brand/kabanda-logo-reference.png')} /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark.png')} alt="КАБАНДА" /></a>
     </nav>
     {children}
   </main>

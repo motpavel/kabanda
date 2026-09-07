@@ -49,9 +49,10 @@ export default defineConfig({
       registerType: 'prompt',
       injectRegister: null,
       includeAssets: [
-        'apple-touch-icon.png',
-        'pwa-192x192.png',
-        'pwa-512x512.png',
+        'kabanda-bike-apple-180.png',
+        'kabanda-bike-192.png',
+        'kabanda-bike-512.png',
+        'kabanda-bike-maskable-512.png',
         'brand/kabanda-logo-reference.png',
         'brand/kabanda-login-riders.jpg',
         'brand/kabanda-team-cover.jpg',
@@ -70,17 +71,17 @@ export default defineConfig({
         scope: base,
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'kabanda-bike-192.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'kabanda-bike-512.png',
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'kabanda-bike-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'

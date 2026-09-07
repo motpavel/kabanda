@@ -1114,3 +1114,18 @@
   .kb-shell *::after { scroll-behavior: auto !important; transition: none !important; }
   .kb-point-sheet { animation: none; }
 }
+
+/* Keep the supplied wordmark proportionate beside the boar in every header. */
+.kb-brand img.kb-brand__wordmark[alt],
+.rt-editor-nav__brand img.kb-brand__wordmark[alt] {
+  display: block;
+  width: 114px;
+  height: 43px;
+  flex: 0 0 auto;
+  border-radius: 0;
+  object-fit: contain;
+}
+.kb-auth-story .kb-brand { padding: 3px 9px; border-radius: 10px; background: #fffdf8; }
+@media (max-width: 360px) {
+  .rt-editor-nav__brand img.kb-brand__wordmark[alt] { width: 86px; height: 33px; }
+}
