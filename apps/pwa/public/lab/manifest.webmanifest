@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "Кабанда GPS",
+  "short_name": "Кабанда GPS",
+  "description": "Проверка GPS и локальной памяти телефона",
+  "lang": "ru",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#f3efe6",
+  "background_color": "#f3efe6",
+  "icons": [
+    { "src": "../kabanda-bike-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "../kabanda-bike-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

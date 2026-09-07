@@ -33,6 +33,8 @@ export function GpsExperimentPage() {
   const refreshing = useRef(false)
   const capabilities = getCapabilitySnapshot()
   const installed = capabilities.displayMode === 'standalone' || capabilities.displayMode === 'fullscreen'
+  const installPageReady = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')?.href
+    === new URL(appPath('lab/manifest.webmanifest'), window.location.origin).href
   const { needRefresh: [needRefresh], offlineReady: [offlineReady], updateServiceWorker } = useRegisterSW({
     immediate: true,
     onRegisterError: registrationError => setError(`Не удалось подготовить офлайн-запуск: ${registrationError.message}`),
@@ -69,12 +71,8 @@ export function GpsExperimentPage() {
 
   useEffect(() => {
     mounted.current = true
-    // A separate install identity opens this exact test instead of the raid home.
-    const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
-    const previousHref = manifest?.href
-    if (manifest) manifest.href = appPath('gps-lab.webmanifest')
     const previousTitle = document.title
-    document.title = 'Кабанда · GPS-тест'
+    document.title = 'Кабанда GPS'
     void experimentDb.open().then(async () => {
       if (!mounted.current) return
       setReady(true)
@@ -86,7 +84,6 @@ export function GpsExperimentPage() {
       mounted.current = false
       clearInterval(timer)
       void runner.current?.stop('page-unmounted')
-      if (manifest && previousHref) manifest.href = previousHref
       document.title = previousTitle
     }
     // Lifetime is this page, not a changing sample or selected run.
@@ -179,6 +176,16 @@ export function GpsExperimentPage() {
     {needRefresh && <div className="gps-experiment-notice">Доступна новая версия теста. <button disabled={active} onClick={() => void updateServiceWorker(true)}>Обновить</button></div>}
     {error && <div role="alert" className="gps-experiment-error">{error}</div>}
     {message && <p role="status" className="gps-experiment-notice">{message}</p>}
+    {!installed && <section className="gps-experiment-card">
+      <h2>Отдельный ярлык «Кабанда GPS»</h2>
+      {installPageReady ? <>
+        <p><strong>Страница установки GPS готова.</strong> В Safari открой «Поделиться» → «На экран Домой». Название должно быть «Кабанда GPS». Затем запусти новый ярлык.</p>
+        <p className="gps-experiment-small">После запуска сверху появится «Установленная PWA». Значок с кабанчиком тот же; новый ярлык открывает сразу этот тест.</p>
+      </> : <>
+        <p>Сначала открой отдельную страницу установки. На текущей странице Safari может предложить обычную «Кабанду».</p>
+        <button className="gps-experiment-primary" disabled={active} onClick={() => { window.location.href = appPath('lab/index.html') }}>Открыть страницу установки GPS</button>
+      </>}
+    </section>}
     <section className="gps-experiment-card">
       <h2>1. Выбери способ</h2>
       <label>Режим записи<select value={mode} disabled={active || busy} onChange={event => setMode(event.target.value as ExperimentMode)}>
@@ -219,7 +226,6 @@ export function GpsExperimentPage() {
       <button className="gps-experiment-copy" disabled={active} onClick={() => { void navigator.clipboard.writeText(summaryText).then(() => setMessage('Итог скопирован. Вставь его в наш чат.'), () => { downloadJson('kabanda-gps-summary.json', { summary: summaryText }) }) }}>Скопировать итог для чата</button>
       <p className="gps-experiment-small">Отчёт — один файл с координатами и точными временами. Он хранится на телефоне и отправляется только через выбранное тобой действие.</p>
     </section>}
-    {!installed && <section className="gps-experiment-card"><h2>Проверим именно PWA</h2><p>В Safari открой «Поделиться» → «На экран Домой». Название ярлыка — «Кабанда GPS». Затем запусти тест этим ярлыком.</p><p>Вверху должно появиться <strong>«Установленная PWA»</strong>. Safari и PWA лучше проверять отдельными тестами с одинаковым режимом.</p></section>}
     <details className="gps-experiment-card"><summary>Память телефона и прошлые тесты</summary>
       <p>Постоянное хранение: {persistent === null ? 'не проверено' : persistent ? 'разрешено' : 'не предоставлено'}. Разрешение не включает фоновый GPS.</p>
       <button disabled={active || !navigator.storage?.persist} onClick={() => void persist()}>Запросить постоянное хранение</button>

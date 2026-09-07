@@ -45,6 +45,30 @@ if (manifest.headers.get('cache-control') !== 'no-store') throw new Error('manif
 const manifestBody = await manifest.json()
 if (manifestBody.lang !== 'ru') throw new Error(`manifest language must be ru, received ${manifestBody.lang ?? 'none'}`)
 
+for (const path of ['/lab?gps-test=3', '/lab/index.html']) {
+  const lab = await request(path, { headers: { accept: 'text/html' } })
+  expectStatus(lab, 200, 'GPS install page')
+  const labHtml = await lab.text()
+  const manifests = [...labHtml.matchAll(/<link\b[^>]*\brel=["']manifest["'][^>]*>/g)]
+  if (manifests.length !== 1 || !manifests[0][0].includes('/lab/manifest.webmanifest')) {
+    throw new Error(`${path}: GPS install metadata is missing or mixed with the main app`)
+  }
+  if (!labHtml.includes('<title>Кабанда GPS</title>') || !labHtml.includes('name="apple-mobile-web-app-title" content="Кабанда GPS"')) {
+    throw new Error(`${path}: GPS title must be present before JavaScript runs`)
+  }
+  if (lab.headers.get('cache-control') !== 'no-store') throw new Error('GPS HTML must not be cached by HTTP')
+}
+const gpsManifest = await request('/lab/manifest.webmanifest')
+expectStatus(gpsManifest, 200, 'GPS manifest')
+const gpsManifestBody = await gpsManifest.json()
+const gpsManifestUrl = new URL('/lab/manifest.webmanifest', origin)
+if (gpsManifestBody.name !== 'Кабанда GPS' || gpsManifestBody.display !== 'standalone'
+  || new URL(gpsManifestBody.start_url, gpsManifestUrl).pathname !== '/lab/index.html'
+  || new URL(gpsManifestBody.scope, gpsManifestUrl).pathname !== '/lab/'
+  || new URL(gpsManifestBody.id, gpsManifestUrl).pathname !== '/lab/') {
+  throw new Error('GPS manifest must install a separate app that opens the GPS test')
+}
+
 for (const entry of manifestBody.icons ?? []) {
   const response = await request(new URL(entry.src, origin).pathname)
   expectStatus(response, 200, `manifest icon ${entry.src}`)

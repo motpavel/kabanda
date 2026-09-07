@@ -372,7 +372,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       acceptsHtml
     ) {
       reply.header('Cache-Control', 'no-store')
-      return reply.sendFile('index.html')
+      const pathname = new URL(request.url, 'http://localhost').pathname
+      return reply.sendFile(pathname === '/lab' || pathname === '/lab/' ? 'lab/index.html' : 'index.html')
     }
     return reply.status(404).send({
       error: { code: 'NOT_FOUND', message: 'Ресурс не найден' },

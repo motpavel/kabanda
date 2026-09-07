@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath } from 'node:url'
 
 const e2eMode = process.env.KABANDA_E2E === 'true'
 const base = !e2eMode && process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
@@ -23,6 +24,14 @@ function serviceWorkerBuildResponder(): Plugin {
 
 export default defineConfig({
   base,
+  build: {
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        gpsLab: fileURLToPath(new URL('./lab/index.html', import.meta.url)),
+      },
+    },
+  },
   optimizeDeps: {
     exclude: ['maplibre-gl'],
   },
@@ -50,6 +59,7 @@ export default defineConfig({
       injectRegister: null,
       includeAssets: [
         'gps-lab.webmanifest',
+        'lab/manifest.webmanifest',
         'kabanda-bike-apple-180.png',
         'kabanda-bike-192.png',
         'kabanda-bike-512.png',
@@ -93,10 +103,18 @@ export default defineConfig({
         globPatterns: ['**/*.{js,wasm,css,html,woff2}'],
         cleanupOutdatedCaches: true,
         importScripts: [swBuildAsset],
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/(?:kabanda\/)?lab(?:[/?]|$)/],
         // Only public, bundled art. Authenticated API, covers and map/GPS responses
         // remain network-only; never leak one member's data into a shared SW cache.
         runtimeCaching: [{
+          // Lab navigations must never receive the main app's install metadata.
+          urlPattern: ({ url, request, sameOrigin }) => sameOrigin === true && request.mode === 'navigate' && /^\/(?:kabanda\/)?lab(?:\/|$)/.test(url.pathname),
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'kabanda-gps-pages',
+            cacheableResponse: { statuses: [200] },
+          },
+        }, {
           urlPattern: ({ url, request, sameOrigin }) => sameOrigin === true && request.destination === 'image' && /^\/(?:kabanda\/)?brand\//.test(url.pathname),
           handler: 'StaleWhileRevalidate',
           options: {
@@ -110,6 +128,20 @@ export default defineConfig({
         enabled: true,
         type: 'module'
       }
-    })
+    }),
+    {
+      name: 'kabanda-gps-install-metadata',
+      enforce: 'post',
+      transformIndexHtml: {
+        order: 'post',
+        handler(html, context) {
+          if (!context.filename.endsWith('/lab/index.html')) return html
+          // VitePWA injects the main manifest into every HTML entry. Replace it
+          // at build time, before Safari reads any install metadata.
+          return html.replace(/<link\b[^>]*\brel=["']manifest["'][^>]*>/g, '')
+            .replace('</head>', `<link rel="manifest" href="${base}lab/manifest.webmanifest" /></head>`)
+        },
+      },
+    },
   ]
 })

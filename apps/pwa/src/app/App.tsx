@@ -22,7 +22,7 @@ export function App() {
   if (window.location.pathname.endsWith('/prototype')) return <PrototypePage />
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab/legacy')) return <CapabilityLabPage />
-  if (window.location.pathname.endsWith('/lab')) return <GpsExperimentPage />
+  if (/\/lab(?:\/index\.html|\/)?$/.test(window.location.pathname)) return <GpsExperimentPage />
   return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PortraitMode /><PwaUpdateGate /><AlphaDiagnosticsConsent /></RecordingRuntimeProvider></InstallProvider>
 }
 

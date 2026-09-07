@@ -294,7 +294,9 @@ describe('API foundation', () => {
     temporaryDirectories.push(directory)
     await mkdir(join(directory, 'assets'))
     await mkdir(join(directory, 'api'))
+    await mkdir(join(directory, 'lab'))
     await writeFile(join(directory, 'index.html'), '<!doctype html><title>Kabanda preview</title>')
+    await writeFile(join(directory, 'lab', 'index.html'), '<!doctype html><title>Кабанда GPS</title><link rel="manifest" href="/lab/manifest.webmanifest">')
     await writeFile(join(directory, 'manifest.webmanifest'), '{"name":"Kabanda"}')
     await writeFile(join(directory, 'sw.js'), 'self.addEventListener("fetch",()=>{})')
     await writeFile(join(directory, 'assets', 'app-abc123.js'), 'globalThis.kabanda=true')
@@ -313,6 +315,15 @@ describe('API foundation', () => {
     expect(spa.headers['cache-control']).toBe('no-store')
     expect(spa.headers['permissions-policy']).toContain('geolocation=(self)')
     expect(spa.headers['x-kabanda-app-build']).toBe('preview-build')
+
+    for (const path of ['/lab?gps-test=3', '/lab/', '/lab/index.html?gps-test=3']) {
+      const lab = await app.inject({ method: 'GET', url: path, headers: { accept: 'text/html' } })
+      expect(lab.statusCode).toBe(200)
+      expect(lab.body).toContain('<title>Кабанда GPS</title>')
+      expect(lab.body).toContain('/lab/manifest.webmanifest')
+      expect(lab.body).not.toContain('Kabanda preview')
+      expect(lab.headers['cache-control']).toBe('no-store')
+    }
 
     const asset = await app.inject({ method: 'GET', url: '/assets/app-abc123.js' })
     expect(asset.statusCode).toBe(200)
