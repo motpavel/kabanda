@@ -49,6 +49,7 @@ export default defineConfig({
       registerType: 'prompt',
       injectRegister: null,
       includeAssets: [
+        'gps-lab.webmanifest',
         'kabanda-bike-apple-180.png',
         'kabanda-bike-192.png',
         'kabanda-bike-512.png',

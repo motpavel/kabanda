@@ -1,5 +1,6 @@
 import { VerifyMagicLinkPage } from '../features/auth/VerifyMagicLinkPage'
 import { CapabilityLabPage } from '../features/capability-lab/App'
+import { GpsExperimentPage } from '../features/capability-lab/GpsExperimentPage'
 import { PrototypePage } from '../features/prototype/PrototypePage'
 import { RaidsDesignPrototype } from '../features/raids-design/RaidsDesignPrototype'
 import { RouteTrackingPrototype } from '../features/route-tracking-prototype/RouteTrackingPrototype'
@@ -20,7 +21,8 @@ export function App() {
   if (window.location.pathname.endsWith('/prototype/route-tracking')) return <RouteTrackingPrototype />
   if (window.location.pathname.endsWith('/prototype')) return <PrototypePage />
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
-  if (window.location.pathname.endsWith('/lab')) return <CapabilityLabPage />
+  if (window.location.pathname.endsWith('/lab/legacy')) return <CapabilityLabPage />
+  if (window.location.pathname.endsWith('/lab')) return <GpsExperimentPage />
   return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PortraitMode /><PwaUpdateGate /><AlphaDiagnosticsConsent /></RecordingRuntimeProvider></InstallProvider>
 }
 

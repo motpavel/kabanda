@@ -1,0 +1,46 @@
+.gps-experiment { max-width: 600px; margin: auto; padding: max(24px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom)); color: #202923; }
+.gps-experiment-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.gps-experiment-header a { color: #202923; text-decoration: none; font-size: 14px; font-weight: 700; }
+.gps-experiment-header span { color: #bf372f; font-size: 10px; letter-spacing: .08em; font-weight: 800; }
+.gps-experiment-intro { margin: 32px 0 20px; }
+.gps-experiment-intro h1 { font-size: clamp(30px, 8vw, 44px); line-height: 1.12; letter-spacing: -.04em; margin: 0 0 14px; }
+.gps-experiment p { line-height: 1.55; font-size: 14px; color: #586158; margin: 12px 0; }
+.gps-experiment-context { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.gps-experiment-context span { padding: 7px 10px; background: #e7e7de; border-radius: 8px; font-size: 12px; }
+.gps-experiment-context .gps-experiment-ok { background: #def0df; color: #276142; }
+.gps-experiment .gps-experiment-card { display: block; padding: 22px; border: 1px solid #dedfd5; border-radius: 24px; background: #fffefa; margin: 14px 0; }
+.gps-experiment h2 { margin: 0 0 16px; font-size: 19px; letter-spacing: -.02em; }
+.gps-experiment label { display: grid; gap: 8px; font-size: 13px; font-weight: 650; margin: 16px 0 12px; }
+.gps-experiment select { width: 100%; padding: 13px 10px; border: 1px solid #d9dbd2; border-radius: 12px; background: #fff; color: #202923; font: inherit; min-height: 48px; }
+.gps-experiment .gps-experiment-check { display: flex; align-items: center; gap: 10px; font-weight: 500; line-height: 1.4; }
+.gps-experiment-check input { width: 20px; height: 20px; margin: 0; accent-color: #d7372c; flex-shrink: 0; }
+.gps-experiment button { cursor: pointer; border-radius: 13px; padding: 13px 14px; min-height: 48px; font: inherit; font-size: 14px; font-weight: 650; background: #f0f0e9; border: 1px solid #dddfd5; color: #202923; }
+.gps-experiment button:disabled { opacity: .5; cursor: default; }
+.gps-experiment button:focus-visible, .gps-experiment select:focus-visible, .gps-experiment summary:focus-visible { outline: 3px solid #a15231; outline-offset: 3px; }
+.gps-experiment button.gps-experiment-primary { background: #d7372c; border-color: #d7372c; color: white; width: 100%; }
+.gps-experiment button.gps-experiment-stop { background: #fff1ef; color: #b62920; border-color: #efb5ad; width: 100%; }
+.gps-experiment .gps-experiment-small { font-size: 12px; line-height: 1.5; }
+.gps-experiment-live-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gps-experiment-live-heading strong { font-variant-numeric: tabular-nums; font-size: 22px; }
+.gps-experiment .gps-experiment-phase { color: #202923; font-size: 17px; font-weight: 700; }
+.gps-experiment-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
+.gps-experiment-metrics div { padding: 13px; background: #f0f3eb; border-radius: 14px; }
+.gps-experiment-metrics dt { font-size: 11px; color: #586158; }
+.gps-experiment-metrics dd { margin: 8px 0 0; font-size: 23px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.gps-experiment-details { margin: 16px 0; }
+.gps-experiment-details div { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; border-bottom: 1px solid #eceee6; padding: 10px 0; font-size: 13px; }
+.gps-experiment-details dt { line-height: 1.4; }
+.gps-experiment-details dd { font-weight: 750; margin: 0; white-space: nowrap; }
+.gps-experiment .gps-experiment-verdict { font-size: 18px; color: #202923; font-weight: 700; }
+.gps-experiment-actions { display: grid; gap: 10px; margin-top: 18px; }
+.gps-experiment .gps-experiment-copy { background: none; border: 0; font-size: 12px; width: 100%; }
+.gps-experiment .gps-experiment-notice { background: #fff5d9; color: #5b4c21; border-radius: 12px; padding: 12px; font-size: 13px; }
+.gps-experiment-error { background: #ffece7; color: #a02921; border-radius: 12px; padding: 14px; margin: 16px 0; line-height: 1.5; }
+.gps-experiment summary { font-weight: 700; font-size: 14px; cursor: pointer; }
+.gps-experiment-log { margin-top: 18px; }
+.gps-experiment-log > div { border-bottom: 1px solid #e6e9dd; padding: 12px 0; display: grid; grid-template-columns: 70px 1fr; gap: 6px; font-size: 11px; }
+.gps-experiment-log span { grid-column: 2; overflow-wrap: anywhere; color: #586158; }
+.gps-experiment-log strong { overflow-wrap: anywhere; }
+.gps-experiment footer { font-size: 11px; text-align: center; color: #687269; padding: 14px; }
+.gps-experiment .gps-experiment-interval { font-variant-numeric: tabular-nums; }
+@media (max-width: 360px) { .gps-experiment { padding-inline: 12px; } .gps-experiment .gps-experiment-card { padding: 17px; } }
