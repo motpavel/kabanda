@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "de0ecb5fab29cad853de9c8fc15037c070d3635b",
-    "indexed_at": "2026-08-28T05:09:53Z",
+    "commit": "4511c710db130e0ac78ac410c11ab60fe92d9ea0",
+    "indexed_at": "2026-08-28T06:16:56Z",
     "project": "kabanda",
-    "nodes": 132,
-    "edges": 203,
-    "original_size": 1966080,
-    "compressed_size": 123494,
+    "nodes": 284,
+    "edges": 461,
+    "original_size": 2228224,
+    "compressed_size": 241184,
     "compression_level": 3
 }

@@ -1,8 +1,14 @@
 # КАБАНДА
 
-Репозиторий приложения для совместных городских велорейдов.
+Репозиторий приложения для совместных городских велорейдов. Код организован как небольшой pnpm workspace:
 
-Текущая ветка содержит capability-spike для [VP 1/9, issue #30](https://github.com/motpavel/kabanda/issues/30). Стенд измеряет фактическое поведение устанавливаемой PWA до начала основной разработки.
+- `apps/pwa` — устанавливаемый React/Vite клиент;
+- `apps/api` — same-origin Fastify API;
+- `packages/contracts` — проверяемые DTO;
+- `packages/domain` — чистые продуктовые правила;
+- `infra` — локальные PostGIS, private object storage и тестовая почта.
+
+Capability-spike для [VP 1/9, issue #30](https://github.com/motpavel/kabanda/issues/30) измеряет фактическое поведение устанавливаемой PWA. В [issue #32](https://github.com/motpavel/kabanda/issues/32) поверх него собирается минимальный рабочий фундамент закрытой альфы.
 
 HTTPS-стенд для физических тестов: [motpavel.github.io/kabanda](https://motpavel.github.io/kabanda/).
 
@@ -11,19 +17,19 @@ HTTPS-стенд для физических тестов: [motpavel.github.io/k
 ## Локальный запуск
 
 ```bash
+cp .env.example .env
 pnpm install
+pnpm infra:up
+pnpm db:migrate
 pnpm dev
 ```
 
-Для service worker, геолокации, камеры и Wake Lock используйте HTTPS или localhost.
+Полная инструкция: [docs/development/LOCAL_SETUP.md](docs/development/LOCAL_SETUP.md). Для service worker, геолокации, камеры и Wake Lock используйте HTTPS или localhost.
 
 ## Проверки
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm preview
+pnpm check
 ```
 
 ## Артефакты #30

@@ -25,7 +25,7 @@ const statusCopy: Record<RecorderStatus, string> = {
   error: 'Ошибка GPS',
 }
 
-export function App() {
+export function CapabilityLabPage() {
   const [session, setSession] = useState<CapabilitySession | null>(null)
   const [snapshot, setSnapshot] = useState<CapabilitySnapshot | null>(null)
   const [events, setEvents] = useState<CapabilityEvent[]>([])

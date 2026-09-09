@@ -1,5 +1,5 @@
 {
-  "name": "kabanda-pwa-capability-spike",
+  "name": "kabanda",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -8,28 +8,16 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -b --pretty false",
-    "test": "pnpm test:points && vitest run",
+    "dev": "pnpm --parallel --filter @kabanda/pwa --filter @kabanda/api dev",
+    "dev:pwa": "pnpm --filter @kabanda/pwa dev",
+    "dev:api": "pnpm --filter @kabanda/api dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm test:points && pnpm -r --if-present test",
     "test:points": "node scripts/validate-alpha-points.mjs",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "dexie": "^4.4.5",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "workbox-window": "^7.4.1"
-  },
-  "devDependencies": {
-    "@types/node": "^26.4.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitejs/plugin-react": "^6.1.0",
-    "typescript": "^7.0.2",
-    "vite": "^8.2.2",
-    "vite-plugin-pwa": "^1.3.0",
-    "vitest": "^4.1.11"
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "infra:up": "docker compose -f infra/compose.yaml up -d --wait",
+    "infra:down": "docker compose -f infra/compose.yaml down",
+    "db:migrate": "pnpm --filter @kabanda/api db:migrate"
   }
 }

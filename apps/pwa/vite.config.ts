@@ -6,6 +6,11 @@ const base = process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
 
 export default defineConfig({
   base,
+  server: {
+    proxy: {
+      '/api': 'http://127.0.0.1:3000',
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(
       process.env.GITHUB_SHA?.slice(0, 7) ?? process.env.npm_package_version ?? 'dev',
