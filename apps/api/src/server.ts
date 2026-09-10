@@ -1,4 +1,6 @@
 import dotenv from 'dotenv'
+import { readFile } from 'node:fs/promises'
+import { z } from 'zod'
 import { DatabaseAuthService } from './auth.js'
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
@@ -8,6 +10,8 @@ import { SmtpMagicLinkMailer } from './mailer.js'
 import { DatabaseKabandaService } from './kabandas.js'
 import { DatabaseRaidService } from './raids.js'
 import { DatabaseRaidTemplateService } from './raid-templates.js'
+import { buildRelayBridge } from './relay-bridge.js'
+import { S3RelayBlobStore } from './relay-blob-store.js'
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url) })
 
@@ -46,7 +50,28 @@ const app = await buildApp({
   readiness: () => assertDatabaseReady(database, config.EXPECTED_MIGRATION),
 })
 
+const relay = config.RELAY_ENABLED ? await buildRelayBridge({
+  app,
+  publicOrigin: config.APP_ORIGIN,
+  cookieName: config.cookieName,
+  pendingInviteCookieName: config.secureCookies ? '__Host-kabanda_pending_invite' : 'kabanda_pending_invite',
+  sessionSecret: config.RELAY_SESSION_SECRET!,
+  privateKeyPkcs8Pem: await readFile(config.RELAY_PRIVATE_KEY_FILE!, 'utf8'),
+  blobs: await (async () => {
+    const credentials = z.object({ key_id: z.string().min(1), secret: z.string().min(1) }).parse(
+      JSON.parse(await readFile(config.RELAY_S3_CREDENTIALS_FILE!, 'utf8')),
+    )
+    return new S3RelayBlobStore({
+      bucket: config.RELAY_BLOB_BUCKET!,
+      accessKeyId: credentials.key_id,
+      secretAccessKey: credentials.secret,
+      ticketSecret: config.RELAY_SESSION_SECRET!,
+    })
+  })(),
+}) : null
+
 const shutdown = async () => {
+  await relay?.close()
   await app.close()
   await database.end()
 }
@@ -55,3 +80,4 @@ process.once('SIGINT', () => void shutdown())
 process.once('SIGTERM', () => void shutdown())
 
 await app.listen({ host: config.API_HOST, port: config.API_PORT })
+await relay?.listen({ host: '127.0.0.1', port: config.RELAY_PORT })

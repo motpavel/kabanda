@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath } from 'node:url'
 
 const e2eMode = process.env.KABANDA_E2E === 'true'
-const base = !e2eMode && process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
+const base = process.env.VITE_APP_BASE === '/' ? '/' : !e2eMode && process.env.GITHUB_ACTIONS ? '/kabanda/' : '/'
 const rawAppVersion = process.env.GITHUB_SHA?.slice(0, 12) ?? process.env.npm_package_version ?? 'dev'
 const appVersion = /^[A-Za-z0-9._-]{1,64}$/.test(rawAppVersion) ? rawAppVersion : 'dev'
 const swBuildAsset = `sw-build-${appVersion}.js`
@@ -103,7 +103,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,wasm,css,html,woff2}'],
         cleanupOutdatedCaches: true,
         importScripts: [swBuildAsset],
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/(?:kabanda\/)?lab(?:[/?]|$)/],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/relay(?:\/|$)/, /^\/(?:kabanda\/)?lab(?:[/?]|$)/],
         // Only public, bundled art. Authenticated API, covers and map/GPS responses
         // remain network-only; never leak one member's data into a shared SW cache.
         runtimeCaching: [{

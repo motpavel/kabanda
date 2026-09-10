@@ -1,3 +1,4 @@
+import { requestApi } from './api-transport'
 import { useEffect, useState, type ImgHTMLAttributes } from 'react'
 import { IDENTITY_CHANGED_EVENT } from '../features/offline/ledger'
 
@@ -30,7 +31,7 @@ if (typeof window !== 'undefined') window.addEventListener(IDENTITY_CHANGED_EVEN
 })
 
 export function isPrivateCover(src: string): boolean {
-  return /^\/(?:kabanda\/)?api\/raid-templates\/[^/?#]+\/cover(?:\?[^#]*)?$/.test(src)
+  return /^\/(?:kabanda\/)?api\/(?:raid-templates\/[^/?#]+\/cover|raids\/[^/?#]+\/media\/[^/?#]+\/content)(?:\?[^#]*)?$/.test(src)
 }
 
 function keyFor(identityId: string, src: string, revision: string) { return JSON.stringify([identityId, src, revision]) }
@@ -46,7 +47,7 @@ export async function loadPrivateCover(identityId: string, src: string, revision
   if (inFlight) return inFlight
   const started = generation
   const task = (async () => {
-    const response = await fetch(src, { credentials: 'same-origin', cache: 'no-store' })
+    const response = await requestApi(src, { credentials: 'same-origin', cache: 'no-store' })
     if (!response.ok) {
       if ([401, 403, 404].includes(response.status)) clearPrivateImageCache()
       throw new Error('Cover unavailable')

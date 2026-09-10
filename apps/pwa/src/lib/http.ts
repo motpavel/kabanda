@@ -1,3 +1,4 @@
+import { requestApi } from './api-transport'
 import { diagnosticRequestHeaders } from './diagnostics'
 
 export class ApiError extends Error {
@@ -14,7 +15,7 @@ export class ApiError extends Error {
 }
 
 export async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
+  const response = await requestApi(input, {
     ...init,
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json', ...diagnosticRequestHeaders(), ...init?.headers },

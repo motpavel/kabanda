@@ -1,0 +1,6 @@
+{
+  "ID": "kabanda-outbox-expiration-v1",
+  "Status": "Enabled",
+  "Filter": {"Prefix": "transport/v1/outbox/kabanda/"},
+  "Expiration": {"Days": 1}
+}

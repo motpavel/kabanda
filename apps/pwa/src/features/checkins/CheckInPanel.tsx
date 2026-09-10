@@ -1,3 +1,4 @@
+import { CachedImage } from '../../lib/CachedImage'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { getRaidPointPresence } from '../raids/api'
@@ -496,7 +497,7 @@ export function CheckInPanel({
             ? { label: 'Найти точку рядом', action: locate }
             : null
   const primaryRequiresOnline = Boolean(pendingClaim || pendingFallback || manualResponse || (viewerIsOrganizer && !selectedPointId))
-  const gallery = media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><img src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>
+  const gallery = media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><CachedImage identityId={identityId} src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>
 
   return (
     <section className={`${presentation === 'map-sheet' ? 'checkin-panel checkin-panel--map' : 'kb-card checkin-panel'}`}>

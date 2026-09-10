@@ -1,0 +1,127 @@
+name: kabanda
+
+services:
+  postgres:
+    image: ${KABANDA_POSTGIS_IMAGE:-postgis/postgis:16-3.5}
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kabanda
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --encoding=UTF8 --locale=C.UTF-8
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - type: bind
+        source: ${KABANDA_POSTGRES_PASSWORD_FILE:?Set an absolute path to the private PostgreSQL administrator password file}
+        target: /run/secrets/postgres_admin_password
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kabanda"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    shm_size: 128mb
+    mem_limit: 512m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  api:
+    image: ${KABANDA_API_IMAGE:?Set the immutable Kabanda API release image tag}
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: infra/yandex/Dockerfile.api
+      args:
+        NODE_IMAGE: ${KABANDA_NODE_IMAGE:-node:22-bookworm-slim}
+    restart: unless-stopped
+    init: true
+    # The existing facade and API must bind to loopback. Linux host networking
+    # keeps those binds usable by the existing relay listener on this VM.
+    network_mode: host
+    env_file:
+      - path: ${KABANDA_API_ENV_FILE:?Set an absolute path to the private API environment file}
+        required: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${KABANDA_DATABASE_URL:?Set the destination kabanda database connection URL}
+      API_HOST: 127.0.0.1
+      API_PORT: "3098"
+      RELAY_ENABLED: "true"
+      RELAY_PORT: "3099"
+      RELAY_PRIVATE_KEY_FILE: /run/secrets/relay_private_key.pem
+      RELAY_S3_CREDENTIALS_FILE: /run/secrets/relay_s3_credentials.json
+      TRUST_PROXY_ADDRESS: loopback
+      NODE_OPTIONS: --max-old-space-size=384
+    command:
+      - node
+      - --input-type=module
+      - -e
+      - >-
+        const target = new URL(process.env.DATABASE_URL);
+        if (target.hostname !== '127.0.0.1' || target.port !== '54329' || target.pathname !== '/kabanda')
+          throw new Error('Kabanda container requires its destination database on 127.0.0.1:54329/kabanda');
+        delete process.env.PWA_DIST_DIR;
+        await import('./dist/server.js');
+    volumes:
+      - type: bind
+        source: ${KABANDA_RELAY_PRIVATE_KEY_FILE:?Set an absolute path to the private relay RSA key}
+        target: /run/secrets/relay_private_key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KABANDA_RELAY_S3_CREDENTIALS_FILE:?Set an absolute path to the private relay S3 credentials JSON}
+        target: /run/secrets/relay_s3_credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=67108864,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    pids_limit: 128
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - --input-type=module
+        - -e
+        - >-
+          const check = async (url, headers = {}) => {
+            const response = await fetch(url, {headers, signal: AbortSignal.timeout(3500)});
+            if (!response.ok) throw new Error('Not ready');
+          };
+          const host = new URL(process.env.APP_ORIGIN).host;
+          await check('http://127.0.0.1:3098/api/ready', {host, 'x-forwarded-proto':'https'});
+          await check('http://127.0.0.1:3099/relay/v1/health');
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  postgres_data:
+    name: kabanda_postgres_data

@@ -188,6 +188,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   })
 
   app.setErrorHandler((error, request, reply) => {
+    if ((error as { statusCode?: number }).statusCode === 429) {
+      return reply.status(429).send({
+        error: { code: 'RATE_LIMITED', message: 'Слишком много запросов. Попробуйте немного позже' },
+      })
+    }
     if ((error as { statusCode?: number }).statusCode === 413) {
       return reply.status(413).send({
         error: { code: 'PAYLOAD_TOO_LARGE', message: 'Запрос слишком большой' },

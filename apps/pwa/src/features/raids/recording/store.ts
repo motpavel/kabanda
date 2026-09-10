@@ -17,7 +17,8 @@ import type {
 
 export const WRITER_LEASE_TTL_MS = 12_000
 export const WRITER_LEASE_RENEW_MS = 4_000
-const BATCH_CLAIM_MS = 30_000
+// Storage relay recovery can exceed 30 seconds; keep a batch claimed until it settles.
+const BATCH_CLAIM_MS = 180_000
 
 function writerKey(identityId: string, raidId: string): string {
   return JSON.stringify([identityId, raidId])

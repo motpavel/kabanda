@@ -1,0 +1,10 @@
+{
+  "CORSRules": [{
+    "ID": "kabanda-public-read-v1",
+    "AllowedOrigins": ["https://kabanda.website.yandexcloud.net"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Cache-Control", "If-None-Match", "Pragma"],
+    "ExposeHeaders": ["ETag", "x-amz-request-id"],
+    "MaxAgeSeconds": 3600
+  }]
+}

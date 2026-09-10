@@ -17,6 +17,12 @@ const environmentSchema = z.object({
   NOMINATIM_BASE_URL: z.url().default('https://nominatim.openstreetmap.org'),
   PWA_DIST_DIR: z.string().min(1).optional(),
   TRUST_PROXY_ADDRESS: z.string().min(1).optional(),
+  RELAY_ENABLED: booleanFlagSchema,
+  RELAY_PORT: z.coerce.number().int().min(1).max(65_535).default(3099),
+  RELAY_PRIVATE_KEY_FILE: z.string().min(1).optional(),
+  RELAY_SESSION_SECRET: z.string().min(32).optional(),
+  RELAY_BLOB_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional(),
+  RELAY_S3_CREDENTIALS_FILE: z.string().min(1).optional(),
   EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0018_raid_destination.sql'),
   DATABASE_URL: z
     .string()
@@ -33,6 +39,15 @@ const environmentSchema = z.object({
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   MEDIA_CAPABILITY_SECRET: z.string().min(32).default(localMediaCapabilitySecret),
 }).superRefine((value, context) => {
+  if (value.RELAY_ENABLED) {
+    for (const field of ['RELAY_PRIVATE_KEY_FILE', 'RELAY_SESSION_SECRET', 'RELAY_BLOB_BUCKET', 'RELAY_S3_CREDENTIALS_FILE'] as const) {
+      if (!value[field]) context.addIssue({ code: 'custom', path: [field], message: `${field} is required for the private relay` })
+    }
+    if (!['127.0.0.1', '::1'].includes(value.API_HOST)) context.addIssue({ code: 'custom', path: ['API_HOST'], message: 'The relay API must bind to loopback' })
+    if (value.TRUST_PROXY_ADDRESS !== 'loopback') context.addIssue({ code: 'custom', path: ['TRUST_PROXY_ADDRESS'], message: 'The relay facade requires loopback proxy trust' })
+    if (value.RELAY_PORT === value.API_PORT) context.addIssue({ code: 'custom', path: ['RELAY_PORT'], message: 'Relay and API ports must differ' })
+    if (!value.APP_ORIGIN.startsWith('https://')) context.addIssue({ code: 'custom', path: ['APP_ORIGIN'], message: 'The relay requires HTTPS' })
+  }
   if (Boolean(value.SMTP_USER) !== Boolean(value.SMTP_PASSWORD)) {
     context.addIssue({
       code: 'custom',

@@ -13,8 +13,9 @@ import type {
   MediaUploadResponse,
 } from './types'
 
-const SENDER_LEASE_MS = 30_000
-const CLAIM_MS = 30_000
+// Covers two sequential relay deliveries for a media intent and its upload.
+const SENDER_LEASE_MS = 180_000
+const CLAIM_MS = 180_000
 
 export interface CheckInSenderFence extends CheckInSenderLeaseRecord {}
 

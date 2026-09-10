@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "storage": {},
+  "state_database": "/var/lib/storage-relay-kit/kabanda.sqlite3",
+  "apps": {
+    "kabanda": {
+      "backend_base_url": "http://127.0.0.1:3099",
+      "request_timeout_seconds": 20,
+      "max_requests_per_minute": 300,
+      "forward_headers": ["accept", "content-type", "x-request-id"],
+      "response_headers": [
+        "cache-control",
+        "content-type",
+        "retry-after",
+        "x-request-id",
+        "x-kabanda-api-build",
+        "x-kabanda-app-build"
+      ],
+      "public_origins": ["https://kabanda.website.yandexcloud.net"],
+      "routes": [{"method": "POST", "path": "/relay/v1/request"}]
+    }
+  }
+}

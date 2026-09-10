@@ -1,3 +1,4 @@
+import { requestApi } from './api-transport'
 import type { AlphaDiagnosticSignal } from '@kabanda/contracts'
 
 const SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1_000
@@ -171,7 +172,7 @@ export async function emitAlphaDiagnostic(
     }
     const body = JSON.stringify(signal)
     if (new TextEncoder().encode(body).byteLength > DIAGNOSTIC_BODY_LIMIT_BYTES) return
-    await fetch('/api/diagnostics/signals', {
+    await requestApi('/api/diagnostics/signals', {
       method: 'POST',
       credentials: 'same-origin',
       keepalive: true,

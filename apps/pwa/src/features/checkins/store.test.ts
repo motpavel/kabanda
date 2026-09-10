@@ -50,8 +50,9 @@ describe('identity-bound check-in outbox', () => {
     expect(sending?.operationId).toBe(queued?.operationId)
     expect(await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-b', now + 2)).toBeNull()
 
-    const tabB = await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-b', now + 30_001)
-    const replay = await claimNextCheckIn(tabB!, now + 30_002)
+    expect(await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-b', now + 75_001)).toBeNull()
+    const tabB = await acquireCheckInSenderLease('user-a', 'raid-a', 'tab-b', now + 180_001)
+    const replay = await claimNextCheckIn(tabB!, now + 180_002)
     expect(replay?.operationId).toBe(queued?.operationId)
     expect(replay?.attempts).toBe(2)
   })

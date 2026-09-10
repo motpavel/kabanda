@@ -1,0 +1,10 @@
+{
+  "package": "@motpavel/storage-relay-web",
+  "version": "0.3.1",
+  "file": "motpavel-storage-relay-web-0.3.1.tgz",
+  "size": 12088,
+  "sha256": "44c8d2081d80131b7cbfaa710e3f487e8a24861c20e856d30c0c45f4887e5a70",
+  "integrity": "sha512-2g/3qNSscW9oz4V0oB8rnXBjvO6fxLPUPbDOdo4d/ZzsBl8wUmhgHluIqt3h77wqTi//7VQlfGeTpL4i8lV/yQ==",
+  "source": "storage-relay-kit/sdk/web",
+  "source_package_private": true
+}

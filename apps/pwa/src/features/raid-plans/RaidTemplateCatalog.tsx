@@ -3,7 +3,7 @@ import { listRaidTemplates } from './api'
 import { appPath } from '../../lib/paths'
 import { formatPlanDistance } from './editor/route-estimate'
 import type { RaidTemplateSummary } from './types'
-import { CachedImage, clearPrivateImageCache } from '../../lib/CachedImage'
+import { CachedImage, clearPrivateImageCache, isPrivateCover } from '../../lib/CachedImage'
 import { ApiError } from '../../lib/http'
 
 export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { kabandaId: string; identityId: string; active?: boolean }) {
@@ -75,7 +75,7 @@ export function RaidTemplateGrid({ templates, kabandaId, identityId }: { templat
   const chronological = [...templates].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
   return <div className="prd-template-grid">
     {chronological.map((template) => <a className="prd-template-card" key={template.id} href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId ?? template.kabandaId)}&template=${encodeURIComponent(template.id)}`}>
-      {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" src={template.cover.url} />}
+      {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
       <div>
         <h3>{template.title}</h3>
         <p>

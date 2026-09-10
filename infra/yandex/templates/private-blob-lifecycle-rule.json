@@ -1,0 +1,6 @@
+{
+  "ID": "kabanda-private-blob-expiration-v1",
+  "Status": "Enabled",
+  "Filter": {"Prefix": "transport/v1/blobs/kabanda/"},
+  "Expiration": {"Days": 1}
+}

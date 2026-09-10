@@ -9,9 +9,12 @@ afterEach(() => {
 })
 
 describe('identity-scoped cover memory', () => {
-  it('only handles the authenticated template cover route, never arbitrary API or third-party media', () => {
+  it('only handles the authenticated cover and media routes, never arbitrary API or third-party media', () => {
     expect(isPrivateCover('/api/raid-templates/one/cover')).toBe(true)
     expect(isPrivateCover('/kabanda/api/raid-templates/one/cover')).toBe(true)
+    expect(isPrivateCover('/api/raids/one/media/two/content')).toBe(true)
+    expect(isPrivateCover('/api/raids/one/media/two/content?revision=abc')).toBe(true)
+    expect(isPrivateCover('/api/raids/one/media/two')).toBe(false)
     expect(isPrivateCover('/api/me')).toBe(false)
     expect(isPrivateCover('https://external.test/api/raid-templates/one/cover')).toBe(false)
     expect(isPrivateCover('/brand/home.jpg')).toBe(false)

@@ -1,3 +1,4 @@
+import { requestApi } from '../../lib/api-transport'
 import { ApiError, requestJson } from '../../lib/http'
 import type { RaidProjection } from '../raids/types'
 import type {
@@ -74,7 +75,7 @@ export async function getKabandaProgress(kabandaId: string): Promise<KabandaProg
 }
 
 export async function getShareCard(raidId: string): Promise<Blob> {
-  const response = await fetch(`${raidBase(raidId)}/share-card`, {
+  const response = await requestApi(`${raidBase(raidId)}/share-card`, {
     credentials: 'same-origin',
     cache: 'no-store',
   })

@@ -1,3 +1,4 @@
+import { requestApi } from '../../lib/api-transport'
 import { ApiError, requestJson } from '../../lib/http'
 import { diagnosticRequestHeaders } from '../../lib/diagnostics'
 import type {
@@ -107,7 +108,7 @@ export async function uploadMediaContent(
   sha256: string,
   blob: Blob,
 ): Promise<MediaUploadResponse> {
-  const response = await fetch(`${raidBase(raidId)}/media/intents/${encodeURIComponent(intentId)}/content`, {
+  const response = await requestApi(`${raidBase(raidId)}/media/intents/${encodeURIComponent(intentId)}/content`, {
     method: 'PUT',
     credentials: 'same-origin',
     headers: {

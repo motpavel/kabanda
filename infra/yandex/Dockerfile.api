@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE=node:22-bookworm-slim
+
+FROM ${NODE_IMAGE} AS workspace
+ENV CI=true
+WORKDIR /work
+RUN npm install --global pnpm@11.19.0
+
+# Keep all workspace manifests and the immutable local tarball available to the
+# frozen lockfile, but install only the API and its workspace dependencies.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/pwa/package.json ./apps/pwa/package.json
+COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/domain/package.json ./packages/domain/package.json
+COPY infra/yandex/vendor/motpavel-storage-relay-web-0.3.1.tgz ./infra/yandex/vendor/motpavel-storage-relay-web-0.3.1.tgz
+
+FROM workspace AS build
+RUN pnpm --filter @kabanda/api... install --frozen-lockfile
+
+COPY apps/api/src/ ./apps/api/src/
+COPY apps/api/tsconfig.json apps/api/tsup.config.ts ./apps/api/
+COPY packages/contracts/src/ ./packages/contracts/src/
+COPY packages/domain/src/ ./packages/domain/src/
+COPY scripts/validate-alpha-points.mjs ./scripts/validate-alpha-points.mjs
+RUN pnpm --filter @kabanda/api build
+
+FROM workspace AS production-dependencies
+RUN pnpm --filter @kabanda/api... install --prod --frozen-lockfile
+
+FROM ${NODE_IMAGE} AS runtime
+ENV NODE_ENV=production
+WORKDIR /app/apps/api
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates fonts-dejavu-core fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+# Preserve pnpm's workspace-relative links using only the production install.
+COPY --from=production-dependencies /work/node_modules/ /app/node_modules/
+COPY --from=production-dependencies /work/apps/api/node_modules/ ./node_modules/
+COPY --from=production-dependencies /work/packages/contracts/node_modules/ /app/packages/contracts/node_modules/
+COPY --from=workspace /work/packages/contracts/package.json /app/packages/contracts/package.json
+COPY --from=build /work/packages/contracts/src/ /app/packages/contracts/src/
+COPY --from=workspace /work/packages/domain/package.json /app/packages/domain/package.json
+COPY --from=build /work/packages/domain/src/ /app/packages/domain/src/
+COPY --from=build /work/apps/api/package.json ./package.json
+COPY --from=build /work/apps/api/dist/ ./dist/
+COPY infra/postgres/migrations/ /app/infra/postgres/migrations/
+COPY docs/points/alpha-points.csv docs/points/alpha-points-field-evidence.v1.csv /app/docs/points/
+COPY apps/pwa/public/brand/kabanda-wordmark.png apps/pwa/public/brand/raid-share-art-v1.jpg /app/apps/pwa/public/brand/
+
+# Native optional dependencies are installed inside Linux, never copied from a
+# developer's macOS node_modules. Fail the image build if Sharp/fonts cannot run.
+RUN node --input-type=module -e "import sharp from 'sharp'; await sharp({text:{text:'Кабанда',font:'DejaVu Sans Bold 24',rgba:true}}).png().toBuffer()"
+USER node
+EXPOSE 3098 3099
+CMD ["node", "dist/server.js"]
