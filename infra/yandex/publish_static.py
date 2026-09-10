@@ -17,8 +17,9 @@ import re
 import stat
 import sys
 import tempfile
-from typing import Any
-from urllib.parse import urljoin, urlsplit
+from typing import Any, Callable
+from urllib.parse import quote, urljoin, urlsplit
+import urllib.request
 
 
 BUCKET = "kabanda"
@@ -197,6 +198,41 @@ def verify_public_read(client: Any, key: str) -> None:
         raise ValueError("static object grants a public write permission")
 
 
+def acl_identity(policy: dict[str, Any]) -> dict[str, Any]:
+    return {part: policy[part] for part in ("Owner", "Grants")}
+
+
+def verify_default_private_acl(client: Any, key: str, expected: dict[str, Any] | None = None) -> dict[str, Any]:
+    policy = client.get_object_acl(Bucket=BUCKET, Key=key)
+    grants = policy.get("Grants", [])
+    owner = policy.get("Owner", {}).get("ID")
+    default_owner_grant = len(grants) == 1 and grants[0].get("Permission") == "FULL_CONTROL" and grants[0].get("Grantee", {}).get("Type") == "CanonicalUser" and grants[0]["Grantee"].get("ID") == owner
+    if grants and not default_owner_grant:
+        raise ValueError("bucket-public-read mode requires default-private object ACLs; custom ACLs need the original publisher mode")
+    if expected is not None and acl_identity(policy) != acl_identity(expected):
+        raise ValueError("object ACL changed; bucket-public-read mode cannot restore ACL permissions")
+    return policy
+
+
+class NoAnonymousRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file, code, message, headers, new_url):
+        raise ValueError("anonymous static verification must not redirect")
+
+
+def verify_anonymous_object(item: PublicObject) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", item.key) or item.key.startswith("/") or any(part in {".", ".."} for part in item.key.split("/")):
+        raise ValueError("anonymous verification requires an exact static key without query capabilities")
+    url = f"{ENDPOINT}/{BUCKET}/{quote(item.key, safe='/')}"
+    if urlsplit(url).query or urlsplit(url).fragment:
+        raise ValueError("anonymous static verification must not contain a capability query")
+    # A fresh opener has no cookie jar, credential handler, proxy or redirect support.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoAnonymousRedirect())
+    request = urllib.request.Request(url, headers={"Cache-Control": "no-cache"}, method="GET")
+    with opener.open(request, timeout=30) as response:
+        if response.status != 200 or response.read(len(item.body) + 1) != item.body:
+            raise ValueError("anonymous static object readback differs from the published bytes")
+
+
 def website_state(client: Any) -> dict[str, Any] | None:
     try:
         result = client.get_bucket_website(Bucket=BUCKET)
@@ -298,7 +334,7 @@ def verify_account_baseline(client: Any, path: Path, credential_fingerprint: str
             raise ValueError("new Kabanda bucket creation does not match the pre-creation account baseline") from None
 
 
-def verify_console_ownership(client: Any, path: Path, credential_fingerprint: str, acl_owner: str) -> None:
+def verify_console_ownership(client: Any, path: Path, credential_fingerprint: str, acl_owner: str, require_public_access: bool = False) -> None:
     """Consume an operator's fresh control-plane attestation; never invent one."""
     proof = read_private_json(path)
     expected = {"version": 1, "verificationMethod": "yandex-console", "bucket": BUCKET,
@@ -306,6 +342,9 @@ def verify_console_ownership(client: Any, path: Path, credential_fingerprint: st
                 "credentialKeyIdSha256": credential_fingerprint, "aclOwnerId": acl_owner}
     if not re.fullmatch(r"[a-f0-9]{64}", credential_fingerprint) or any(proof.get(key) != value for key, value in expected.items()):
         raise ValueError("console ownership proof does not match the verified folder, bucket and authenticated credential")
+    access = proof.get("publicAccess")
+    if require_public_access and (access != {"read": True, "list": True, "configRead": False} or not all(type(value) is bool for value in access.values())):
+        raise ValueError("bucket-public-read mode requires verified public read/list and private configuration in the console proof")
     resource = urlsplit(str(proof.get("resourceUrl", "")))
     prefix = f"/folders/{VERIFIED_FOLDER}/storage/buckets/{BUCKET}"
     if resource.scheme != "https" or resource.netloc != "console.yandex.cloud" or resource.query or resource.fragment or resource.path not in {prefix, prefix + "/", prefix + "/objects", prefix + "/settings"}:
@@ -324,7 +363,11 @@ def verify_console_ownership(client: Any, path: Path, credential_fingerprint: st
 
 def publish(client: Any, objects: list[PublicObject], release_sha: str, snapshot_directory: Path,
             expected_owner: str | None = None, account_baseline: Path | None = None, credential_fingerprint: str | None = None,
-            console_ownership_proof: Path | None = None) -> Path:
+            console_ownership_proof: Path | None = None, bucket_public_read: bool = False,
+            anonymous_verify: Callable[[PublicObject], None] | None = None) -> Path:
+    if bucket_public_read and not console_ownership_proof:
+        raise ValueError("bucket-public-read mode requires a fresh console ownership proof")
+    anonymous_verify = anonymous_verify or verify_anonymous_object
     acl = client.get_bucket_acl(Bucket=BUCKET)
     owner = acl.get("Owner", {}).get("ID", "")
     if sum(map(bool, (expected_owner, account_baseline, console_ownership_proof))) != 1:
@@ -335,7 +378,7 @@ def publish(client: Any, objects: list[PublicObject], release_sha: str, snapshot
     elif account_baseline and credential_fingerprint:
         verify_account_baseline(client, account_baseline, credential_fingerprint, owner)
     elif console_ownership_proof and credential_fingerprint:
-        verify_console_ownership(client, console_ownership_proof, credential_fingerprint, owner)
+        verify_console_ownership(client, console_ownership_proof, credential_fingerprint, owner, require_public_access=bucket_public_read)
     else:
         raise ValueError("bucket ownership requires a verified owner ID or authenticated account baseline")
     if any(grant["Grantee"].get("URI") in {"http://acs.amazonaws.com/groups/global/AllUsers", "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"} for grant in acl["Grants"]):
@@ -347,16 +390,21 @@ def publish(client: Any, objects: list[PublicObject], release_sha: str, snapshot
     previous_acls: dict[str, Any] = {}
     for item in objects:
         existing = get_object(client, item.key)
+        if bucket_public_read and existing is not None:
+            previous_acls[item.key] = verify_default_private_acl(client, item.key)
         if item.immutable and existing is not None:
             if not same_object(existing, item):
                 raise ValueError("immutable asset already exists with different bytes or headers")
-            verify_public_read(client, item.key)
+            if bucket_public_read:
+                anonymous_verify(item)
+            else:
+                verify_public_read(client, item.key)
         if not item.immutable:
             previous[item.key] = existing
-            if existing is not None:
+            if existing is not None and not bucket_public_read:
                 previous_acls[item.key] = client.get_object_acl(Bucket=BUCKET, Key=item.key)
     snapshot = safe_snapshot(snapshot_directory, {
-        "schemaVersion": 1, "bucket": BUCKET, "releaseSha": release_sha,
+        "schemaVersion": 1, "bucket": BUCKET, "releaseSha": release_sha, "bucketPublicRead": bucket_public_read,
         "website": previous_website,
         "objects": {key: None if value is None else {"bodyBase64": base64.b64encode(value["body"]).decode(), "headers": value["headers"], "acl": {part: previous_acls[key][part] for part in ("Owner", "Grants")}} for key, value in previous.items()},
         "candidate": {item.key: {"sha256": item.digest, "contentType": item.content_type, "cacheControl": item.cache_control} for item in objects if not item.immutable},
@@ -370,18 +418,29 @@ def publish(client: Any, objects: list[PublicObject], release_sha: str, snapshot
                 if current is not None:
                     if not same_object(current, item):
                         raise ValueError("immutable asset changed during publication")
-                    verify_public_read(client, item.key)
+                    if bucket_public_read:
+                        verify_default_private_acl(client, item.key, previous_acls.get(item.key))
+                        anonymous_verify(item)
+                    else:
+                        verify_public_read(client, item.key)
                     continue
             if not item.immutable:
                 if get_object(client, item.key) != previous[item.key]:
                     raise ValueError("mutable object changed after the snapshot")
+                if bucket_public_read and previous[item.key] is not None:
+                    verify_default_private_acl(client, item.key, previous_acls[item.key])
                 touched.append(item)  # A timed-out write may already have succeeded.
+            acl_arguments = {} if bucket_public_read else {"ACL": "public-read"}
             client.put_object(Bucket=BUCKET, Key=item.key, Body=item.body, ContentType=item.content_type,
-                              CacheControl=item.cache_control, ACL="public-read",
+                              CacheControl=item.cache_control, **acl_arguments,
                               Metadata={"kabanda-sha256": item.digest, "kabanda-release": release_sha})
             if not same_object(get_object(client, item.key), item):
                 raise ValueError("uploaded object failed readback verification")
-            verify_public_read(client, item.key)
+            if bucket_public_read:
+                verify_default_private_acl(client, item.key, previous_acls.get(item.key))
+                anonymous_verify(item)
+            else:
+                verify_public_read(client, item.key)
         website_touched = True
         client.put_bucket_website(Bucket=BUCKET, WebsiteConfiguration=WEBSITE)
         if website_state(client) != WEBSITE:
@@ -396,12 +455,17 @@ def publish(client: Any, objects: list[PublicObject], release_sha: str, snapshot
                     continue
                 if current is not None and (current["body"] != item.body or current["headers"].get("Metadata", {}).get("kabanda-release") != release_sha):
                     raise ValueError("concurrent object update prevents rollback")
+                if bucket_public_read and current is not None:
+                    verify_default_private_acl(client, item.key, previous_acls.get(item.key))
                 if old is None:
                     client.delete_object(Bucket=BUCKET, Key=item.key)
                 else:
                     client.put_object(Bucket=BUCKET, Key=item.key, Body=old["body"], **old["headers"])
-                    policy = {part: previous_acls[item.key][part] for part in ("Owner", "Grants")}
-                    client.put_object_acl(Bucket=BUCKET, Key=item.key, AccessControlPolicy=policy)
+                    if bucket_public_read:
+                        verify_default_private_acl(client, item.key, previous_acls[item.key])
+                    else:
+                        policy = acl_identity(previous_acls[item.key])
+                        client.put_object_acl(Bucket=BUCKET, Key=item.key, AccessControlPolicy=policy)
                 if get_object(client, item.key) != old:
                     raise ValueError("object rollback failed verification")
             except Exception:
@@ -445,13 +509,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--account-baseline", type=Path)
     parser.add_argument("--console-ownership-proof", type=Path,
                         help="private fresh operator attestation from the verified Yandex console folder")
+    parser.add_argument("--bucket-public-read", action="store_true",
+                        help="use verified Yandex public read/list flags, without changing object ACLs")
     parser.add_argument("--capture-account-baseline", type=Path,
                         help="authenticated read-only cloud preflight; writes a new private local account snapshot")
     parser.add_argument("--snapshot-dir", type=Path, default=Path("/var/backups/kabanda/static"))
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     if args.capture_account_baseline:
-        if not args.credentials or args.apply or args.account_baseline or args.console_ownership_proof or args.expected_owner_id or args.directory or args.release_sha or args.bucket != BUCKET:
+        if not args.credentials or args.apply or args.account_baseline or args.console_ownership_proof or args.bucket_public_read or args.expected_owner_id or args.directory or args.release_sha or args.bucket != BUCKET:
             raise ValueError("baseline capture requires only credentials and a new private output path")
         fingerprint = credential_identity(args.credentials)
         digest = create_account_baseline(s3_client(args.credentials), fingerprint, args.capture_account_baseline)
@@ -459,9 +525,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.directory or not args.release_sha:
         raise ValueError("static publication requires directory and release SHA")
+    if args.bucket_public_read and not args.console_ownership_proof:
+        raise ValueError("bucket-public-read mode requires a console ownership proof path")
     objects = prepare(args.directory, args.release_sha, args.bucket)
     report = {"apply": args.apply, "bucket": BUCKET, "origin": ORIGIN, "releaseSha": args.release_sha,
-              "objects": len(objects), "bytes": sum(len(item.body) for item in objects),
+              "objects": len(objects), "bytes": sum(len(item.body) for item in objects), "bucketPublicRead": args.bucket_public_read,
               "aliases": ["app", "app/", "lab", "lab/"], "website": WEBSITE}
     if args.apply:
         if not args.credentials or sum(map(bool, (args.expected_owner_id, args.account_baseline, args.console_ownership_proof))) != 1:
@@ -474,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fingerprint = credential_identity(args.credentials)
             snapshot = publish(s3_client(args.credentials), objects, args.release_sha, args.snapshot_dir,
-                               args.expected_owner_id, args.account_baseline, fingerprint, args.console_ownership_proof)
+                               args.expected_owner_id, args.account_baseline, fingerprint, args.console_ownership_proof, args.bucket_public_read)
             report["snapshot"] = str(snapshot)
         finally:
             os.close(descriptor)

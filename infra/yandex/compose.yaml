@@ -22,7 +22,9 @@ services:
         bind:
           create_host_path: false
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d kabanda"]
+      # The initdb entrypoint runs a temporary Unix-socket-only server. TCP
+      # becomes available after initialization and PostGIS setup have finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d kabanda"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -110,7 +112,7 @@ services:
             if (!response.ok) throw new Error('Not ready');
           };
           const host = new URL(process.env.APP_ORIGIN).host;
-          await check('http://127.0.0.1:3098/api/ready', {host, 'x-forwarded-proto':'https'});
+          await check('http://127.0.0.1:3098/api/ready', {'x-forwarded-host':host, 'x-forwarded-proto':'https'});
           await check('http://127.0.0.1:3099/relay/v1/health');
       interval: 20s
       timeout: 10s

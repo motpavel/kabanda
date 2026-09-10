@@ -187,7 +187,7 @@ class StaticPublisherTests(unittest.TestCase):
         self.assertEqual(client.bucket_acl, OWNER_ACL)
         self.assertEqual(client.objects["lab"]["body"], client.objects["lab/index.html"]["body"])
 
-    def test_wrong_owner_or_public_listing_fails_before_cloud_writes(self):
+    def test_wrong_owner_or_public_bucket_acl_fails_before_cloud_writes(self):
         for public_listing in (False, True):
             client = FakeStorage()
             if public_listing:
@@ -346,6 +346,135 @@ class StaticPublisherTests(unittest.TestCase):
         path.chmod(0o600)
         with patch.object(client, "head_bucket", return_value={"ResponseMetadata": {"HTTPStatusCode": 403}}), self.assertRaises(ValueError):
             publisher.verify_console_ownership(client, path, "a" * 64, "")
+
+    def public_flags_proof(self, access=None):
+        path = self.root / "public-flags-ownership.json"
+        proof = self.console_proof()
+        proof["publicAccess"] = access if access is not None else {"read": True, "list": True, "configRead": False}
+        path.write_text(json.dumps(proof))
+        path.chmod(0o600)
+        return path
+
+    def flags_publish(self, client, verifier=None):
+        checked = []
+
+        def anonymous(item):
+            checked.append(item.key)
+            self.assertEqual(client.objects[item.key]["body"], item.body)
+            if verifier:
+                verifier(item)
+
+        client.bucket_acl = {"Owner": {"ID": ""}, "Grants": []}
+        path = self.public_flags_proof()
+        result = publisher.publish(client, self.prepare(), SHA, self.root / "snapshots",
+                                   console_ownership_proof=path, credential_fingerprint="a" * 64,
+                                   bucket_public_read=True, anonymous_verify=anonymous)
+        return result, checked
+
+    def test_bucket_flags_publish_uses_no_acl_writes_and_verifies_all_public_bytes(self):
+        client = FakeStorage()
+        with patch.object(client, "put_object", wraps=client.put_object) as put, \
+             patch.object(client, "put_object_acl", side_effect=AssertionError("ACL writes forbidden")) as put_acl:
+            snapshot, checked = self.flags_publish(client)
+        self.assertTrue(all("ACL" not in call.kwargs for call in put.call_args_list))
+        put_acl.assert_not_called()
+        self.assertEqual(set(checked), {item.key for item in self.prepare()})
+        self.assertTrue(json.loads(snapshot.read_bytes())["bucketPublicRead"])
+        self.assertEqual(client.acls["app"], OWNER_ACL)
+
+    def test_bucket_flags_require_exact_fresh_console_public_access_attestation(self):
+        client = FakeStorage()
+        client.bucket_acl = {"Owner": {"ID": ""}, "Grants": []}
+        for access in ({}, {"read": True, "list": False, "configRead": False},
+                       {"read": True, "list": True, "configRead": True},
+                       {"read": 1, "list": True, "configRead": False}):
+            path = self.public_flags_proof(access)
+            with self.subTest(access=access), self.assertRaisesRegex(ValueError, "verified public read/list"):
+                publisher.publish(client, self.prepare(), SHA, self.root / "snapshots",
+                                  console_ownership_proof=path, credential_fingerprint="a" * 64,
+                                  bucket_public_read=True, anonymous_verify=lambda item: self.fail("no reads before proof"))
+        with self.assertRaisesRegex(ValueError, "console ownership proof"):
+            publisher.publish(client, self.prepare(), SHA, self.root / "snapshots", expected_owner="test-owner", bucket_public_read=True)
+        self.assertEqual(client.writes, [])
+
+    def test_bucket_flags_reject_existing_custom_acl_before_any_upload(self):
+        client = FakeStorage()
+        client.objects["sw.js"] = {"body": b"old worker", "headers": {}}
+        client.acls["sw.js"] = copy.deepcopy(PUBLIC_ACL)
+        with self.assertRaisesRegex(ValueError, "default-private object ACLs"):
+            self.flags_publish(client)
+        self.assertEqual(client.writes, [])
+        self.assertEqual(client.acls["sw.js"], PUBLIC_ACL)
+
+    def test_bucket_flags_lost_ack_rollback_preserves_acl_without_put_acl(self):
+        client = FakeStorage()
+        old = {"body": b"old worker", "headers": {"ContentType": "text/javascript", "CacheControl": "no-store"}}
+        client.objects["sw.js"] = copy.deepcopy(old)
+        client.acls["sw.js"] = copy.deepcopy(OWNER_ACL)
+        client.fail_key = "sw.js"
+        with patch.object(client, "put_object_acl", side_effect=AssertionError("ACL writes forbidden")) as put_acl, \
+             self.assertRaisesRegex(RuntimeError, "publication rolled back"):
+            self.flags_publish(client)
+        put_acl.assert_not_called()
+        self.assertEqual(client.objects["sw.js"], old)
+        self.assertEqual(client.acls["sw.js"], OWNER_ACL)
+
+    def test_bucket_flags_anonymous_read_failure_rolls_back_mutable_objects(self):
+        client = FakeStorage()
+
+        def fail(item):
+            if item.key == "sw.js":
+                raise ValueError("anonymous GET returned403")
+
+        with patch.object(client, "put_object_acl", side_effect=AssertionError("ACL writes forbidden")), \
+             self.assertRaisesRegex(RuntimeError, "publication rolled back"):
+            self.flags_publish(client, fail)
+        self.assertNotIn("sw.js", client.objects)
+        self.assertNotIn("manifest.webmanifest", client.objects)
+        self.assertIn("assets/main-ABC12345.js", client.objects)
+
+    def test_bucket_flags_preserve_concurrent_acl_change_during_rollback(self):
+        client = FakeStorage()
+
+        def fail(item):
+            if item.key == "sw.js":
+                client.acls[item.key] = copy.deepcopy(PUBLIC_ACL)
+                raise ValueError("concurrent operator ACL edit")
+
+        with self.assertRaisesRegex(RuntimeError, "rollback incomplete"):
+            self.flags_publish(client, fail)
+        self.assertEqual(client.acls["sw.js"], PUBLIC_ACL)
+
+    def test_anonymous_verifier_uses_exact_unsigned_no_cookie_no_query_request(self):
+        item = self.prepare()[0]
+
+        class Response(io.BytesIO):
+            status = 200
+
+        with patch.object(publisher.urllib.request, "build_opener") as build:
+            build.return_value.open.return_value = Response(item.body)
+            publisher.verify_anonymous_object(item)
+        request = build.return_value.open.call_args.args[0]
+        self.assertEqual(request.full_url, f"https://storage.yandexcloud.net/kabanda/{item.key}")
+        self.assertNotIn("?", request.full_url)
+        self.assertEqual({key.lower() for key in request.headers}, {"cache-control"})
+        self.assertEqual(request.get_method(), "GET")
+        self.assertEqual(build.call_args.args[0].proxies, {})
+        self.assertIsInstance(build.call_args.args[1], publisher.NoAnonymousRedirect)
+
+    def test_anonymous_verifier_rejects_capability_query_traversal_and_wrong_bytes(self):
+        with patch.object(publisher.urllib.request, "build_opener", side_effect=AssertionError("no network")):
+            for key in ("app?X-Amz-Signature=secret", "../secret", "./app", "https://other/app", "app%3Fcapability"):
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    publisher.verify_anonymous_object(publisher.PublicObject(key, b"x", "text/plain", "no-store"))
+        item = self.prepare()[0]
+
+        class Response(io.BytesIO):
+            status = 200
+
+        with patch.object(publisher.urllib.request, "build_opener") as build, self.assertRaisesRegex(ValueError, "bytes"):
+            build.return_value.open.return_value = Response(b"wrong")
+            publisher.verify_anonymous_object(item)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,44 @@
+# Bootstrap the empty destination database before the separately approved source
+# configuration/data transfer. Keep this service identical to compose.yaml so
+# the complete stack later adopts the same container and named data volume.
+name: kabanda
+
+services:
+  postgres:
+    image: ${KABANDA_POSTGIS_IMAGE:-postgis/postgis:16-3.5}
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kabanda
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --encoding=UTF8 --locale=C.UTF-8
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - type: bind
+        source: ${KABANDA_POSTGRES_PASSWORD_FILE:?Set an absolute path to the private PostgreSQL administrator password file}
+        target: /run/secrets/postgres_admin_password
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d kabanda"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    shm_size: 128mb
+    mem_limit: 512m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  postgres_data:
+    name: kabanda_postgres_data

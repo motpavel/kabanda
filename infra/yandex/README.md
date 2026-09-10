@@ -23,8 +23,8 @@ HTML, aliases, manifests and mutable service-worker entry files use `Cache-Contr
 
 ### Apply prerequisites
 
-1. The owner has created/approved bucket `kabanda` in the intended folder. Keep the bucket private with no anonymous listing/write/config access. The publisher sets only the individual known static objects to `ACL=public-read`.
-2. Verify its owner ID through authorized `get_bucket_acl`; supply that exact ID when populated. This Yandex account currently returns an empty owner ID. Use the authenticated account baseline procedure below in that case. A public bucket ACL or unverified owner aborts before uploads. Separately check Yandex anonymous-access flags/policies: S3 bucket ACL alone does not describe every possible control-plane policy.
+1. The owner has created/approved the static-only bucket `kabanda` in the intended folder. For Yandex website hosting, set its `anonymous_access_flags` to `read: true`, `list: true`, `config_read: false`; keep its bucket ACL private and grant no anonymous write/ACL-management permissions. Public object listing is required by the [Yandex hosting guide](https://yandex.cloud/en/docs/storage/operations/hosting/setup). These settings apply only to `kabanda`, never to either shared transport bucket. The default publisher sets each known object's ACL to `public-read`; the explicit `--bucket-public-read` mode below uses the verified bucket flags and leaves object ACLs private.
+2. Verify its owner ID through authorized `get_bucket_acl`; supply that exact ID when populated. This Yandex account currently returns an empty owner ID. Use an authenticated account baseline or the verified console attestation described below. A public bucket ACL or unverified owner aborts before uploads. The separate Yandex read/list flags do not require a public bucket ACL; the [public-access documentation](https://yandex.cloud/en/docs/storage/operations/buckets/bucket-availability) shows flags alongside an empty ACL. A bucket ACL `READ` grant additionally exposes settings, so it is broader than the chosen flags.
 3. The operator has a regular mode0600 credentials JSON containing `key_id` and `secret`. Keep it on the server; never include it in the release or command arguments. The verified shared Relay path is `/etc/whitelist-relay/credentials.json`; use it only when its permission scope covers the approved bucket. A separate Kabanda credential file is preferable when available.
 4. The runtime Python has boto3. It uses only `https://storage.yandexcloud.net`, region `ru-central1`, SignatureV4 and bounded timeouts.
 5. All required backend/relay functionality is healthy before replacing the public shell. An existing static frontend alone is not a completed migration.
@@ -51,6 +51,8 @@ python3 infra/yandex/publish_static.py \
 
 Apply takes a local exclusive lock, snapshots mutable objects/ACLs and website configuration into a mode0600 file, verifies immutable collisions, uploads hashed assets before metadata and entry shells, and reads bytes/headers/ACLs back. Existing unrelated keys are never listed or modified. Bucket ACLs/policies are not changed. New immutable objects are retained on rollback so already-open clients can still load them.
 
+After publication, verify anonymous website `/app`, the main manifest and a built asset return the expected content. Public listing of this static bucket is intentional; anonymous reads of bucket settings and writes must remain unavailable. The publisher does not inspect or modify Yandex control-plane flags, so these checks complement its S3 ACL verification.
+
 On failure, mutable objects and website configuration are restored automatically. A timed-out PUT is treated as potentially committed. Rollback refuses to overwrite a concurrent writer's changed object. If rollback is incomplete the command fails with the protected snapshot path; inspect and reconcile that snapshot before retrying. This is not an atomic transaction across all S3 objects, so old and new frontend/backend releases must remain compatible during publication. Avoid simultaneous publishers on different hosts; the lock is local.
 
 ## Isolated Relay preparation
@@ -72,6 +74,7 @@ The operator must actually create or inspect the bucket in folder
   "region": "ru-central1",
   "credentialKeyIdSha256": "sha256-of-the-server-side-key-id",
   "aclOwnerId": "",
+  "publicAccess": {"read": true, "list": true, "configRead": false},
   "resourceUrl": "https://console.yandex.cloud/folders/b1gep85v7qqh3r08v1v4/storage/buckets/kabanda",
   "createdAt": "actual-creation-time-as-ISO-UTC",
   "verifiedAt": "actual-verification-time-as-ISO-UTC"
@@ -81,6 +84,23 @@ The operator must actually create or inspect the bucket in folder
 The proof expires after24 hours and is bound to the selected credential. Signed
 bucket checks are still mandatory. This option does not create resources or
 grant permissions, and placeholders above are not a usable proof.
+
+For the bucket-scoped `storage.editor` service account, use the explicit public-flags mode; it needs no `PutObjectAcl` permission:
+
+```bash
+python3 infra/yandex/publish_static.py \
+  --directory apps/pwa/dist \
+  --release-sha "$KABANDA_RELEASE_SHA" \
+  --credentials /etc/whitelist-relay/credentials.json \
+  --console-ownership-proof /etc/kabanda/storage-console-ownership.json \
+  --bucket-public-read \
+  --snapshot-dir /var/backups/kabanda/static \
+  --apply
+```
+
+This mode requires the exact boolean `publicAccess` attestation shown above, plus the usual ownership checks. It sends no object ACL header and never calls `PutObjectAcl`, including during rollback. Existing objects must have default-private ACLs: an ordinary overwrite can reset custom ACLs, so the publisher rejects those before any upload. It snapshots/checks ACLs and refuses to overwrite a concurrent ACL change during rollback. The original mode remains available for publications that explicitly manage object ACLs.
+
+After each upload, the publisher also performs an anonymous GET of the exact `https://storage.yandexcloud.net/kabanda/<key>` and verifies the bytes. These requests contain no capability query, authentication or cookies, disable proxies and reject redirects. A denied or mismatched anonymous response fails publication and rolls back mutable files. This checks effective public object access; website routing, listing and closed configuration access still need the separate final checks above.
 
 `templates/relay-config.template.json` has intentionally empty `storage`. Do not install it unchanged. `install_relay.py` copies the verified shared `storage` settings from `/etc/encounter-pwa/relay.json` into a private candidate with only the `kabanda` app. It changes `max_request_bytes` from the observed65536 to262144 only in the new Kabanda config. The target is `/etc/kabanda-relay/relay.json`, directory `root:whitelist-relay`0750, file0640. Permissions on the existing `/etc/kabanda` directory containing API secrets remain unchanged.
 

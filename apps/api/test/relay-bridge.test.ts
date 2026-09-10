@@ -1,4 +1,10 @@
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import {
@@ -348,5 +354,35 @@ describe('private encrypted storage relay bridge', () => {
     expect(response.statusCode).toBe(502)
     expect(response.json()).toEqual({ error: 'RELAY_UNAVAILABLE' })
     expect(f.auth.loginWithPassword).not.toHaveBeenCalled()
+  })
+
+  it('runs the production Node health probe against real local API and encrypted facade listeners', async () => {
+    const f = await fixture()
+    const apiAddress = await f.app.listen({ host: '127.0.0.1', port: 0 })
+    const relayAddress = await f.bridge.listen({ host: '127.0.0.1', port: 0 })
+    const folder = await mkdtemp(join(tmpdir(), 'kabanda-relay-probe-'))
+    const privateKeyFile = join(folder, 'synthetic-private-key.pem')
+    await writeFile(privateKeyFile, keys.privateKey, { mode: 0o400 })
+    try {
+      const { stdout } = await promisify(execFile)(process.execPath, [
+        fileURLToPath(new URL('../../../infra/yandex/probe_runtime.mjs', import.meta.url)),
+      ], {
+        env: {
+          ...process.env, APP_ORIGIN: origin,
+          API_PORT: new URL(apiAddress).port, RELAY_PORT: new URL(relayAddress).port,
+          RELAY_PRIVATE_KEY_FILE: privateKeyFile, API_BUILD_ID: 'probe-test',
+        },
+        timeout: 15_000,
+      })
+      const result = JSON.parse(stdout)
+      expect(result.apiReady).toBe(true)
+      expect(result.encryptedRelayRoundTrip).toBe(true)
+      expect(result.publicKeySpkiSha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(result.apiBuild).toBe('probe-test')
+      expect(stdout).not.toContain('PRIVATE KEY')
+      expect(f.auth.loginWithPassword).not.toHaveBeenCalled()
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
   })
 })
