@@ -321,11 +321,16 @@ describe('private encrypted storage relay bridge', () => {
     let complete!: () => void
     const pending = new Promise<void>((resolve) => { complete = resolve })
     const loginWithPassword = vi.fn(async () => { await pending; return { rawToken, returnTo: '/home', user } })
-    const f = await fixture({ deadlineMs: 10, auth: { loginWithPassword } })
+    // Allow RSA work on a small shared VM to finish inside a request deadline.
+    // The unresolved promise, rather than CPU speed, forces the timeout.
+    const f = await fixture({ deadlineMs: 250, auth: { loginWithPassword } })
     const id = randomUUID()
     const { envelope, key } = await sealRelayRequest(keys.publicKey, id, login())
     const first = await f.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: envelope })
     expect(first.statusCode).toBe(503)
+    const stillPending = await f.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: envelope })
+    expect(stillPending.statusCode).toBe(503)
+    expect(loginWithPassword).toHaveBeenCalledTimes(1)
     complete()
     const second = await f.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: envelope })
     expect(second.statusCode).toBe(200)

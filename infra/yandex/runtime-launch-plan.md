@@ -1,9 +1,16 @@
-# Prepared launch sequence — 2026-09-10
+# Launch runbook — 2026-09-10
 
-No step in this document has been executed. Database transfer and configuration
-transfer remain separate actions with their own reviewed mechanism.
+The approved migration was executed on 2026-09-10. The public application is
+https://kabanda.website.yandexcloud.net/app. API, PostgreSQL and loopback Mailpit
+are running; the source API/tunnel are stopped and disabled. All 40 application
+table fingerprints matched the frozen source both after restore and after
+removing the synthetic end-to-end fixture. Original backups are retained.
 
-Read-only verification on the destination:
+The sections below document the preparation sequence, not commands to repeat on
+the now-populated database. Never bootstrap or restore over the live database.
+The recorded measurements in this section describe the pre-launch state.
+
+Pre-launch verification on the destination:
 
 - Image `kabanda-api:yandex-preflight` is
   `sha256:ace8eb2a92e3571bb56453096aa1856a3bdb28a63418e9ad54f6e8e4b2eff569`.
@@ -119,3 +126,26 @@ prints no secrets. Compare its public-key SPKI fingerprint with the frontend's
 pinned public key as a separate check. This local probe does not verify the
 Object Storage trigger, signed blob CORS, frontend publication or mobile-network
 access; those remain the subsequent end-to-end checks.
+
+## Local alpha mail capture
+
+The source used Mailpit rather than an external delivery provider. The equivalent
+service is defined in `compose.mailpit.yaml`, pinned to the verified v1.31.0 image
+digest, with SMTP/UI bound to loopback and a persistent VM disk volume. Start it
+with `docker compose -f infra/yandex/compose.mailpit.yaml up -d mailpit`.
+SMTP NOOP returns 250 and its local web UI returns 200. This preserves capture;
+it does not configure delivery of email to participants. Do not use
+`--remove-orphans` when operating these separate manifests in the same project.
+
+## Linux integration tests
+
+Build the `verification` target of `Dockerfile.api`. It includes test fixtures,
+the real TCP health probe, and the same DejaVu/fontconfig packages as production.
+The plain `build` stage is insufficient for image-rendering tests.
+
+Create a disposable PostgreSQL database and restricted owner, preinstall PostGIS,
+citext and pgcrypto with the administrator, and inject that database URL through
+a private env file. Run migrations followed by API Vitest with
+`--no-file-parallelism`. Remove the test database, role and credentials afterwards.
+Never point this test runner at `kabanda`: the integration suite resets tables.
+When transferring test files from macOS, exclude AppleDouble `._*` metadata.

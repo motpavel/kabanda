@@ -1,0 +1,40 @@
+# Preserve the existing loopback-only alpha mail capture service.
+# This does not configure external email delivery.
+name: kabanda
+services:
+  mailpit:
+    image: axllent/mailpit@sha256:c96991d9bef73594c246d89ca81411d4e916f03e76a7d2d72fa2ab5dd3c9ce24
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    volumes:
+      - mailpit_data:/data
+    command:
+      - --listen
+      - 0.0.0.0:8025
+      - --smtp
+      - 0.0.0.0:1025
+      - --database
+      - /data/mailpit.db
+      - --max
+      - "50"
+      - --max-age
+      - 7d
+      - --max-message-size
+      - "2"
+      - --disable-version-check
+      - --block-remote-css-and-fonts
+    mem_limit: 128m
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+volumes:
+  mailpit_data:
+    name: kabanda_mailpit_data

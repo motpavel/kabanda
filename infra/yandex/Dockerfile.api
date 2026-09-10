@@ -25,6 +25,20 @@ COPY packages/domain/src/ ./packages/domain/src/
 COPY scripts/validate-alpha-points.mjs ./scripts/validate-alpha-points.mjs
 RUN pnpm --filter @kabanda/api build
 
+# Run PostgreSQL integration tests with the same fonts as the runtime. Supply
+# DATABASE_URL for a separate disposable database, never the application DB.
+FROM build AS verification
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates fonts-dejavu-core fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/api/test/ ./apps/api/test/
+COPY infra/postgres/migrations/ ./infra/postgres/migrations/
+COPY infra/yandex/probe_runtime.mjs ./infra/yandex/probe_runtime.mjs
+COPY docs/points/ ./docs/points/
+COPY apps/pwa/public/brand/kabanda-wordmark.png apps/pwa/public/brand/raid-share-art-v1.jpg ./apps/pwa/public/brand/
+ENV NODE_ENV=test
+CMD ["pnpm", "--filter", "@kabanda/api", "exec", "vitest", "run", "--no-file-parallelism"]
+
 FROM workspace AS production-dependencies
 RUN pnpm --filter @kabanda/api... install --prod --frozen-lockfile
 
