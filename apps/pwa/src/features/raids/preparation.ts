@@ -7,3 +7,7 @@ export function presenceIsCurrent(roster: RaidPresenceRoster | null, now = Date.
 export function canStartPreparedRaid(raid: RaidProjection, userId: string, roster: RaidPresenceRoster | null, online: boolean, stale: boolean, now = Date.now()): boolean {
   return online && !stale && raid.state === 'lobby' && raid.organizerUserId === userId && raid.navigatorReady && presenceIsCurrent(roster, now)
 }
+
+export function canCheckLocationAutomatically(permission: PermissionState | undefined, observedAccess: boolean): boolean {
+  return permission === 'granted' || (permission === undefined && observedAccess)
+}

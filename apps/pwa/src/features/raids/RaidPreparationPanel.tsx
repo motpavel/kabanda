@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { getRaidPresence, prepareRaid, sendParticipantCommand, sendRaidCommand, setManualRaidPresence, type PrepareRaidInput } from './api'
 import { collectLocalReadiness, currentCoordinate, locationRecoveryMessage, type LocalReadinessResult } from './platform'
-import { canStartPreparedRaid } from './preparation'
+import { canCheckLocationAutomatically, canStartPreparedRaid } from './preparation'
 import { buildReadinessRows } from './state'
 import type { RaidPresenceRoster, RaidProjection } from './types'
 
@@ -35,6 +35,7 @@ export function RaidPreparationPanel(props: Props) {
   const latest = useRef(props)
   latest.current = props
   const preparing = useRef(false)
+  const hasLocationAccess = useRef(false)
   const acting = useRef(false)
   const mounted = useRef(true)
   const controller = useRef<AbortController | null>(null)
@@ -67,7 +68,7 @@ export function RaidPreparationPanel(props: Props) {
         if (!explicit) {
           let permission: PermissionState | undefined
           try { permission = (await navigator.permissions?.query({ name: 'geolocation' }))?.state } catch { /* user action required */ }
-          if (permission !== 'granted') {
+          if (!canCheckLocationAutomatically(permission, hasLocationAccess.current)) {
             setNeedsPermission(true)
             if (permission === 'denied') setError('Доступ к геопозиции выключен. Разрешите его в настройках телефона или браузера и повторите проверку.')
             return
@@ -85,10 +86,12 @@ export function RaidPreparationPanel(props: Props) {
           : await currentCoordinate(abort.signal, capture, 50)
         if (abort.signal.aborted || !mounted.current) return
         if (nav) setFacts(measured as LocalReadinessResult)
+        if (measured.locationIssue === 'denied') hasLocationAccess.current = false
         if (measured.locationIssue || !presence) {
           setError(measured.locationIssue === 'inaccurate' ? 'Для сбора команды нужна точность GPS до 50 м. Выйдите на открытое место — проверим снова.' : locationRecoveryMessage(measured.locationIssue ?? 'unavailable').replaceAll('Обновить геолокацию', 'Повторить проверку'))
           return
         }
+        hasLocationAccess.current = true
         const fresh = latest.current.raid
         if (fresh.state !== 'lobby' || fresh.navigatorUserId !== current.raid.navigatorUserId) return
         const { locationIssue: _issue, ...readiness } = measured as LocalReadinessResult
