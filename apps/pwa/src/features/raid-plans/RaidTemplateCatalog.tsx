@@ -4,6 +4,7 @@ import { appPath } from '../../lib/paths'
 import { formatPlanDistance } from './editor/route-estimate'
 import type { RaidTemplateSummary } from './types'
 import { CachedImage, clearPrivateImageCache, isPrivateCover } from '../../lib/CachedImage'
+import { useVisibleRead } from '../raids/read-refresh'
 import { ApiError } from '../../lib/http'
 
 export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { kabandaId: string; identityId: string; active?: boolean }) {
@@ -28,26 +29,15 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
         setState({ status: 'error' })
       } else setState(current => current.status === 'ready' ? { ...current, stale: true } : { status: 'error' })
     }
-  }, [kabandaId])
+  }, [identityId, kabandaId])
 
   useEffect(() => {
-    if (active) void load()
-    return () => {
-      requestVersion.current += 1
-    }
-  }, [active, load])
-
-  useEffect(() => {
-    const refresh = () => { if (active && document.visibilityState === 'visible' && navigator.onLine) void load() }
-    window.addEventListener('focus', refresh)
-    window.addEventListener('online', refresh)
-    document.addEventListener('visibilitychange', refresh)
-    return () => {
-      window.removeEventListener('focus', refresh)
-      window.removeEventListener('online', refresh)
-      document.removeEventListener('visibilitychange', refresh)
-    }
-  }, [active, load])
+    const offline = () => setState(current => current.status === 'ready' ? { ...current, stale: true } : { status: 'error' })
+    if (!navigator.onLine) offline()
+    window.addEventListener('offline', offline)
+    return () => { requestVersion.current += 1; window.removeEventListener('offline', offline) }
+  }, [identityId, kabandaId])
+  const refresh = useVisibleRead(load, `${identityId}:${kabandaId}`, active, null)
 
   return <section className="rdp-section prd-template-catalog" aria-labelledby="production-routes-heading" data-testid="production-route-catalog">
     <div className="prd-section-heading">
@@ -60,21 +50,21 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
     {state.status === 'loading' && <div aria-label="Загружаем маршруты" className="prd-template-grid prd-template-grid--loading"><i /><i /></div>}
     {state.status === 'error' && <div className="prd-template-error" role="status">
       <span>Маршруты не загрузились.</span>
-      <button onClick={() => void load()} type="button">Повторить</button>
+      <button onClick={() => void refresh()} type="button">Повторить</button>
     </div>}
     {state.status === 'ready' && state.templates.length === 0 && <div className="prd-template-empty">
       <strong>Маршрутов пока нет</strong>
       <span>Создайте первый: добавьте обложку и точки на карте.</span>
     </div>}
     {state.status === 'ready' && state.stale && <p role="status">Сохранённые маршруты. Обновим после восстановления связи.</p>}
-    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid identityId={identityId} kabandaId={kabandaId} templates={state.templates} />}
+    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid identityId={identityId} kabandaId={kabandaId} templates={state.templates} disabled={state.stale} />}
   </section>
 }
 
-export function RaidTemplateGrid({ templates, kabandaId, identityId }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string }) {
+export function RaidTemplateGrid({ templates, kabandaId, identityId, disabled = false }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string; disabled?: boolean }) {
   const chronological = [...templates].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
   return <div className="prd-template-grid">
-    {chronological.map((template) => <a className="prd-template-card" key={template.id} href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId ?? template.kabandaId)}&template=${encodeURIComponent(template.id)}`}>
+    {chronological.map((template) => <a className="prd-template-card" key={template.id} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} href={disabled ? undefined : `${appPath('app')}?createRaid=${encodeURIComponent(kabandaId ?? template.kabandaId)}&template=${encodeURIComponent(template.id)}`}>
       {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
       <div>
         <h3>{template.title}</h3>

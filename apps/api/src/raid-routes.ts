@@ -240,6 +240,30 @@ export async function registerRaidRoutes(
       .send({ track: await dependencies.raids.getRouteTrack(user.id, raidId) })
   })
 
+  // One relay delivery for the visible raid's independently authorized read models.
+  // Optional map/claim failures must not hide the lifecycle or grant extra access.
+  app.get('/api/raids/:raidId/live', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const raid = await dependencies.raids.getRaid(user.id, raidId)
+    const mapVisible = ['active', 'paused', 'finalizing', 'completed'].includes(raid.state)
+    const claimsVisible = ['active', 'finalizing'].includes(raid.state)
+    const [track, points, claims, fallbacks] = await Promise.allSettled([
+      mapVisible ? dependencies.raids.getRouteTrack(user.id, raidId) : Promise.resolve(undefined),
+      mapVisible ? dependencies.raids.getMapPoints(user.id, raidId) : Promise.resolve(undefined),
+      claimsVisible ? dependencies.raids.listPendingClaims(user.id, raidId) : Promise.resolve(undefined),
+      claimsVisible ? dependencies.raids.listPendingFallbacks(user.id, raidId) : Promise.resolve(undefined),
+    ])
+    return reply.header('Cache-Control', 'private, no-store').send({
+      raid,
+      ...(track.status === 'fulfilled' && track.value ? { track: track.value } : {}),
+      ...(points.status === 'fulfilled' && points.value ? points.value : {}),
+      ...(claims.status === 'fulfilled' && claims.value ? claims.value : {}),
+      ...(fallbacks.status === 'fulfilled' && fallbacks.value ? fallbacks.value : {}),
+    })
+  })
+
   app.put('/api/raids/:raidId/destination', async (request, reply) => {
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)

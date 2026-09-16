@@ -1,7 +1,8 @@
 import { CachedImage } from '../../lib/CachedImage'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
-import { getRaidPointPresence } from '../raids/api'
+import { getRaidPointPresence, getRaidSnapshot } from '../raids/api'
+import { useVisibleRead } from '../raids/read-refresh'
 import type { RaidParticipant, RaidProjection } from '../raids/types'
 import { useRecordingRuntime } from '../raids/recording/runtime'
 import {
@@ -9,14 +10,11 @@ import {
   actOnFallback,
   createFallback,
   getNearbyPoints,
-  listPendingClaims,
-  listPendingFallbacks,
   listRaidMedia,
   mediaContentUrl,
 } from './api'
 import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, validateMediaFile } from './platform'
 import { replayOneCheckInOrMedia } from './replay'
-import { loadCheckInExtras } from './refresh'
 import { checkInRefusalMessage } from './refusal'
 import {
   activeParticipantSelection,
@@ -67,6 +65,7 @@ export function CheckInPanel({
   serverTailOnly = false,
   nearbyPoints,
   presentation = 'card',
+  visible = true,
   onPendingChange,
   onAttentionChange,
   repeatVisit = false,
@@ -81,6 +80,7 @@ export function CheckInPanel({
   serverTailOnly?: boolean
   nearbyPoints?: NearbyPoint[]
   presentation?: 'card' | 'map-sheet'
+  visible?: boolean
   onPendingChange?: (count: number) => void
   onAttentionChange?: (state: { count: number; key: string; actionKey: string }) => void
   repeatVisit?: boolean
@@ -175,9 +175,12 @@ export function CheckInPanel({
   }, [activeParticipantIds, identityId, manualAttempt, participantScopeKey])
 
   useEffect(() => {
-    if (!viewerIsOrganizer || raid.state !== 'active' || !selectedPointId || !navigator.onLine) return
+    if (!visible || !viewerIsOrganizer || raid.state !== 'active' || !selectedPointId || !navigator.onLine) return
     let active = true
+    let inFlight = false
     const refresh = async () => {
+      if (inFlight || document.visibilityState !== 'visible' || !navigator.onLine) return
+      inFlight = true
       try {
         const response = await getRaidPointPresence(raid.id, selectedPointId)
         if (!active) return
@@ -195,7 +198,7 @@ export function CheckInPanel({
         }))
       } catch {
         // Manual participant selection remains available when live presence cannot refresh.
-      }
+      } finally { inFlight = false }
     }
     void refresh()
     const timer = window.setInterval(() => void refresh(), 5_000)
@@ -211,6 +214,7 @@ export function CheckInPanel({
     raid.state,
     selectedPointId,
     viewerIsOrganizer,
+    visible,
   ])
 
   useEffect(() => {
@@ -235,19 +239,23 @@ export function CheckInPanel({
     return next
   }, [identityId, raid.id, setUnsyncedCheckInWork])
 
-  const refreshCanonicalExtras = useCallback(async () => {
-    // Paused raids reject claim/fallback reads. Keep local drafts mounted but
-    // resume this polling only when the raid leaves the paused state.
+  const extrasScope = `${identityId}:${raid.id}`
+  const currentExtrasScope = useRef(extrasScope)
+  currentExtrasScope.current = extrasScope
+  const refreshCanonicalExtras = useVisibleRead(async () => {
     if (raid.state === 'paused' || !navigator.onLine || document.visibilityState !== 'visible') return
-    const result = await loadCheckInExtras({
-      claims: () => listPendingClaims(raid.id),
-      fallbacks: () => listPendingFallbacks(raid.id),
-      gallery: () => listRaidMedia(raid.id),
-    })
-    if (result.claims) setClaims(result.claims)
-    if (result.fallbacks) setFallbacks(result.fallbacks)
-    if (result.gallery) setMedia(result.gallery.media)
-  }, [raid.id, raid.state])
+    const snapshot = await getRaidSnapshot(raid.id)
+    if (currentExtrasScope.current !== extrasScope) return
+    if (snapshot.claims) setClaims(snapshot.claims)
+    if (snapshot.fallbacks) setFallbacks(snapshot.fallbacks)
+  }, extrasScope, raid.state !== 'paused', 10_000)
+
+  // Opening the sheet must not join a hidden read which intentionally omitted media.
+  const refreshGallery = useVisibleRead(async () => {
+    if (!visible || !navigator.onLine || document.visibilityState !== 'visible') return
+    const gallery = await listRaidMedia(raid.id)
+    if (currentExtrasScope.current === extrasScope) setMedia(gallery.media)
+  }, `${extrasScope}:gallery`, visible, 30_000)
 
   const flush = useCallback(async () => {
     if (!canMutate || !navigator.onLine) return
@@ -278,24 +286,19 @@ export function CheckInPanel({
           }
         }
         await refreshLocal()
-        await refreshCanonicalExtras().catch(() => undefined)
+        await Promise.all([refreshCanonicalExtras(), refreshGallery()]).catch(() => undefined)
         await onCanonicalRefresh()
       } while (replayRequested.current && canMutate && navigator.onLine)
     } finally {
       replaying.current = false
     }
-  }, [canMutate, identityId, onCanonicalRefresh, onRefused, raid.id, refreshCanonicalExtras, refreshLocal, senderTabId])
+  }, [canMutate, identityId, onCanonicalRefresh, onRefused, raid.id, refreshCanonicalExtras, refreshGallery, refreshLocal, senderTabId])
 
   useEffect(() => {
     void refreshLocal().then(() => void flush())
-    void refreshCanonicalExtras().catch(() => undefined)
-    const refreshTimer = window.setInterval(() => {
-      void refreshCanonicalExtras().catch(() => undefined)
-    }, 5_000)
     const resume = () => {
       if (document.visibilityState === 'visible') {
         void refreshLocal().then(() => void flush())
-        void refreshCanonicalExtras().catch(() => undefined)
       }
     }
     window.addEventListener('online', resume)
@@ -304,7 +307,6 @@ export function CheckInPanel({
     document.addEventListener('visibilitychange', resume)
     return () => {
       setUnsyncedCheckInWork(0)
-      window.clearInterval(refreshTimer)
       window.removeEventListener('online', resume)
       window.removeEventListener('focus', resume)
       window.removeEventListener('pageshow', resume)
@@ -371,7 +373,7 @@ export function CheckInPanel({
     try {
       await actOnClaim(raid.id, claim.id, action, key)
       actionKeys.current.delete(logical)
-      await refreshCanonicalExtras()
+      await Promise.all([refreshCanonicalExtras(), refreshGallery()])
       await onCanonicalRefresh()
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : 'Ответ не подтверждён. Повтор использует тот же ключ.')
@@ -389,7 +391,7 @@ export function CheckInPanel({
     try {
       await actOnFallback(raid.id, fallback.id, action, key)
       actionKeys.current.delete(logical)
-      await refreshCanonicalExtras()
+      await Promise.all([refreshCanonicalExtras(), refreshGallery()])
       await onCanonicalRefresh()
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : 'Ответ verifier не подтверждён.')

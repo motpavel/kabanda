@@ -71,6 +71,7 @@ export function listRaidHistory(
 export async function getKabandaProgress(kabandaId: string): Promise<KabandaProgress> {
   return (await requestJson<{ progress: KabandaProgress }>(
     `/api/kabandas/${encodeURIComponent(kabandaId)}/progress`,
+    undefined, { maxAgeMs: 30_000 },
   )).progress
 }
 

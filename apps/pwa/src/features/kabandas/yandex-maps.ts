@@ -25,6 +25,7 @@ export type YandexOptionManager = {
 export type YandexMapObject = object
 
 export type YandexPlacemark = {
+  geometry?: { setCoordinates: (coordinates: YandexCoordinates) => void }
   events: YandexEventManager
   properties: YandexDataManager
   options: YandexOptionManager

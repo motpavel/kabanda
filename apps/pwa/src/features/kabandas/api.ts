@@ -8,7 +8,7 @@ import type {
 } from './types'
 
 export async function listKabandas(): Promise<KabandaSummary[]> {
-  const response = await requestJson<{ kabandas: KabandaSummary[] }>('/api/kabandas')
+  const response = await requestJson<{ kabandas: KabandaSummary[] }>('/api/kabandas', undefined, { maxAgeMs: 30_000 })
   return response.kabandas
 }
 
@@ -35,6 +35,7 @@ export async function updateKabanda(
 export async function listMembers(kabandaId: string): Promise<KabandaMember[]> {
   const response = await requestJson<{ members: KabandaMember[] }>(
     `/api/kabandas/${encodeURIComponent(kabandaId)}/members`,
+    undefined, { maxAgeMs: 30_000 },
   )
   return response.members
 }
@@ -104,5 +105,5 @@ export async function listPoints(
     bbox: bbox.join(','),
     limit: String(Math.min(Math.max(limit, 1), 200)),
   })
-  return requestJson<PointPage>(`/api/points?${query}`)
+  return requestJson<PointPage>(`/api/points?${query}`, undefined, { maxAgeMs: 60_000 })
 }

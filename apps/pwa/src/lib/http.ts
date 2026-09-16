@@ -1,5 +1,19 @@
 import { requestApi } from './api-transport'
 import { diagnosticRequestHeaders } from './diagnostics'
+import { ReadCache } from './read-cache'
+
+const reads = new ReadCache()
+export const invalidateApiReads = () => reads.invalidate()
+let identity: string | null | undefined
+if (typeof window !== 'undefined') {
+  window.addEventListener('kabanda:identity-changed', (event) => {
+    const next = (event as CustomEvent<{ userId: string | null }>).detail.userId
+    if (next !== identity) { identity = next; reads.invalidate(true) }
+  })
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key === 'kabanda:relay-session:v1') reads.invalidate(true)
+  })
+}
 
 export class ApiError extends Error {
   constructor(
@@ -14,7 +28,17 @@ export class ApiError extends Error {
   }
 }
 
-export async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+export function requestJson<T>(input: RequestInfo | URL, init?: RequestInit, options?: { maxAgeMs?: number }): Promise<T> {
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+  const operation = () => performJsonRequest<T>(input, init)
+  if (method !== 'GET' && method !== 'HEAD') return reads.mutate(operation)
+  // A caller-owned abort signal must not cancel another consumer's shared read.
+  if (init?.signal || input instanceof Request) return operation()
+  const key = JSON.stringify([String(input), method, [...new Headers(init?.headers).entries()].sort(), init?.credentials ?? 'same-origin'])
+  return reads.read(key, operation, options?.maxAgeMs)
+}
+
+async function performJsonRequest<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await requestApi(input, {
     ...init,
     credentials: 'same-origin',

@@ -1,4 +1,5 @@
 import { requestJson } from '../../lib/http'
+import type { CheckInClaim, CheckInFallback } from '../checkins/types'
 import type {
   CreateRaidInput,
   RaidAllowedAction,
@@ -119,10 +120,19 @@ export async function listActionableRaids(kabandaId: string): Promise<RaidProjec
 }
 
 export async function getRaid(raidId: string): Promise<RaidProjection> {
-  const response = await requestJson<{ raid: RaidProjection }>(
-    `/api/raids/${encodeURIComponent(raidId)}`,
-  )
-  return response.raid
+  return (await getRaidSnapshot(raidId)).raid
+}
+
+export interface RaidLiveSnapshot {
+  raid: RaidProjection
+  track?: RouteTrackProjection
+  points?: RaidMapPoint[]
+  claims?: CheckInClaim[]
+  fallbacks?: CheckInFallback[]
+}
+
+export function getRaidSnapshot(raidId: string): Promise<RaidLiveSnapshot> {
+  return requestJson(`/api/raids/${encodeURIComponent(raidId)}/live`, undefined, { maxAgeMs: 3_000 })
 }
 
 export async function sendRaidCommand(

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import '@fontsource-variable/manrope'
+import '../../app/fonts.css'
 import { appPath } from '../../lib/paths'
 import { FreeHuntCover, RouteRaidCover } from '../raids/FreeHuntCover'
 import {

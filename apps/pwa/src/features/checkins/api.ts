@@ -1,5 +1,5 @@
 import { requestApi } from '../../lib/api-transport'
-import { ApiError, requestJson } from '../../lib/http'
+import { ApiError, invalidateApiReads, requestJson } from '../../lib/http'
 import { diagnosticRequestHeaders } from '../../lib/diagnostics'
 import type {
   CheckInClaim,
@@ -131,11 +131,12 @@ export async function uploadMediaContent(
       error?.operationRef ?? response.headers.get('X-Kabanda-Operation-Ref'),
     )
   }
+  invalidateApiReads()
   return body as MediaUploadResponse
 }
 
 export function listRaidMedia(raidId: string): Promise<RaidMediaPage> {
-  return requestJson(`${raidBase(raidId)}/media?limit=24`)
+  return requestJson(`${raidBase(raidId)}/media?limit=24`, undefined, { maxAgeMs: 30_000 })
 }
 
 export function mediaContentUrl(raidId: string, mediaId: string): string {

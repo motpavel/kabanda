@@ -19,6 +19,15 @@ function template(id: string, title: string, createdAt: string): RaidTemplateSum
 }
 
 describe('raid template catalog', () => {
+  it('keeps stale route previews visible without allowing a new raid from them', () => {
+    const markup = renderToStaticMarkup(<RaidTemplateGrid disabled templates={[
+      template('saved', 'Сохранённый маршрут', '2026-09-02T10:00:00.000Z'),
+    ]} />)
+    expect(markup).toContain('Сохранённый маршрут')
+    expect(markup).toContain('aria-disabled="true"')
+    expect(markup).not.toContain('href=')
+  })
+
   it('keeps newly created routes below older cards without a details button', () => {
     const markup = renderToStaticMarkup(<RaidTemplateGrid templates={[
       template('new', 'Новый маршрут', '2026-09-02T10:00:00.000Z'),

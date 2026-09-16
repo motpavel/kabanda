@@ -1,4 +1,4 @@
-import '@fontsource-variable/manrope'
+import '../../app/fonts.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
@@ -104,11 +104,11 @@ export function KabandasPage({ active = true }: { active?: boolean }) {
   if (session.state === 'loading') {
     return <main className="kb-shell kb-center" aria-busy="true">Загружаем КАБАНДУ…</main>
   }
-  if (session.state === 'anonymous') return <SignInPanel />
+  if (session.state === 'anonymous') return <SignInPanel onSignedIn={(user) => setSession({ state: 'ready', user })} />
   return <AuthenticatedKabandas key={session.user.id} active={active} user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
 }
 
-function SignInPanel() {
+function SignInPanel({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [state, setState] = useState<'idle' | 'sending' | 'error'>('idle')
@@ -118,8 +118,7 @@ function SignInPanel() {
     if (state === 'sending') return
     setState('sending')
     try {
-      await loginWithPassword(username, password)
-      window.location.reload()
+      onSignedIn(await loginWithPassword(username, password))
     } catch {
       setState('error')
     }
@@ -201,7 +200,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
     return () => {
       subscribed = false
     }
-  }, [requestedKabandaId, active, activeSection])
+  }, [requestedKabandaId, active])
 
   const selected = kabandas.find(({ id }) => id === selectedId) ?? null
   const addKabanda = (kabanda: KabandaSummary) => {
@@ -237,7 +236,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
   }
 
   useEffect(() => {
-    if (activeSection !== 'kabanda') return
+    if (!active || activeSection !== 'kabanda') return
     setAccountState('loading')
     void getIdentityLocalInventory(user.id)
       .then((value) => {
@@ -245,7 +244,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
         setAccountState('idle')
       })
       .catch(() => setAccountState('error'))
-  }, [activeSection, user.id])
+  }, [active, activeSection, user.id])
   const leaveAccount = async () => {
     if (accountState === 'leaving') return
     setAccountState('leaving')
@@ -388,52 +387,71 @@ function KabandaWorkspace({
   const presentation = choosePointPresentation(requestedView, activeProviderState, webglAvailable)
   useKabandaMotion(workspaceRef)
 
+  const needsMembers = active && (section === 'home' || section === 'kabanda')
   useEffect(() => {
-    let active = true
-    listMembers(kabanda.id).then((value) => active && setMembers(value)).catch(() => active && setMessage('Участники временно недоступны.'))
+    if (!needsMembers) return
+    let subscribed = true
+    void listMembers(kabanda.id)
+      .then((value) => { if (subscribed) setMembers(value) })
+      .catch(() => { if (subscribed) setMessage('Участники временно недоступны.') })
+    return () => { subscribed = false }
+  }, [kabanda.id, needsMembers])
+
+  const needsPoints = active && (section === 'kabanda' || (section === 'map' && pointCategory === 'attractions'))
+  useEffect(() => {
+    if (!needsPoints) return
+    let subscribed = true
+    let receivedFresh = false
     const collectionId = kabanda.pointsCollectionId
     if (!collectionId) {
       setAttractionState('failed')
       setPointMessage('Вожак ещё не загрузил набор достопримечательностей.')
-      return () => {
-        active = false
-      }
+      return
     }
-    listPoints(collectionId, [53.06, 56.74, 53.31, 56.94], 100)
+    void readPointProjection(user.id, kabanda.id, collectionId).then((cached) => {
+      if (!subscribed || receivedFresh || !cached) return
+      setPoints(cached.points)
+      setAttractionState('ready')
+      setStaleAt(cached.savedAt)
+    }).catch(() => undefined)
+    void listPoints(collectionId, [53.06, 56.74, 53.31, 56.94], 100)
       .then(async ({ points: fresh }) => {
-        if (!active) return
+        if (!subscribed) return
+        receivedFresh = true
         setPoints(fresh)
         setAttractionState('ready')
         setPointMessage(null)
         setStaleAt(null)
         await savePointProjection(user.id, kabanda.id, collectionId, fresh)
       })
-      .catch(async () => {
-        const cached = await readPointProjection(user.id, kabanda.id, collectionId)
-        if (!active) return
+      .catch(async (reason) => {
+        if (!subscribed) return
+        if (reason instanceof ApiError && reason.status < 500) {
+          receivedFresh = true
+          setPoints([])
+          setAttractionState('failed')
+          setPointMessage('Доступ к достопримечательностям недоступен.')
+          return
+        }
+        const cached = await readPointProjection(user.id, kabanda.id, collectionId).catch(() => null)
+        if (!subscribed) return
         setAttractionState(cached ? 'ready' : 'failed')
         if (cached) {
           setPoints(cached.points)
           setStaleAt(cached.savedAt)
-        } else {
-          setPointMessage('Достопримечательности недоступны без сети и ещё не сохранены на этом устройстве.')
-        }
+        } else setPointMessage('Достопримечательности недоступны без сети и ещё не сохранены на этом устройстве.')
       })
-    return () => {
-      active = false
-    }
-  }, [kabanda, user.id, webglAvailable, active, section])
+    return () => { subscribed = false }
+  }, [kabanda.id, kabanda.pointsCollectionId, user.id, needsPoints])
 
   useEffect(() => {
-    if (section !== 'kabanda' && section !== 'home') return
-    let active = true
+    if (!needsMembers) return
+    let subscribed = true
     void getKabandaProgress(kabanda.id)
-      .then((value) => active && setProgress(value))
-      .catch(() => active && setProgress(null))
-    return () => {
-      active = false
-    }
-  }, [kabanda.id, section])
+      .then((value) => { if (subscribed) setProgress(value) })
+      .catch(() => undefined)
+    return () => { subscribed = false }
+  }, [kabanda.id, needsMembers])
 
   const selectedPoint = visiblePoints.find(({ id }) => id === selectedPointId) ?? null
   const rename = async (event: FormEvent) => {
@@ -520,7 +538,7 @@ function KabandaWorkspace({
   </>
 
   const homePanel = (
-      <HomeDashboard identityId={user.id} kabanda={kabanda} members={members} progress={progress} notices={notices} />
+      <HomeDashboard active={active && section === 'home'} identityId={user.id} kabanda={kabanda} members={members} progress={progress} notices={notices} />
     )
 
   const mapPanel = active && section === 'map' ? (
@@ -840,7 +858,7 @@ function InviteCreator({ kabandaId, canInvite }: { kabandaId: string; canInvite:
 }
 
 function Brand() {
-  return <a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark.png')} alt="КАБАНДА" /></a>
+  return <a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark-ui.png')} alt="КАБАНДА" /></a>
 }
 
 function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {

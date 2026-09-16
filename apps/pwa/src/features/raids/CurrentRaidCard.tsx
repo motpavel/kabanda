@@ -1,6 +1,6 @@
 import { appPath } from '../../lib/paths'
 import type { KabandaSummary } from '../kabandas/types'
-import { freeHuntCoverUrl, routeRaidCoverUrl } from './FreeHuntCover'
+import { freeHuntThumbnailUrl, routeRaidThumbnailUrl } from './FreeHuntCover'
 import { confirmedRaidParticipants } from './production-model'
 import { RaidHubIcon as Icon, type IconName } from './RaidHubIcon'
 import { selectPrimaryAction } from './state'
@@ -49,7 +49,7 @@ export function CurrentRaidCard({ kabanda, raid, stale, onRefresh, online = type
       <span className="kb-current-raid__team">{kabanda.name}</span>
     </div>
     <div className="kb-current-raid__intro">
-      <img alt="" decoding="async" height="92" width="92" src={raid.routeTemplateId ? routeRaidCoverUrl : freeHuntCoverUrl} />
+      <img alt="" decoding="async" height="92" width="92" src={raid.routeTemplateId ? routeRaidThumbnailUrl : freeHuntThumbnailUrl} />
       <div>
         <h3 className="kb-current-raid__title">{presentation.title}</h3>
         {presentation.date && <time className="kb-current-raid__date" dateTime={presentation.dateTime ?? undefined}>{presentation.date}</time>}

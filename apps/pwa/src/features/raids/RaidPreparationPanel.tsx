@@ -1,3 +1,4 @@
+import { useVisibleRead } from './read-refresh'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { getRaidPresence, prepareRaid, sendParticipantCommand, sendRaidCommand, setManualRaidPresence, type PrepareRaidInput } from './api'
@@ -104,7 +105,7 @@ export function RaidPreparationPanel(props: Props) {
       const result = await prepareRaid(current.raid.id, pending.input, pending.key)
       pendingPrepare.current = null
       if (abort.signal.aborted || !mounted.current) return
-      setRoster(result.presence)
+      setRoster((previous) => previous && previous.serverAt > result.presence.serverAt ? previous : result.presence)
       setError(result.raid.navigatorUserId === identityId && result.raid.navigatorBlockers.length ? 'Телефон пока не готов к записи. Откройте «Проверка телефона»: там указана причина.' : null)
       await apply(result.raid)
     } catch (reason) {
@@ -129,27 +130,29 @@ export function RaidPreparationPanel(props: Props) {
     return () => { mounted.current = false; controller.current?.abort(); window.clearInterval(timer) }
   }, [])
 
+  const refreshRoster = useVisibleRead(async () => {
+    if (!navigator.onLine || document.visibilityState !== 'visible') return
+    try {
+      const next = await getRaidPresence(raid.id)
+      if (mounted.current && latest.current.raid.id === raid.id && latest.current.raid.state === 'lobby') setRoster((previous) => previous && previous.serverAt > next.serverAt ? previous : next)
+    } catch { /* keep the last result until its existing freshness deadline */ }
+  }, `${identityId}:${raid.id}:presence`, raid.state === 'lobby' && participating && !stale, 5_000)
+
   useEffect(() => {
     setRoster(null)
     setFacts(null)
     pendingPrepare.current = null
     controller.current?.abort()
     if (raid.state !== 'lobby' || !participating || stale) return
-    const refresh = async () => {
-      if (!navigator.onLine || document.visibilityState !== 'visible') return
-      try { const next = await getRaidPresence(raid.id); if (mounted.current) setRoster(next) } catch { /* keep last result until expiry */ }
-    }
-    const resume = () => { setOnline(navigator.onLine); void checkRef.current(); void refresh() }
+    const resume = () => { setOnline(navigator.onLine); void checkRef.current() }
     void checkRef.current()
-    void refresh()
     const checkTimer = window.setInterval(() => void checkRef.current(), 12_000)
-    const rosterTimer = window.setInterval(() => void refresh(), 5_000)
     window.addEventListener('online', resume)
     window.addEventListener('focus', resume)
     document.addEventListener('visibilitychange', resume)
     return () => {
       controller.current?.abort()
-      window.clearInterval(checkTimer); window.clearInterval(rosterTimer)
+      window.clearInterval(checkTimer)
       window.removeEventListener('online', resume); window.removeEventListener('focus', resume)
       document.removeEventListener('visibilitychange', resume)
     }
@@ -177,6 +180,7 @@ export function RaidPreparationPanel(props: Props) {
           : await sendRaidCommand(raid.id, name, pending.version, pending.key, selectedNavigator ? { navigatorUserId: selectedNavigator } : undefined)
       pendingAction.current = null
       await apply(next)
+      if (next.state === 'lobby') void refreshRoster().catch(() => undefined)
     } catch (reason) {
       if (reason instanceof ApiError && reason.status < 500) pendingAction.current = null
       await reportError(reason)

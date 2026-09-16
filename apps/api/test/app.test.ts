@@ -1143,6 +1143,50 @@ describe('API foundation', () => {
     expect(JSON.stringify(response.json())).not.toContain('53.2')
   })
 
+  it('combines independently authorized live reads into one private response', async () => {
+    const raidId = '81297402-898c-48d6-bc78-c74b6b38205c'
+    const raid = { id: raidId, state: 'active', version: 2 }
+    const raids = createRaids({ getRaid: vi.fn().mockResolvedValue(raid) })
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }), createKabandas(), raids)
+    const response = await app.inject({ method: 'GET', url: `/api/raids/${raidId}/live`, headers: { cookie: 'kabanda_session=session' } })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, no-store')
+    expect(response.json()).toMatchObject({ raid, points: [], claims: [], fallbacks: [], track: { segments: [] } })
+    for (const read of [raids.getRaid, raids.getRouteTrack, raids.getMapPoints, raids.listPendingClaims, raids.listPendingFallbacks]) {
+      expect(read).toHaveBeenCalledWith(user.id, raidId)
+    }
+  })
+
+  it('does not ask for track or claims while preparing a raid', async () => {
+    const raid = { id: '81297402-898c-48d6-bc78-c74b6b38205c', state: 'lobby', version: 1 }
+    const raids = createRaids({ getRaid: vi.fn().mockResolvedValue(raid) })
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }), createKabandas(), raids)
+    const response = await app.inject({ method: 'GET', url: `/api/raids/${raid.id}/live`, headers: { cookie: 'kabanda_session=session' } })
+    expect(response.json()).toEqual({ raid })
+    expect(raids.getRouteTrack).not.toHaveBeenCalled()
+    expect(raids.getMapPoints).not.toHaveBeenCalled()
+    expect(raids.listPendingClaims).not.toHaveBeenCalled()
+  })
+
+  it('keeps the lifecycle readable when optional map access is denied, and requires authentication', async () => {
+    const raid = { id: '81297402-898c-48d6-bc78-c74b6b38205c', state: 'active', version: 2 }
+    const raids = createRaids({
+      getRaid: vi.fn().mockResolvedValue(raid),
+      getRouteTrack: vi.fn().mockRejectedValue(new Error('map access denied')),
+      getMapPoints: vi.fn().mockRejectedValue(new Error('map access denied')),
+    })
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }), createKabandas(), raids)
+    const response = await app.inject({ method: 'GET', url: `/api/raids/${raid.id}/live`, headers: { cookie: 'kabanda_session=session' } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ raid, claims: [], fallbacks: [] })
+    const anonymousRaids = createRaids()
+    const anonymous = await createTestApp(createAuth(), createKabandas(), anonymousRaids)
+    expect((await anonymous.inject({ method: 'GET', url: `/api/raids/${raid.id}/live` })).statusCode).toBe(401)
+    expect(anonymousRaids.getRaid).not.toHaveBeenCalled()
+    const invalid = await app.inject({ method: 'GET', url: '/api/raids/not-a-uuid/live', headers: { cookie: 'kabanda_session=session' } })
+    expect(invalid.statusCode).toBe(400)
+  })
+
   it('returns the private no-store route track to an authenticated viewer', async () => {
     const track = {
       segments: [[

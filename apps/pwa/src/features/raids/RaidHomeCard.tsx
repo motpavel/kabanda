@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { navigateApp } from '../../app/transitions'
+import { useVisibleRead } from './read-refresh'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
 import { HomeIcon } from '../home/HomeIcon'
@@ -17,9 +19,11 @@ import './raids.css'
 export function RaidHomeCard({
   identityId,
   kabanda,
+  active = true,
 }: {
   identityId: string
   kabanda: KabandaSummary
+  active?: boolean
 }) {
   const [actionable, setActionable] = useState<RaidProjection[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -29,9 +33,11 @@ export function RaidHomeCard({
   const [resourceMessage, setResourceMessage] = useState<string | null>(null)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
 
-  const refresh = useCallback(async () => {
+  const canonicalSettled = useRef(false)
+  const load = useCallback(async () => {
     try {
       const canonicalActionable = await listActionableRaids(kabanda.id)
+      canonicalSettled.current = true
       setActionable(canonicalActionable)
       setStale(false)
       setSavedAt(null)
@@ -41,6 +47,7 @@ export function RaidHomeCard({
         canonicalActionable.map((raid) => saveRaidProjection(identityId, raid)),
       )
     } catch (reason) {
+      canonicalSettled.current = true
       if (reason instanceof ApiError && reason.status < 500) {
         setActionable([])
         setStale(false)
@@ -67,29 +74,36 @@ export function RaidHomeCard({
   }, [identityId, kabanda.id])
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    let subscribed = true
+    canonicalSettled.current = false
+    void readActionableRaidProjections(identityId, kabanda.id).then((cached) => {
+      if (!subscribed || canonicalSettled.current) return
+      if (!cached.length) {
+        if (!navigator.onLine) { setResourceState('error'); setResourceMessage('Нет сети и сохранённых рейдов на этом устройстве.') }
+        return
+      }
+      setActionable(cached.map(({ raid }) => raid))
+      setStale(true)
+      setSavedAt(cached[0]?.savedAt ?? null)
+      setResourceState('stale')
+    }).catch(() => {
+      if (subscribed && !canonicalSettled.current && !navigator.onLine) {
+        setResourceState('error'); setResourceMessage('Не удалось прочитать сохранённые рейды.')
+      }
+    })
+    return () => { subscribed = false }
+  }, [identityId, kabanda.id])
 
+  const refresh = useVisibleRead(load, `${identityId}:${kabanda.id}`, active, 10_000)
   useEffect(() => {
-    const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible' && navigator.onLine) void refresh()
-    }
     const updateConnection = () => setOnline(navigator.onLine)
-    const timer = window.setInterval(refreshIfVisible, 5_000)
-    window.addEventListener('focus', refreshIfVisible)
-    window.addEventListener('online', refreshIfVisible)
     window.addEventListener('online', updateConnection)
     window.addEventListener('offline', updateConnection)
-    document.addEventListener('visibilitychange', refreshIfVisible)
     return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('focus', refreshIfVisible)
-      window.removeEventListener('online', refreshIfVisible)
       window.removeEventListener('online', updateConnection)
       window.removeEventListener('offline', updateConnection)
-      document.removeEventListener('visibilitychange', refreshIfVisible)
     }
-  }, [refresh])
+  }, [])
 
   const { current, upcoming, invitations } = splitActionableRaids(actionable, identityId)
   const resourcePolicy = productionResourcePolicy(resourceState, online)
@@ -107,7 +121,7 @@ export function RaidHomeCard({
 
   const openRaid = () => {
     if (!selected) return
-    window.location.assign(`${appPath('app')}?raid=${encodeURIComponent(selected.id)}`)
+    navigateApp(`${appPath('app')}?raid=${encodeURIComponent(selected.id)}`)
   }
 
   return (
@@ -171,7 +185,7 @@ export function RaidHomeCard({
       </div>}
 
       {primary && selected && !current && (
-        <button className="kb-primary raid-primary" type="button" onClick={primary.kind === 'refresh' ? refresh : openRaid}>
+        <button className="kb-primary raid-primary" type="button" onClick={primary.kind === 'refresh' ? () => void refresh() : openRaid}>
           {primary.label}
         </button>
       )}

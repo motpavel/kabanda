@@ -6,12 +6,13 @@ import type { KabandaProgress } from '../results/types'
 import './home.css'
 import { HomeIcon } from './HomeIcon'
 
-export function HomeDashboard({ identityId, kabanda, members, progress, notices }: {
+export function HomeDashboard({ identityId, kabanda, members, progress, notices, active = true }: {
   identityId: string
   kabanda: KabandaSummary
   members: KabandaMember[]
   progress: KabandaProgress | null
   notices?: ReactNode
+  active?: boolean
 }) {
   const destination = (tab: string) => `${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=${tab}`
   const count = members.length || kabanda.memberCount
@@ -30,7 +31,7 @@ export function HomeDashboard({ identityId, kabanda, members, progress, notices 
 
     {notices}
     <div className="kb-home-layout">
-      <div className="kb-home-next"><RaidHomeCard identityId={identityId} kabanda={kabanda} /></div>
+      <div className="kb-home-next"><RaidHomeCard identityId={identityId} kabanda={kabanda} active={active} /></div>
 
       <section className="kb-home-team" aria-labelledby="home-team-heading">
         <div className="kb-home-section-heading"><h2 id="home-team-heading">Моя Кабанда</h2><a href={destination('kabanda')} aria-label="Открыть мою Кабанду"><HomeIcon name="arrow" /></a></div>

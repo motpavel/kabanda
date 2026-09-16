@@ -7,6 +7,7 @@ import {
   acquireWriterLease,
   claimRouteBatch,
   getOrCreateRecorderSession,
+  getRecorderLocalStats,
   getOrCreateRouteLeaseAttempt,
   completeRouteLeaseAttempt,
   markRouteBatchRetryable,
@@ -144,5 +145,28 @@ describe('fenced route storage', () => {
     })
     await offlineDb.raidProjections.update(JSON.stringify(['user-a', 'raid-a']), { state: 'completed' })
     expect(await reconcileAndCountUnsyncedRouteWork(now + 3_000)).toBe(0)
+  })
+
+  it('counts open work without reading settled route history or leaking another identity', async () => {
+    const now = Date.parse('2026-08-28T08:00:00.000Z')
+    await getOrCreateRecorderSession(context, now)
+    const fence = await acquireWriterLease(context, 'tab-a', now)
+    const persisted = (await persistRouteSample(context, fence!, sample(1), now + 1_000))!
+    await offlineDb.routeOutbox.bulkPut([
+      ...Array.from({ length: 100 }, (_, index) => ({ ...persisted, id: `history-${index}`, status: 'accepted' as const })),
+      { ...persisted, id: 'other-person', identityId: 'user-b', status: 'pending' },
+      { ...persisted, id: 'other-generation', leaseGeneration: 2, status: 'retryable' },
+    ])
+    const readStatuses: string[] = []
+    const onRead = (row: typeof persisted) => { readStatuses.push(row.status); return row }
+    offlineDb.routeOutbox.hook('reading', onRead)
+    try {
+      expect((await getRecorderLocalStats(context)).pendingCount).toBe(1)
+      expect(await reconcileAndCountUnsyncedRouteWork(now + 1_001)).toBe(2)
+      expect(readStatuses).not.toContain('accepted')
+      expect((await offlineDb.routeOutbox.get('other-person'))?.status).toBe('pending')
+    } finally {
+      offlineDb.routeOutbox.hook('reading').unsubscribe(onRead)
+    }
   })
 })

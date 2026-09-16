@@ -3,6 +3,8 @@ import './free-hunt-cover.css'
 
 export const freeHuntCoverUrl = appPath('brand/kabanda-free-hunt-v1.jpg')
 export const routeRaidCoverUrl = appPath('brand/kabanda-route-raid-v1.jpg')
+export const freeHuntThumbnailUrl = appPath('brand/kabanda-free-hunt-thumb-v1.webp')
+export const routeRaidThumbnailUrl = appPath('brand/kabanda-route-raid-thumb-v1.webp')
 
 export function RouteRaidCover() {
   return <figure className="raid-free-hunt-cover raid-route-cover">

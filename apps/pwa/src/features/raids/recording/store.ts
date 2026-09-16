@@ -360,6 +360,10 @@ async function rowsForStatus(
   context: RecorderContext,
   status: RouteOutboxRecord['status'],
 ): Promise<RouteOutboxRecord[]> {
+  return rowsWithStatus(context, status).sortBy('sequence')
+}
+
+function rowsWithStatus(context: RecorderContext, status: RouteOutboxRecord['status']) {
   return offlineDb.routeOutbox
     .where('[identityId+raidId+navigatorLeaseId+status+sequence]')
     .between(
@@ -369,7 +373,6 @@ async function rowsForStatus(
       true,
     )
     .filter((row) => row.leaseGeneration === context.leaseGeneration)
-    .sortBy('sequence')
 }
 
 export async function claimRouteBatch(
@@ -546,13 +549,11 @@ export async function getRecorderLocalStats(
   }
   const session = await offlineDb.recorderSessions.get(sessionKey(context))
   if (!session) return { pendingCount: 0, preliminaryDistanceM: 0, lastPersistedSampleAt: null }
-  const rows = [
-    ...(await rowsForStatus(context, 'pending')),
-    ...(await rowsForStatus(context, 'sending')),
-    ...(await rowsForStatus(context, 'retryable')),
-  ]
+  const counts = await Promise.all(['pending', 'sending', 'retryable'].map((status) =>
+    rowsWithStatus(context, status as RouteOutboxRecord['status']).count(),
+  ))
   return {
-    pendingCount: rows.length,
+    pendingCount: counts.reduce((sum, count) => sum + count, 0),
     preliminaryDistanceM: session.preliminaryDistanceM,
     lastPersistedSampleAt: session.lastPersistedSampleAt,
   }
@@ -580,7 +581,9 @@ export async function reconcileAndCountUnsyncedRouteWork(now = Date.now()): Prom
       if (!identityId) return 0
       const [projections, rows] = await Promise.all([
         offlineDb.raidProjections.where('identityId').equals(identityId).toArray(),
-        offlineDb.routeOutbox.where('identityId').equals(identityId).toArray(),
+        // The status index excludes settled GPS history from every live-query run.
+        offlineDb.routeOutbox.where('status').anyOf([...replayableRouteStatuses])
+          .filter((row) => row.identityId === identityId).toArray(),
       ])
       const stateByRaid = new Map(projections.map((projection) => [projection.raidId, projection.state]))
       const closedStates = new Set(['finalizing', 'completed', 'cancelled'])

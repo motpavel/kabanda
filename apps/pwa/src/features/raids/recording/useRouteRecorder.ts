@@ -28,6 +28,7 @@ import type {
 } from './types'
 import { useRecordingRuntime } from './runtime'
 import { watchRecoveringPosition } from './gps-watch'
+import { clearRecordedLocation, publishRecordedLocation } from './live-location'
 
 const emptyStats: RecorderLocalStats = {
   pendingCount: 0,
@@ -241,6 +242,7 @@ export function useRouteRecorder(input: {
     const stopWatch = () => {
       stopGps?.()
       stopGps = null
+      clearRecordedLocation(context)
     }
     const releaseWakeLock = async () => {
       const current = wakeSentinel
@@ -389,6 +391,12 @@ export function useRouteRecorder(input: {
               signalUnavailable = false
               setMessage(null)
               lastPersistedSampleAt = record.capturedAt
+              publishRecordedLocation(context, {
+                latitude: record.latitude,
+                longitude: record.longitude,
+                accuracyMeters: record.accuracyM,
+                capturedAt: record.capturedAt,
+              })
               const nextStats = await refreshStats()
               safeSetPhase(isPersistedSampleFresh(record.capturedAt) ? 'fresh' : 'stale')
               if (nextStats.pendingCount >= 20) await flush()

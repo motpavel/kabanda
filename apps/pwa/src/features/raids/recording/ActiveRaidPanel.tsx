@@ -244,7 +244,7 @@ export function ActiveRaidPanel({
         {activePoint && <span className="raid-arrival-sheet__distance">{Math.round(activePoint.distanceMeters)}<small>метров</small></span>}
       </div>
       {!viewerIsOrganizer && activePoint && <p className="raid-arrival-sheet__waiting">Вы на месте. Подтвердите своё посещение.</p>}
-      <CheckInPanel identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onRefused={onCheckInRefused} onAttentionChange={setCheckInAttention} onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={repeatArrival} onSaved={onCheckInSaved} />
+      <CheckInPanel visible={sheetOpen} identityId={identityId} nearbyPoints={activePoint ? [activePoint] : []} onRefused={onCheckInRefused} onAttentionChange={setCheckInAttention} onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid} staleProjection={staleProjection} repeatVisit={repeatArrival} onSaved={onCheckInSaved} />
     </aside>
 
     <PointInfoSheet open={historyOpen && !actionsOpen} onClose={() => setHistoryOpen(false)} title={historyPoint?.name ?? ''} kicker={historyPoint?.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : 'ТОЧКА РЕЙДА'} distance={inspectedDistanceLabel}>

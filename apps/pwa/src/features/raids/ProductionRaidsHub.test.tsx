@@ -21,6 +21,10 @@ describe('ProductionRaidsHub shell', () => {
 
     expect(markup).toContain('data-testid="production-raids-hub"')
     expect(markup).toContain('aria-busy="true"')
+    // Routes and history start alongside actionable raids, rather than waiting
+    // for the slowest response before mounting another loader.
+    expect(markup).toContain('data-testid="production-route-catalog"')
+    expect(markup).toContain('Загружаем историю…')
     expect(markup).not.toContain('data-testid="production-new-raid"')
     expect(markup).not.toContain('data-testid="production-new-template"')
     expect(markup).not.toContain('Северное кольцо')

@@ -5,6 +5,7 @@ import type { NearbyPoint, OneShotCoordinate } from '../../checkins/types'
 import { reportRaidPresence } from '../api'
 import { readRaidMapCache } from './map-cache'
 import { nearbyCachedPoints } from './proximity'
+import { readRecordedLocation, subscribeRecordedLocation } from './live-location'
 
 export type RaidProximityState = {
   status: 'locating' | 'ready' | 'offline' | 'blocked'
@@ -19,12 +20,19 @@ export function useRaidProximity(identityId: string, raidId: string, enabled: bo
   const [nearby, setNearby] = useState<NearbyPoint[]>([])
   const inFlight = useRef(false)
 
+  useEffect(() => {
+    if (!enabled) return
+    return subscribeRecordedLocation({ identityId, raidId }, (next) => {
+      if (document.visibilityState === 'visible') setCoordinate(next)
+    })
+  }, [enabled, identityId, raidId])
+
   const refresh = useCallback(async () => {
     if (!enabled || inFlight.current || document.visibilityState !== 'visible') return
     inFlight.current = true
     try {
-      const nextCoordinate = await getOneShotCoordinate(10_000)
-      setCoordinate(nextCoordinate)
+      const nextCoordinate = readRecordedLocation({ identityId, raidId }) ?? await getOneShotCoordinate(10_000)
+      setCoordinate((current) => current && Date.parse(current.capturedAt) > Date.parse(nextCoordinate.capturedAt) ? current : nextCoordinate)
       const cached = await readRaidMapCache(identityId, raidId).catch(() => null)
       setNearby(nearbyCachedPoints(cached?.points ?? [], nextCoordinate))
       if (!navigator.onLine) { setStatus('offline'); return }
