@@ -40,7 +40,7 @@ export function locationRecoveryMessage(issue: LocationIssue): string {
   return messages[issue]
 }
 
-export async function currentCoordinate(signal?: AbortSignal): Promise<CoordinateResult> {
+export async function currentCoordinate(signal?: AbortSignal, onCoordinate?: (position: GeolocationPosition) => void, maxAccuracy = 100): Promise<CoordinateResult> {
   const failure = (locationIssue: LocationIssue): CoordinateResult => ({ coordinateMeasuredAt: null, accuracyM: null, locationIssue })
   if (signal?.aborted) return failure('aborted')
   if (!navigator.geolocation) return failure('unsupported')
@@ -71,10 +71,11 @@ export async function currentCoordinate(signal?: AbortSignal): Promise<Coordinat
             return
           }
           const accuracy = position.coords.accuracy
-          if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > 100) {
+          if (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > maxAccuracy) {
             lastIssue = 'inaccurate'
             return
           }
+          onCoordinate?.(position)
           finish({ coordinateMeasuredAt: new Date(position.timestamp).toISOString(), accuracyM: accuracy, locationIssue: null })
         },
         (error) => {
@@ -116,25 +117,27 @@ async function storageAvailable(): Promise<boolean | null> {
   }
 }
 
-export async function collectLocalReadiness(identityId: string, signal?: AbortSignal): Promise<LocalReadinessResult> {
+export async function collectLocalReadiness(identityId: string, signal?: AbortSignal, onCoordinate?: (position: GeolocationPosition) => void, maxAccuracy = 100): Promise<LocalReadinessResult> {
+  const storageChecks = Promise.all([indexedDbWritable(identityId), storageAvailable()])
   const permission = await locationPermission()
   const coordinate: CoordinateResult =
     permission === 'denied' || permission === 'unsupported'
       ? { coordinateMeasuredAt: null, accuracyM: null, locationIssue: permission }
-      : await currentCoordinate(signal)
+      : await currentCoordinate(signal, onCoordinate, maxAccuracy)
   const measuredPermission =
     coordinate.locationIssue === 'denied'
       ? 'denied'
       : coordinate.coordinateMeasuredAt && (permission === 'prompt' || permission === 'unknown')
       ? 'granted'
       : permission
+  const [writable, available] = await storageChecks
   const measuredAt = new Date().toISOString()
   return {
     appMode: appMode(),
     locationPermission: measuredPermission,
     ...coordinate,
-    indexedDbWritable: await indexedDbWritable(identityId),
-    storageAvailable: await storageAvailable(),
+    indexedDbWritable: writable,
+    storageAvailable: available,
     online: navigator.onLine,
     measuredAt,
     serviceWorkerControlled: Boolean(navigator.serviceWorker?.controller),

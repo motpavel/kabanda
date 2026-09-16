@@ -83,6 +83,7 @@ function createKabandas(overrides: Partial<KabandaService> = {}): KabandaService
 function createRaids(overrides: Partial<RaidService> = {}): RaidService {
   return {
     createDraft: vi.fn(),
+    prepareRaid: vi.fn(),
     command: vi.fn(),
     reportReadiness: vi.fn(),
     acquireNavigatorLease: vi.fn(),
@@ -997,6 +998,19 @@ describe('API foundation', () => {
       { title: 'Рейд участника', description: 'Вечерний круг' },
       'member-create-raid',
     )
+  })
+
+  it('validates a combined preparation request without invoking start', async () => {
+    const prepareRaid = vi.fn().mockResolvedValue({ raid: { state: 'lobby' }, presence: { allReady: true } })
+    const command = vi.fn()
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }), createKabandas(), createRaids({ prepareRaid, command }))
+    const request = { method: 'POST' as const, url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/prepare', headers: { origin: testOrigin, cookie: 'kabanda_session=session', 'idempotency-key': 'prepare-operation' } }
+    const presence = { latitude: 56.85, longitude: 53.2, capturedAt: '2026-09-16T12:00:00Z', accuracyMeters: 8 }
+    expect((await app.inject({ ...request, payload: { expectedVersion: 1, presence } })).statusCode).toBe(200)
+    expect(prepareRaid).toHaveBeenCalledWith(user.id, '81297402-898c-48d6-bc78-c74b6b38205c', { expectedVersion: 1, presence }, 'prepare-operation')
+    expect(command).not.toHaveBeenCalled()
+    expect((await app.inject({ ...request, payload: { expectedVersion: 1, presence: { ...presence, accuracyMeters: 500 } } })).statusCode).toBe(400)
+    expect(prepareRaid).toHaveBeenCalledTimes(1)
   })
 
   it('reports device readiness separately from participant readiness', async () => {

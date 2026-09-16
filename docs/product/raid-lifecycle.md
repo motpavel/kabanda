@@ -168,3 +168,20 @@ share-card generation as manual settlement. Row locks prevent duplicate results
 when a browser or another API process settles concurrently. Failures are logged
 and retried on the next sweep; shutdown drains the running sweep before closing
 the database pool. Each sweep processes at most 50 expired raids.
+
+### Compact preparation (September 2026)
+
+New immediate rides open directly in the lobby (`openLobby` creation option),
+with the organizer's phone selected as navigator. Scheduled rides still require
+an explicit opening of the gathering. Existing navigator choices are preserved.
+The preparation endpoint atomically opens legacy drafts, selects a navigator only
+when none exists, records presence and device readiness, and marks the navigator
+ready. It never starts a ride. Participants still explicitly accept with “Еду”.
+
+The preparation screen reuses one fresh GPS measurement for presence and device
+readiness. Presence keeps its 50 m accuracy/radius and 30-second freshness limits.
+Readiness remains valid across unrelated roster version changes, expires after
+two minutes, and is explicitly invalidated by any navigator reassignment.
+“Поехали” is the sole deliberate start action, without a second confirmation.
+Uncertain mutations retain their exact payload/version/idempotency key for retry.
+Checks pause when hidden and recover on return; they never queue a future start.

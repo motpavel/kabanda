@@ -24,7 +24,7 @@ export async function createRaid(
     {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, openLobby: !input.scheduledAt }),
     },
   )
   return response.raid
@@ -180,4 +180,16 @@ export async function setRaidDestination(raidId: string, input: { expectedVersio
     method: 'PUT', headers: { 'Idempotency-Key': operationId }, body: JSON.stringify(input),
   })
   return response.raid
+}
+
+export interface PrepareRaidInput {
+  expectedVersion: number
+  readiness?: Omit<ReadinessReportInput, 'expectedVersion'>
+  presence?: { latitude: number; longitude: number; capturedAt: string; accuracyMeters: number }
+}
+
+export function prepareRaid(raidId: string, input: PrepareRaidInput, key: string): Promise<{ raid: RaidProjection; presence: RaidPresenceRoster }> {
+  return requestJson(`/api/raids/${encodeURIComponent(raidId)}/prepare`, {
+    method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(input),
+  })
 }

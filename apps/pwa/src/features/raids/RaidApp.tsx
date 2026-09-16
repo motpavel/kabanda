@@ -62,6 +62,7 @@ import type {
   ReadinessStatus,
 } from './types'
 import { ActiveRaidPanel } from './recording/ActiveRaidPanel'
+import { RaidPreparationPanel } from './RaidPreparationPanel'
 import { RaidPresenceGate } from './RaidPresenceGate'
 import { FinalizationPanel } from '../results/FinalizationPanel'
 import { ResultPanel } from '../results/ResultPanel'
@@ -326,13 +327,15 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
             {!templatesUnavailable && templates.length === 0 && <a href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}>Создать первый маршрут</a>}</div>}
             <fieldset className="raid-segmented"><legend>Стартуем</legend><button type="button" aria-pressed={startMode === 'now'} onClick={() => { setStartMode('now'); setRestoredTitle(null) }}>Сейчас</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => { setStartMode('later'); setRestoredTitle(null) }}>Запланировать</button></fieldset>
             {startMode === 'later' && <div className="raid-departure-field"><label htmlFor="raid-time">Дата и время</label><input id="raid-time" type="datetime-local" required value={startsAt} onChange={(event) => { setStartsAt(event.target.value); setRestoredTitle(null) }} /></div>}
+            <details className="raid-preparation__details"><summary>Место встречи и заметка</summary>
             <div className="raid-departure-field"><label htmlFor="raid-meeting">Место старта <span className="raid-optional">необязательно</span></label><input id="raid-meeting" maxLength={200} value={meetingPlace} onChange={(event) => setMeetingPlace(event.target.value)} placeholder="Например, у входа в парк" /></div>
             <div className="raid-departure-field">
               <button className="raid-note-toggle" type="button" aria-expanded={noteOpen} aria-controls="raid-note-field" onClick={() => setNoteOpen((value) => !value)}>{noteOpen ? '−' : '+'} Короткая заметка</button>
               {noteOpen && <textarea id="raid-note-field" aria-label="Короткая заметка" maxLength={500} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Что взять с собой или что важно знать" />}
             </div>
+            </details>
             <p className="raid-departure-hint">Поездка для всей Кабанды. Личное приглашение можно отправить ссылкой после создания.</p>
-          <div className="raid-departure-action"><button className="kb-primary raid-primary" type="submit" disabled={status === 'saving' || (mode === 'route' && (!routeTemplateId || templatesUnavailable)) || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Сохраняем…' : startMode === 'later' ? 'Запланировать рейд' : 'Собрать Кабанду'}</button></div>
+          <div className="raid-departure-action"><button className="kb-primary raid-primary" type="submit" disabled={status === 'saving' || (mode === 'route' && (!routeTemplateId || templatesUnavailable)) || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Сохраняем…' : startMode === 'later' ? 'Запланировать рейд' : 'К подготовке'}</button></div>
         </form>
       )}
       </div>
@@ -562,6 +565,13 @@ function RaidDetailPage({
 
   if (raid.state === 'completed') return <RaidShell backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
     <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />
+  </RaidShell>
+
+  if (['draft', 'planned', 'lobby'].includes(raid.state)) return <RaidShell prestart backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
+    <header className="raid-preparation__heading"><p className="kb-kicker">Сбор перед поездкой</p><h1>{raid.title}</h1>{raid.meetingPlace && <p>{raid.meetingPlace}</p>}{raid.description && <p>{raid.description}</p>}</header>
+    {message && <p className="kb-notice" role="status">{message}</p>}
+    {resource.error && <p className="kb-error" role="alert">{resource.error}</p>}
+    <RaidPreparationPanel raid={raid} identityId={user.id} stale={resource.stale} onApplyRaid={resource.applyRaid} onRefresh={resource.refresh} onShare={share} />
   </RaidShell>
 
   return (

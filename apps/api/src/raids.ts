@@ -37,6 +37,7 @@ export function deriveMediaUploadCapability(
 }
 
 export type CreateRaidInput = {
+  openLobby?: boolean | undefined
   pointCategory?: 'stores' | 'attractions' | undefined
   meetingPlace?: string | null | undefined
   title: string
@@ -55,6 +56,12 @@ export type ReadinessInput = {
   storageAvailable: boolean | null
   online: boolean
   measuredAt: string
+}
+
+export type PrepareRaidInput = {
+  expectedVersion: number
+  readiness?: Omit<ReadinessInput, 'expectedVersion'> | undefined
+  presence?: RaidPresenceEvidence | undefined
 }
 
 export type RaidCommandInput = {
@@ -482,6 +489,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 
 export interface RaidService {
   setDestination(actorUserId: string, raidId: string, input: { expectedVersion: number; pointSnapshotId: string }, operationId: string): Promise<RaidCommandResponse>
+  prepareRaid(actorUserId: string, raidId: string, input: PrepareRaidInput, operationId: string): Promise<{ raid: RaidProjection; presence: RaidPresenceRoster }>
   createDraft(
     actorUserId: string,
     kabandaId: string,
@@ -562,7 +570,8 @@ export class DatabaseRaidService implements RaidService {
     input: CreateRaidInput,
     operationId: string,
   ): Promise<RaidCommandResponse> {
-    const requestFingerprint = fingerprint('create-raid', kabandaId, input)
+    const { openLobby, ...creationInput } = input
+    const requestFingerprint = fingerprint('create-raid', kabandaId, creationInput)
     return transaction(this.pool, async (client) => {
       await this.lockOperation(client, actorUserId, operationId)
       const replay = await this.replay<RaidCommandResponse>(
@@ -630,6 +639,11 @@ export class DatabaseRaidService implements RaidService {
          VALUES ($1, $2, 'accepted', now())`,
         [raid.id, actorUserId],
       )
+      if (openLobby && !input.scheduledAt) {
+        const locked = await this.lockRaid(client, actorUserId, raid.id)
+        await this.applyCommand(client, actorUserId, locked, 'open-lobby', { expectedVersion: 1 }, 1)
+        await client.query('UPDATE raids SET navigator_user_id = $2 WHERE id = $1', [raid.id, actorUserId])
+      }
       const response = await this.buildResponse(
         client,
         actorUserId,
@@ -713,6 +727,49 @@ export class DatabaseRaidService implements RaidService {
         mutatesState: true,
         response,
       })
+      return response
+    })
+  }
+
+  async prepareRaid(actorUserId: string, raidId: string, input: PrepareRaidInput, operationId: string): Promise<{ raid: RaidProjection; presence: RaidPresenceRoster }> {
+    const requestFingerprint = fingerprint('prepare-raid', raidId, input)
+    return transaction(this.pool, async (client) => {
+      await this.lockOperation(client, actorUserId, operationId)
+      const replay = await this.replay<{ raid: RaidProjection; presence: RaidPresenceRoster }>(client, actorUserId, operationId, requestFingerprint)
+      if (replay) return replay
+      let raid = await this.lockRaid(client, actorUserId, raidId)
+      this.requireVersion(raid, input.expectedVersion)
+      const fromState = raid.state
+      let mutated = false
+      if (raid.state === 'draft' || raid.state === 'planned') {
+        await this.applyCommand(client, actorUserId, raid, 'open-lobby', input, raid.version + 1)
+        mutated = true
+        raid = await this.lockRaid(client, actorUserId, raidId)
+      }
+      if (raid.state !== 'lobby') throw this.invalidTransition(raid)
+      if (!raid.navigator_user_id && raid.organizer_user_id === actorUserId) {
+        await client.query('UPDATE raids SET navigator_user_id = $2 WHERE id = $1', [raidId, actorUserId])
+        raid.navigator_user_id = actorUserId
+        mutated = true
+      }
+      if (input.readiness) {
+        if (raid.navigator_user_id !== actorUserId || !['accepted', 'ready'].includes(raid.participant_state ?? '')) throw this.forbiddenCommand()
+        if (raid.participant_state !== 'ready') {
+          await client.query("UPDATE raid_participants SET state = 'ready', ready_at = now(), updated_at = now() WHERE raid_id = $1 AND user_id = $2", [raidId, actorUserId])
+          mutated = true
+        }
+      }
+      if (input.presence) {
+        if (!['accepted', 'ready'].includes(raid.participant_state ?? '')) throw this.forbiddenCommand()
+        await this.writePresence(client, actorUserId, raidId, input.presence)
+      }
+      if (mutated) {
+        await client.query('UPDATE raids SET version = version + 1, updated_at = now() WHERE id = $1', [raidId])
+        raid = await this.lockRaid(client, actorUserId, raidId)
+      }
+      if (input.readiness) await this.recordReadiness(client, raid, actorUserId, { ...input.readiness, expectedVersion: raid.version })
+      const response = { raid: await this.project(client, actorUserId, raidId), presence: await this.projectPresenceRoster(client, raid) }
+      await this.storeReceipt(client, { actorUserId, operationId, raidId, command: 'prepare-raid', requestFingerprint, expectedVersion: input.expectedVersion, fromState, mutatesState: mutated, response })
       return response
     })
   }
@@ -1240,34 +1297,38 @@ export class DatabaseRaidService implements RaidService {
       if (!mayReportInLobby && !mayReportInRaid) {
         throw this.forbiddenCommand()
       }
-      const capturedAt = new Date(evidence.capturedAt)
-      if (!Number.isFinite(capturedAt.getTime())) {
-        throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
-      }
-      const freshness = await client.query<{ fresh: boolean }>(
-        `SELECT $1::timestamptz >= clock_timestamp() - interval '30 seconds'
-           AND $1::timestamptz <= clock_timestamp() + interval '10 seconds' AS fresh`,
-        [capturedAt],
-      )
-      if (!freshness.rows[0]?.fresh) {
-        throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
-      }
-      await client.query(
-        `INSERT INTO raid_presence_reports
-          (raid_id, user_id, location, captured_at, accuracy_meters, expires_at, updated_at)
-         VALUES ($1, $2, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography,
-           $5, $6, $5::timestamptz + interval '30 seconds', clock_timestamp())
-         ON CONFLICT (raid_id, user_id) DO UPDATE SET
-           location = excluded.location,
-           captured_at = excluded.captured_at,
-           accuracy_meters = excluded.accuracy_meters,
-           expires_at = excluded.expires_at,
-           updated_at = excluded.updated_at
-         WHERE excluded.captured_at > raid_presence_reports.captured_at`,
-        [raid.id, actorUserId, evidence.latitude, evidence.longitude, capturedAt, evidence.accuracyMeters],
-      )
+      await this.writePresence(client, actorUserId, raid.id, evidence)
       return this.projectPresenceRoster(client, raid)
     })
+  }
+
+  private async writePresence(client: PoolClient, actorUserId: string, raidId: string, evidence: RaidPresenceEvidence): Promise<void> {
+    const capturedAt = new Date(evidence.capturedAt)
+    if (!Number.isFinite(capturedAt.getTime())) {
+      throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
+    }
+    const freshness = await client.query<{ fresh: boolean }>(
+      `SELECT $1::timestamptz >= clock_timestamp() - interval '30 seconds'
+         AND $1::timestamptz <= clock_timestamp() + interval '10 seconds' AS fresh`,
+      [capturedAt],
+    )
+    if (!freshness.rows[0]?.fresh) {
+      throw new RaidError('PRESENCE_LOCATION_STALE', 409, 'Нужна свежая геолокация')
+    }
+    await client.query(
+      `INSERT INTO raid_presence_reports
+        (raid_id, user_id, location, captured_at, accuracy_meters, expires_at, updated_at)
+       VALUES ($1, $2, ST_SetSRID(ST_MakePoint($4, $3), 4326)::geography,
+         $5, $6, $5::timestamptz + interval '30 seconds', clock_timestamp())
+       ON CONFLICT (raid_id, user_id) DO UPDATE SET
+         location = excluded.location,
+         captured_at = excluded.captured_at,
+         accuracy_meters = excluded.accuracy_meters,
+         expires_at = excluded.expires_at,
+         updated_at = excluded.updated_at
+       WHERE excluded.captured_at > raid_presence_reports.captured_at`,
+      [raidId, actorUserId, evidence.latitude, evidence.longitude, capturedAt, evidence.accuracyMeters],
+    )
   }
 
   async getPresenceRoster(actorUserId: string, raidId: string): Promise<RaidPresenceRoster> {
@@ -2738,6 +2799,7 @@ export class DatabaseRaidService implements RaidService {
         return
       case 'assign-navigator': {
         this.requireOrganizer(raid, actorUserId)
+        await client.query('DELETE FROM raid_readiness_reports WHERE raid_id = $1', [raid.id])
         if (!input.navigatorUserId) {
           throw new RaidError('NAVIGATOR_REQUIRED', 400, 'Выберите навигатора')
         }
@@ -2958,15 +3020,15 @@ export class DatabaseRaidService implements RaidService {
     client: PoolClient,
     raidId: string,
     navigatorUserId: string | null,
-    raidVersion: number,
+    _raidVersion: number,
   ): Promise<ReadinessRow | null> {
     if (!navigatorUserId) return null
     const result = await client.query<ReadinessRow>(
       `SELECT blocker_codes, warning_codes FROM raid_readiness_reports
-       WHERE raid_id = $1 AND navigator_user_id = $2 AND raid_version = $3
+       WHERE raid_id = $1 AND navigator_user_id = $2
          AND expires_at > now()
        ORDER BY created_at DESC, id DESC LIMIT 1`,
-      [raidId, navigatorUserId, raidVersion],
+      [raidId, navigatorUserId],
     )
     return result.rows[0] ?? null
   }

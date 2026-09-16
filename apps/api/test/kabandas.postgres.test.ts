@@ -253,6 +253,58 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     await pool?.end()
   })
 
+  it('prepares in one request, preserves readiness on joins and starts only on explicit command', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('quick-start')
+    const memberId = await user('quick-start-member@example.com')
+    await pool!.query("INSERT INTO kabanda_memberships (kabanda_id, user_id, role) VALUES ($1, $2, 'member')", [kabanda.id, memberId])
+    const created = await raidService!.createDraft(ownerId, kabanda.id, { title: 'Быстрый старт', pointCategory: 'stores', openLobby: true }, 'quick-create')
+    expect(created.raid).toMatchObject({ state: 'lobby', navigatorUserId: ownerId, version: 1 })
+    const presence = { latitude: 56.85, longitude: 53.2, capturedAt: new Date().toISOString(), accuracyMeters: 8 }
+    const input = { expectedVersion: 1, readiness: readiness(), presence }
+    const prepared = await Promise.all([
+      raidService!.prepareRaid(ownerId, created.raid.id, input, 'quick-prepare'),
+      raidService!.prepareRaid(ownerId, created.raid.id, input, 'quick-prepare'),
+    ])
+    expect(prepared[0]).toEqual(prepared[1])
+    expect(prepared[0]!.raid).toMatchObject({ state: 'lobby', navigatorReady: true, version: 2 })
+    const joined = await raidService!.command(memberId, created.raid.id, 'accept', { expectedVersion: 2 }, 'quick-join')
+    expect(joined.raid.navigatorReady).toBe(true)
+    await expect(raidService!.command(ownerId, created.raid.id, 'start', { expectedVersion: 3 }, 'quick-not-present')).rejects.toMatchObject({ code: 'RAID_PARTICIPANTS_NOT_PRESENT' })
+    await expect(raidService!.prepareRaid(memberId, created.raid.id, { expectedVersion: 3, readiness: readiness(), presence }, 'quick-wrong-phone')).rejects.toMatchObject({ code: 'RAID_COMMAND_FORBIDDEN' })
+    await raidService!.prepareRaid(memberId, created.raid.id, { expectedVersion: 3, presence }, 'quick-member-presence')
+    expect((await raidService!.getRaid(ownerId, created.raid.id)).state).toBe('lobby')
+    const start = await raidService!.command(ownerId, created.raid.id, 'start', { expectedVersion: 3 }, 'quick-start')
+    expect(start.raid.state).toBe('active')
+    expect(await raidService!.command(ownerId, created.raid.id, 'start', { expectedVersion: 3 }, 'quick-start')).toEqual(start)
+  })
+
+  it('invalidates preparation on navigator reassignment and never steals another navigator', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('quick-reassign')
+    const memberId = await user('quick-reassign-member@example.com')
+    await pool!.query("INSERT INTO kabanda_memberships (kabanda_id, user_id, role) VALUES ($1, $2, 'member')", [kabanda.id, memberId])
+    const created = await raidService!.createDraft(ownerId, kabanda.id, { title: 'Смена телефона', openLobby: true }, 'quick-reassign-create')
+    const prepared = await raidService!.prepareRaid(ownerId, created.raid.id, { expectedVersion: 1, readiness: readiness() }, 'quick-reassign-prepare')
+    const joined = await raidService!.command(memberId, created.raid.id, 'accept', { expectedVersion: prepared.raid.version }, 'quick-reassign-join')
+    const assigned = await raidService!.command(ownerId, created.raid.id, 'assign-navigator', { expectedVersion: joined.raid.version, navigatorUserId: memberId }, 'quick-reassign-switch')
+    expect(assigned.raid.navigatorReady).toBe(false)
+    const ownerRefresh = await raidService!.prepareRaid(ownerId, created.raid.id, { expectedVersion: assigned.raid.version }, 'quick-reassign-refresh')
+    expect(ownerRefresh.raid.navigatorUserId).toBe(memberId)
+    const memberReady = await raidService!.prepareRaid(memberId, created.raid.id, { expectedVersion: ownerRefresh.raid.version, readiness: readiness() }, 'quick-reassign-new-phone')
+    expect(memberReady.raid.navigatorReady).toBe(true)
+    const back = await raidService!.command(ownerId, created.raid.id, 'assign-navigator', { expectedVersion: memberReady.raid.version, navigatorUserId: ownerId }, 'quick-reassign-back')
+    expect(back.raid.navigatorReady).toBe(false)
+  })
+
+  it('keeps scheduled rides planned and blocks broken storage during automatic preparation', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('quick-planned')
+    const created = await raidService!.createDraft(ownerId, kabanda.id, { title: 'Завтра', openLobby: true, scheduledAt: new Date(Date.now() + 86400000).toISOString() }, 'quick-planned-create')
+    expect(created.raid.state).toBe('planned')
+    const prepared = await raidService!.prepareRaid(ownerId, created.raid.id, { expectedVersion: 1, readiness: { ...readiness(), indexedDbWritable: false } }, 'quick-planned-open')
+    expect(prepared.raid.state).toBe('lobby')
+    expect(prepared.raid.navigatorReady).toBe(false)
+    expect(prepared.raid.navigatorBlockers).toContain('INDEXED_DB_UNAVAILABLE')
+  })
+
   it('recovers expired finalization without a browser, preserves results and unblocks the next raid', async () => {
     const { ownerId, kabanda } = await ownerAndKabanda('sweep')
     const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'sweep')

@@ -1151,3 +1151,25 @@
 .raid-track-endpoint b { display: block; border: 1px solid #d9dfda; border-radius: 7px; padding: 4px 7px; background: #fff; box-shadow: 0 2px 8px #0002; font-size: 11px; font-weight: 750; line-height: 1.2; }
 .raid-track-endpoint--finish i, .raid-track-endpoint--both i { border-radius: 3px; background: repeating-conic-gradient(#202522 0% 25%, #fff 0% 50%) 50% / 6px 6px; }
 .raid-track-endpoint--start { flex-direction: row-reverse; transform: translate(calc(-100% + 7px), -13px); }
+
+/* One preparation surface, one deliberate start. */
+.raid-preparation__heading { padding: 20px 0 8px; }
+.raid-preparation__heading h1 { font-size: clamp(24px, 5vw, 32px); line-height: 1.15; margin: 8px 0 12px; overflow-wrap: anywhere; }
+.raid-preparation { display: grid; gap: 14px; padding-bottom: 24px; }
+.raid-preparation__summary { display: flex; align-items: start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.raid-preparation__summary small, .raid-preparation__summary strong { display: block; }
+.raid-preparation__summary small { margin-bottom: 5px; color: var(--kb-muted, #666); }
+.raid-preparation details summary { cursor: pointer; padding: 10px 0; min-height: 44px; }
+.raid-preparation select { display: block; width: 100%; min-height: 44px; margin-top: 8px; }
+.raid-preparation button { min-height: 44px; }
+.raid-preparation .raid-presence-list li { gap: 10px; }
+.raid-preparation .raid-presence-list li > span:nth-child(2) { flex: 1; min-width: 0; }
+.raid-preparation .raid-presence-list strong { overflow-wrap: anywhere; }
+.raid-preparation__status { padding: 0 4px; }
+.raid-preparation__status p { margin: 8px 0; }
+.raid-preparation__details { font-size: 14px; }
+.raid-preparation__details ul { padding-left: 18px; }
+.raid-preparation__details small { display: block; margin: 3px 0 10px; }
+.raid-preparation__action { position: sticky; bottom: 12px; z-index: 5; display: grid; gap: 8px; padding: 10px; background: var(--kb-surface, #fff); border: 1px solid #ddd; border-radius: 18px; box-shadow: 0 6px 24px #00000012; }
+.raid-preparation__action .kb-primary { width: 100%; min-height: 52px; }
+.raid-preparation__action p { margin: 8px; text-align: center; }

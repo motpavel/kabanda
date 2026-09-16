@@ -13,6 +13,7 @@ type RouteDependencies = {
 const resourceIdSchema = z.uuid()
 const operationIdSchema = z.string().trim().min(8).max(100)
 const createRaidSchema = z.object({
+  openLobby: z.boolean().optional(),
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).nullable().optional(),
   scheduledAt: z.iso.datetime({ offset: true }).nullable().optional(),
@@ -171,6 +172,17 @@ export async function registerRaidRoutes(
       operationId(request),
     )
     return reply.status(201).send(response)
+  })
+
+  app.post('/api/raids/:raidId/prepare', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const input = commandSchema.extend({
+      readiness: readinessSchema.omit({ expectedVersion: true }).optional(),
+      presence: presenceSchema.optional(),
+    }).parse(request.body)
+    return dependencies.raids.prepareRaid(user.id, raidId, input, operationId(request))
   })
 
   app.get('/api/raids/current', async (request, reply) => {
