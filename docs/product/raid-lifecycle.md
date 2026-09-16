@@ -157,3 +157,14 @@ local -> pending -> sending -> accepted
 12. Канонический summary считает route sample только в пределах замороженного lease/generation cutoff и никогда
     не соединяет сегмент через pause, handoff, join или leave.
 13. Finish, разрешённые finalizing commits и settle не обходят друг друга: их сериализует один raid row lock.
+
+### Server recovery of finalization
+
+The API runs a finalization sweep at startup and every 15 seconds after the
+previous sweep finishes. Once the two-minute finalization deadline expires,
+settlement no longer depends on an open browser or the organizer's session.
+Each raid is settled in its own transaction using the same immutable result and
+share-card generation as manual settlement. Row locks prevent duplicate results
+when a browser or another API process settles concurrently. Failures are logged
+and retried on the next sweep; shutdown drains the running sweep before closing
+the database pool. Each sweep processes at most 50 expired raids.

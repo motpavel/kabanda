@@ -2330,22 +2330,7 @@ export class DatabaseRaidService implements RaidService {
           deadlineAt: raid.finalization_deadline_at.toISOString(),
         })
       }
-      const terminalizedTail = await this.expireFinalizationTail(client, raid.id)
-      if (terminalizedTail > 0 && !raid.finalization_partial) {
-        await client.query('UPDATE raids SET finalization_partial = true WHERE id = $1', [raid.id])
-        raid.finalization_partial = true
-      }
-      const completedAt = (
-        await client.query<{ completed_at: Date }>('SELECT clock_timestamp() AS completed_at')
-      ).rows[0]!.completed_at
-      const result = await this.buildImmutableResult(client, raid, completedAt, actorUserId)
-      const sharePng = await renderRaidShareCard(result)
-      await this.storeImmutableResult(client, result, sharePng)
-      await client.query(
-        `UPDATE raids SET state = 'completed', version = $2, completed_at = $3,
-           updated_at = $3 WHERE id = $1`,
-        [raid.id, raid.version + 1, completedAt],
-      )
+      const result = await this.completeFinalization(client, raid, actorUserId)
       const response: SettleRaidResponse = {
         raid: await this.project(client, actorUserId, raid.id),
         result,
@@ -2363,6 +2348,63 @@ export class DatabaseRaidService implements RaidService {
       })
       return response
     })
+  }
+
+  // Independent of browser sessions: recover expired finishes after disconnects/restarts.
+  async settleExpiredFinalizations(onError: (error: unknown, raidId: string) => void): Promise<number> {
+    const candidates = await this.pool.query<{ id: string }>(
+      `SELECT id FROM raids WHERE state = 'finalizing'
+         AND finalization_deadline_at <= clock_timestamp()
+       ORDER BY finalization_deadline_at, id LIMIT 50`,
+    )
+    let completed = 0
+    for (const candidate of candidates.rows) {
+      try {
+        const settled = await transaction(this.pool, async (client) => {
+          // Share the raid lock with manual settlement; concurrent workers skip it.
+          const locked = await client.query<RaidRow>(
+            `SELECT r.*, clock_timestamp() AS server_now FROM raids r
+             WHERE id = $1 AND state = 'finalizing'
+               AND finalization_deadline_at <= clock_timestamp()
+             FOR UPDATE SKIP LOCKED`,
+            [candidate.id],
+          )
+          const raid = locked.rows[0]
+          if (!raid) return false
+          await this.completeFinalization(client, raid, raid.organizer_user_id)
+          return true
+        })
+        if (settled) completed += 1
+      } catch (error) {
+        // One failed result must not prevent other teams from finishing.
+        onError(error, candidate.id)
+      }
+    }
+    return completed
+  }
+
+  private async completeFinalization(
+    client: PoolClient,
+    raid: RaidRow,
+    actorUserId: string,
+  ): Promise<RaidResult> {
+    const terminalizedTail = await this.expireFinalizationTail(client, raid.id)
+    if (terminalizedTail > 0 && !raid.finalization_partial) {
+      await client.query('UPDATE raids SET finalization_partial = true WHERE id = $1', [raid.id])
+      raid.finalization_partial = true
+    }
+    const completedAt = (
+      await client.query<{ completed_at: Date }>('SELECT clock_timestamp() AS completed_at')
+    ).rows[0]!.completed_at
+    const result = await this.buildImmutableResult(client, raid, completedAt, actorUserId)
+    const sharePng = await renderRaidShareCard(result)
+    await this.storeImmutableResult(client, result, sharePng)
+    await client.query(
+      `UPDATE raids SET state = 'completed', version = $2, completed_at = $3,
+         updated_at = $3 WHERE id = $1`,
+      [raid.id, raid.version + 1, completedAt],
+    )
+    return result
   }
 
   async leaveRaid(

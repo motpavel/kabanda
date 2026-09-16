@@ -253,6 +253,34 @@ describePostgres('Kabandas and points PostgreSQL invariants', () => {
     await pool?.end()
   })
 
+  it('recovers expired finalization without a browser, preserves results and unblocks the next raid', async () => {
+    const { ownerId, kabanda } = await ownerAndKabanda('sweep')
+    const { acquired } = await activeOwnerRaid(ownerId, kabanda.id, 'sweep')
+    await raidService!.finishRaid(ownerId, acquired.raid.id, {
+      expectedVersion: acquired.raid.version,
+      inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 0 },
+      confirmPartial: false,
+    }, 'sweep-finish')
+    const errors: unknown[] = []
+    const onError = (error: unknown) => { errors.push(error) }
+    expect(await raidService!.settleExpiredFinalizations(onError)).toBe(0)
+    await pool!.query(`UPDATE raids SET finalization_deadline_at = now() - interval '1 second'
+      WHERE id = $1`, [acquired.raid.id])
+    const sweeps = await Promise.all([
+      raidService!.settleExpiredFinalizations(onError),
+      raidService!.settleExpiredFinalizations(onError),
+    ])
+    expect(sweeps.reduce((a, b) => a + b, 0)).toBe(1)
+    expect(errors).toEqual([])
+    expect((await raidService!.getRaid(ownerId, acquired.raid.id)).state).toBe('completed')
+    const stored = await pool!.query('SELECT result_json, share_sha256 FROM raid_results WHERE raid_id = $1', [acquired.raid.id])
+    expect(stored.rows).toHaveLength(1)
+    expect(await raidService!.settleExpiredFinalizations(onError)).toBe(0)
+    expect((await pool!.query('SELECT result_json, share_sha256 FROM raid_results WHERE raid_id = $1', [acquired.raid.id])).rows).toEqual(stored.rows)
+    const next = await activeOwnerRaid(ownerId, kabanda.id, 'sweep-next')
+    expect(next.acquired.raid.state).toBe('active')
+  })
+
   it('creates one Kabanda for concurrent requests with the same idempotency key', async () => {
     const ownerId = await user('owner@example.com')
     const results = await Promise.all([

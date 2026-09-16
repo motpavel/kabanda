@@ -1,4 +1,5 @@
 import dotenv from 'dotenv'
+import { startFinalizationWorker } from './finalization-worker.js'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { DatabaseAuthService } from './auth.js'
@@ -70,7 +71,10 @@ const relay = config.RELAY_ENABLED ? await buildRelayBridge({
   })(),
 }) : null
 
+let stopFinalizationWorker: (() => Promise<void>) | undefined
+
 const shutdown = async () => {
+  await stopFinalizationWorker?.()
   await relay?.close()
   await app.close()
   await database.end()
@@ -81,3 +85,10 @@ process.once('SIGTERM', () => void shutdown())
 
 await app.listen({ host: config.API_HOST, port: config.API_PORT })
 await relay?.listen({ host: '127.0.0.1', port: config.RELAY_PORT })
+
+stopFinalizationWorker = startFinalizationWorker(
+  () => raids.settleExpiredFinalizations((err, raidId) => {
+    app.log.error({ err, raidId }, 'Raid finalization failed; will retry')
+  }),
+  (err) => app.log.error({ err }, 'Finalization sweep failed; will retry'),
+)
