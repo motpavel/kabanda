@@ -13,6 +13,7 @@ import { readRaidMapCache, saveRaidMapCache } from './map-cache'
 import { RaidControlIcon } from '../RaidControlIcon'
 import { trackEndpoints } from './track-endpoints'
 import { updateTrackLayers, type TrackLayers } from './track-layers'
+import { selectRiderMarkers } from './rider-markers'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 
@@ -66,6 +67,8 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
 
 export function RaidRouteMap({
   identityId,
+  navigatorUserId = null,
+  navigatorSampleAt = null,
   planned = false,
   completed = false,
   raidId,
@@ -76,6 +79,8 @@ export function RaidRouteMap({
   onSelectPoint,
 }: {
   identityId: string
+  navigatorUserId?: string | null
+  navigatorSampleAt?: string | null
   planned?: boolean
   completed?: boolean
   raidId: string
@@ -92,7 +97,8 @@ export function RaidRouteMap({
   const endpointMarkersRef = useRef(new Map<string, YandexPlacemark>())
   const pointMarkersRef = useRef(new Map<string, { marker: YandexPlacemark; point: RaidMapPoint; signature: string }>())
   const plannedLineRef = useRef<YandexPolyline | null>(null)
-  const riderRef = useRef<YandexPlacemark | null>(null)
+  const riderMarkersRef = useRef(new Map<string, YandexPlacemark>())
+  const [markerNow, setMarkerNow] = useState(Date.now)
   const onSelectPointRef = useRef(onSelectPoint)
   onSelectPointRef.current = onSelectPoint
   const firstViewApplied = useRef(false)
@@ -101,6 +107,7 @@ export function RaidRouteMap({
   const mapGesture = useRef<{ id: number; x: number; y: number } | null>(null)
   const [providerState, setProviderState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [track, setTrack] = useState<RouteTrackProjection | null>(null)
+  const [snapshotNavigator, setSnapshotNavigator] = useState<{ userId: string | null; sampleAt: string | null } | null>(null)
   const [points, setPoints] = useState<RaidMapPoint[]>([])
   const [dataState, setDataState] = useState<'loading' | 'ready' | 'failed'>('loading')
 
@@ -141,7 +148,7 @@ export function RaidRouteMap({
       endpointMarkersRef.current.clear()
       pointMarkersRef.current.clear()
       plannedLineRef.current = null
-      riderRef.current = null
+      riderMarkersRef.current.clear()
     }
   }, [])
 
@@ -164,6 +171,7 @@ export function RaidRouteMap({
           ? [snapshot.track, snapshot.points]
           : await Promise.all([getRouteTrack(raidId), getRaidMapPoints(raidId)])
         if (!active) return
+        if (snapshot) setSnapshotNavigator({ userId: snapshot.raid.navigatorUserId, sampleAt: snapshot.raid.routeStatus.lastSampleAt })
         setTrack((current) => current?.updatedAt === nextTrack.updatedAt && current.pointCount === nextTrack.pointCount ? current : nextTrack)
         setPoints((current) => sameMapPoints(current, nextPoints) ? current : nextPoints)
         setDataState('ready')
@@ -280,30 +288,48 @@ export function RaidRouteMap({
   }, [completed, destinationPointId, highlightedPointId, planned, points, providerState])
 
   useEffect(() => {
+    if (!live) return
+    const tick = () => setMarkerNow(Date.now())
+    tick()
+    const timer = window.setInterval(tick, 5_000)
+    return () => window.clearInterval(timer)
+  }, [live])
+
+  useEffect(() => {
     const map = mapRef.current
     const runtime = runtimeRef.current
     if (providerState !== 'ready' || !map || !runtime) return
-    const markerCoordinate = userMarkerCoordinate(location)
-    if (!markerCoordinate) {
-      if (riderRef.current) map.geoObjects.remove(riderRef.current)
-      riderRef.current = null
-      return
+    const markers = selectRiderMarkers({
+      identityId, navigatorUserId, location, track, live, now: Date.now(),
+      navigatorSampleAt: snapshotNavigator?.userId === navigatorUserId
+        ? snapshotNavigator.sampleAt : navigatorSampleAt,
+    })
+    for (const [id, marker] of riderMarkersRef.current) {
+      if (markers.some(next => next.id === id)) continue
+      map.geoObjects.remove(marker)
+      riderMarkersRef.current.delete(id)
     }
-    if (riderRef.current) riderRef.current.geometry?.setCoordinates(markerCoordinate)
-    else {
-      const riderLayout = runtime.templateLayoutFactory.createClass(
-        '<span class="route-live-map__rider" aria-label="Моё положение"></span>',
+    for (const spec of markers) {
+      const coordinates = [spec.point.latitude, spec.point.longitude] as const
+      const markerClass = `route-live-map__rider route-live-map__rider--${spec.kind}${spec.stale ? ' route-live-map__rider--stale' : ''}`
+      const label = spec.stale && spec.id === 'viewer' ? `${spec.label} — последние координаты` : spec.label
+      const existing = riderMarkersRef.current.get(spec.id)
+      if (existing) {
+        existing.geometry?.setCoordinates(coordinates)
+        existing.properties.set('markerClass', markerClass)
+        existing.properties.set('label', label)
+        continue
+      }
+      const layout = runtime.templateLayoutFactory.createClass(
+        '<span class="{{ properties.markerClass }}" role="img" aria-label="{{ properties.label }}" title="{{ properties.label }}"></span>',
       )
-      const rider = new runtime.Placemark(markerCoordinate, {}, {
-        iconLayout: riderLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 16 },
-        hasBalloon: false,
-        hasHint: false,
-        interactiveZIndex: false,
-        zIndex: 10,
+      const marker = new runtime.Placemark(coordinates, { markerClass, label }, {
+        iconLayout: layout,
+        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 24 },
+        hasBalloon: false, hasHint: false, interactiveZIndex: false, zIndex: 30,
       })
-      riderRef.current = rider
-      map.geoObjects.add(rider)
+      riderMarkersRef.current.set(spec.id, marker)
+      map.geoObjects.add(marker)
     }
 
     if (location && !firstLocationApplied.current) {
@@ -314,7 +340,7 @@ export function RaidRouteMap({
       firstLocationApplied.current = true
       firstViewApplied.current = true
     }
-  }, [location, providerState])
+  }, [identityId, live, location, markerNow, navigatorSampleAt, navigatorUserId, providerState, snapshotNavigator, track])
 
   const changeZoom = (delta: number) => {
     const map = mapRef.current

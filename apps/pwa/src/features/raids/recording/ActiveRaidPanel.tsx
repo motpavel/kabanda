@@ -191,6 +191,8 @@ export function ActiveRaidPanel({
   return <section className="raid-active-map" aria-label={`Активный рейд ${raid.title}`}>
     <RaidRouteMap
       identityId={identityId}
+      navigatorUserId={raid.navigatorUserId}
+      navigatorSampleAt={raid.routeStatus.lastSampleAt}
       planned={Boolean(raid.routeTemplateId)}
       destinationPointId={destination?.pointSnapshotId ?? null}
       highlightedPointId={activePoint?.pointSnapshotId ?? null}

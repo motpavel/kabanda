@@ -1177,3 +1177,23 @@
 .checkin-upload-spinner { display: inline-block; width: 16px; height: 16px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: checkin-upload-spin .8s linear infinite; }
 @keyframes checkin-upload-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .checkin-upload-spinner { animation: none; } }
+
+/* Only the dashed ring rotates; the rider and its location stay still. */
+.route-live-map__rider { position: relative; width: 36px; height: 36px; background-size: 29px 29px; }
+.route-live-map__rider--navigator {
+  background-color: #e84b43;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 168'%3E%3Ccircle cx='123' cy='116' r='27' fill='none' stroke='white' stroke-width='8'/%3E%3C/svg%3E"), url('/brand/kabanda-logo-reference.png');
+}
+.route-live-map__rider--participant,
+.route-live-map__rider--flock { background-color: #fff; }
+.route-live-map__rider--flock::after {
+  content: ''; position: absolute; inset: -7px;
+  background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 52 52'%3E%3Ccircle cx='26' cy='26' r='23' fill='none' stroke='%23e84b43' stroke-width='3' stroke-dasharray='15 9' stroke-linecap='round'/%3E%3C/svg%3E");
+  border-radius: 50%; filter: drop-shadow(0 0 3px rgb(232 75 67 / 55%));
+  animation: raid-flock-orbit 8s linear infinite; pointer-events: none;
+}
+.route-live-map__rider--stale { opacity: .55; }
+@keyframes raid-flock-orbit { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .route-live-map__rider--flock::after { animation: none; }
+}
