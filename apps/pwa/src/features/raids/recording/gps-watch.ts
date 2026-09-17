@@ -1,70 +1,58 @@
-/** One subscription at a time; retry a stalled iOS watch without changing the writer lease. */
+/** Poll fresh GPS at most every five seconds; ignore callbacks after stop/recovery. */
 export function watchRecoveringPosition(
   geolocation: Geolocation,
   success: PositionCallback,
   failure: PositionErrorCallback,
 ): () => void {
   let stopped = false
-  let watch: number | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
+  let watchdog: ReturnType<typeof setTimeout> | undefined
   let generation = 0
   let retryDelay = 5_000
-  let retryPending = false
-  const clearWatch = () => {
-    generation += 1
-    if (watch !== null) geolocation.clearWatch(watch)
-    watch = null
-  }
+  let lastDeliveredAt = -Infinity
   const stop = () => {
     stopped = true
+    generation += 1
     clearTimeout(timer)
-    clearWatch()
+    clearTimeout(watchdog)
   }
-  const retry = () => {
-    if (stopped || retryPending) return
-    retryPending = true
-    clearTimeout(timer)
-    timer = setTimeout(() => {
-      retryDelay = Math.min(retryDelay * 2, 30_000)
-      subscribe()
-    }, retryDelay)
+  const schedule = (delay: number) => {
+    if (!stopped) timer = setTimeout(poll, delay)
   }
-  const armWatchdog = () => {
-    clearTimeout(timer)
-    timer = setTimeout(() => {
-      if (stopped) return
-      failure({ code: 3, message: 'Нет свежего GPS-сигнала', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 })
-      retry()
-    }, 20_000)
-  }
-  const subscribe = () => {
+  const poll = () => {
     if (stopped) return
-    clearWatch()
-    retryPending = false
-    const current = generation
-    armWatchdog()
+    const current = ++generation
+    let settled = false
+    const finish = () => {
+      if (stopped || settled || current !== generation) return false
+      settled = true
+      clearTimeout(watchdog)
+      return true
+    }
     const onFailure: PositionErrorCallback = (error) => {
-      if (stopped || generation !== current) return
-      if (error.code === 1) stop() // Never keep prompting after an explicit denial.
-      else retry()
+      if (!finish()) return
+      if (error.code === 1) stop()
+      else { schedule(retryDelay); retryDelay = Math.min(retryDelay * 2, 30_000) }
       failure(error)
     }
+    // Some providers fail to deliver their timeout callback after a lifecycle pause.
+    watchdog = setTimeout(() => onFailure({ code: 3, message: 'Нет свежего GPS-сигнала', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 }), 20_000)
     try {
-      const id = geolocation.watchPosition((position) => {
-        if (stopped || generation !== current) return
+      geolocation.getCurrentPosition((position) => {
+        if (!finish()) return
+        schedule(5_000)
         const age = Date.now() - position.timestamp
         if (!Number.isFinite(age) || age < -5_000 || age > 5_000) return
+        if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy > 50 || position.coords.accuracy < 0) return
+        if (position.timestamp - lastDeliveredAt < 5_000) return
         retryDelay = 5_000
-        retryPending = false
-        armWatchdog()
+        lastDeliveredAt = position.timestamp
         success(position)
       }, onFailure, { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 })
-      if (stopped || generation !== current) geolocation.clearWatch(id)
-      else watch = id
     } catch {
       onFailure({ code: 2, message: 'GPS временно недоступен', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 })
     }
   }
-  subscribe()
+  poll()
   return stop
 }

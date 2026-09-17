@@ -19,6 +19,14 @@ describe('untrusted media processing', () => {
     })
   })
 
+  it.each([[4032, 3024], [8064, 6048]])('accepts a %i × %i phone photo and downsizes it', async (width, height) => {
+    const bytes = await sharp({ create: { width, height, channels: 3, background: '#7a3e18' } }).jpeg().toBuffer()
+    const result = await processMedia(bytes, 'image/jpeg')
+    expect(result.info.width).toBeLessThanOrEqual(2048)
+    expect(result.info.height).toBeLessThanOrEqual(2048)
+    expect(result.data.byteLength).toBeLessThan(3 * 1024 * 1024)
+  })
+
   it('rejects disguised and malformed bytes with a bounded domain error', async () => {
     await expect(processMedia(await image('jpeg'), 'image/png')).rejects.toMatchObject({
       code: 'MEDIA_INVALID',

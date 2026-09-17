@@ -1173,3 +1173,7 @@
 .raid-preparation__action { position: sticky; bottom: 12px; z-index: 5; display: grid; gap: 8px; padding: 10px; background: var(--kb-surface, #fff); border: 1px solid #ddd; border-radius: 18px; box-shadow: 0 6px 24px #00000012; }
 .raid-preparation__action .kb-primary { width: 100%; min-height: 52px; }
 .raid-preparation__action p { margin: 8px; text-align: center; }
+
+.checkin-upload-spinner { display: inline-block; width: 16px; height: 16px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: checkin-upload-spin .8s linear infinite; }
+@keyframes checkin-upload-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .checkin-upload-spinner { animation: none; } }

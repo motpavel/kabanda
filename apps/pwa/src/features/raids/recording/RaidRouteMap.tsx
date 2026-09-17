@@ -340,7 +340,7 @@ export function RaidRouteMap({
   }
 
   return <div className="route-live-map-shell">
-    {planned && <p className="raid-route-legend">Пунктир — порядок точек, не навигация · чёрный — пройденный путь</p>}
+    {(planned || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
     <div className="route-live-map" ref={containerRef}
       onPointerDownCapture={(event) => {
         if (!event.isPrimary) { stopFollowing(); return }

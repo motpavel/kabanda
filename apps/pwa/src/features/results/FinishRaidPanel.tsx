@@ -13,7 +13,6 @@ import {
 import {
   finishNeedsPartialConfirmation,
   pendingInventoryCount,
-  replayableInventoryCount,
   selectFinishPrimary,
 } from './state'
 import type { FinishLocalReview } from './types'
@@ -35,7 +34,6 @@ export function FinishRaidPanel({
 }) {
   const [review, setReview] = useState<FinishLocalReview | null>(null)
   const [partialConfirmed, setPartialConfirmed] = useState(false)
-  const [drainAttempted, setDrainAttempted] = useState(false)
   const [busy, setBusy] = useState<'drain' | 'finish' | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const attempt = useRef<ResultOperationAttempt<{
@@ -49,14 +47,12 @@ export function FinishRaidPanel({
     attempt.current = readResultOperationAttempt(storageKey)
     if (attempt.current) {
       setPartialConfirmed(attempt.current.payload.confirmPartial)
-      setDrainAttempted(true)
     }
     void getFinishLocalReview(identityId, raid.id).then(setReview)
   }, [identityId, raid.id, storageKey])
 
   if (!raid.allowedActions.includes('finish')) return null
-  const pending = review ? replayableInventoryCount(review) : 0
-  const effectivePartialConfirmed = partialConfirmed && (pending === 0 || drainAttempted)
+  const effectivePartialConfirmed = partialConfirmed
   const primary = review ? selectFinishPrimary(review, effectivePartialConfirmed, navigator.onLine) : null
   const unresolved = review ? finishNeedsPartialConfirmation(review) : false
 
@@ -69,7 +65,6 @@ export function FinishRaidPanel({
         identityId, raidId: raid.id, flushRoute, online: true,
       })
       setReview(next)
-      setDrainAttempted(true)
       if (next && pendingInventoryCount(next) > 0) {
         setMessage('Не все данные отправлены. Повторите отправку или завершите с неполным итогом.')
       }
@@ -104,6 +99,7 @@ export function FinishRaidPanel({
       await onCanonicalRefresh()
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : 'Завершение не подтверждено. Нажмите ещё раз — повтор не создаст второй итог.')
+      await onCanonicalRefresh().catch(() => undefined)
     } finally {
       setBusy(null)
     }
@@ -122,7 +118,7 @@ export function FinishRaidPanel({
             <div><dt>Фото</dt><dd>{review.inventory.mediaPending}</dd></div>
             <div><dt>Нужно действие</dt><dd>{review.inventory.needsAction}</dd></div>
           </dl>}
-          {unresolved && (pending === 0 || drainAttempted) && (
+          {unresolved && (
             <label className="result-partial-confirm">
               <input type="checkbox" checked={partialConfirmed} onChange={(event) => setPartialConfirmed(event.target.checked)} />
               <span><strong>Завершить без неотправленных данных</strong><small>Они останутся на телефоне, но не войдут в итог рейда.</small></span>

@@ -13,7 +13,7 @@ import {
   listRaidMedia,
   mediaContentUrl,
 } from './api'
-import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, validateMediaFile } from './platform'
+import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, prepareMediaFile } from './platform'
 import { replayOneCheckInOrMedia } from './replay'
 import { checkInRefusalMessage } from './refusal'
 import {
@@ -97,6 +97,7 @@ export function CheckInPanel({
   const [fallbacks, setFallbacks] = useState<CheckInFallback[]>([])
   const [media, setMedia] = useState<RaidMedia[]>([])
   const [local, setLocal] = useState<Awaited<ReturnType<typeof getCheckInLocalState>> | null>(null)
+  const [sending, setSending] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
@@ -264,6 +265,7 @@ export function CheckInPanel({
       return
     }
     replaying.current = true
+    setSending(true)
     try {
       do {
         replayRequested.current = false
@@ -281,7 +283,7 @@ export function CheckInPanel({
             onRefused?.(text)
           }
           if (result.kind === 'terminal') {
-            setMessage(`Сервер отклонил локальную операцию: ${result.code}.`)
+            setMessage(result.code.startsWith('MEDIA_') ? 'Фото не принято. Попробуйте добавить его заново; рейд можно завершить без этого фото.' : `Не удалось отправить сохранённое: ${result.code}.`)
             break
           }
         }
@@ -289,8 +291,11 @@ export function CheckInPanel({
         await Promise.all([refreshCanonicalExtras(), refreshGallery()]).catch(() => undefined)
         await onCanonicalRefresh()
       } while (replayRequested.current && canMutate && navigator.onLine)
+    } catch {
+      setMessage('Отправка прервалась. Данные остаются на телефоне; повторите синхронизацию.')
     } finally {
       replaying.current = false
+      setSending(false)
     }
   }, [canMutate, identityId, onCanonicalRefresh, onRefused, raid.id, refreshCanonicalExtras, refreshGallery, refreshLocal, senderTabId])
 
@@ -402,22 +407,22 @@ export function CheckInPanel({
 
   const addMedia = async (file: File | null) => {
     if (!file || busy || !canEnqueue) return
-    const invalid = validateMediaFile(file)
-    if (invalid) return setMessage(invalid)
     setBusy('media')
+    setMessage(null)
     try {
-      const quota = await hasQuotaForMedia(file.size)
-      if (quota === false) throw new Error('QUOTA')
-      const sourceSha256 = await sha256Hex(file)
+      const prepared = await prepareMediaFile(file)
+      const quota = await hasQuotaForMedia(prepared.size)
+      if (quota === false) throw new Error('На телефоне недостаточно места для фото. Освободите память и повторите.')
+      const sourceSha256 = await sha256Hex(prepared)
       const purpose = manualResponse ? 'fallback' as const : 'gallery' as const
       const draft = await persistMediaDraft({
         identityId,
         kabandaId: raid.kabandaId,
         raidId: raid.id,
-        blob: file,
+        blob: prepared,
         sourceSha256,
-        sizeBytes: file.size,
-        contentType: file.type as 'image/jpeg' | 'image/png' | 'image/webp',
+        sizeBytes: prepared.size,
+        contentType: 'image/jpeg',
         caption: caption.trim().slice(0, 160) || null,
         purpose,
         attemptId: manualResponse?.attemptId ?? null,
@@ -426,8 +431,8 @@ export function CheckInPanel({
       await refreshLocal()
       setMessage('Фото сохранено локально. Оно появится в рейде после отправки.')
       void flush()
-    } catch {
-      setMessage('Фото не сохранено: проверьте место в хранилище, формат и активный аккаунт.')
+    } catch (error) {
+      setMessage(error instanceof Error && error.message !== 'IDENTITY_CHANGED' ? error.message : 'Фото не сохранено. Проверьте активный аккаунт и повторите.')
     } finally {
       setBusy(null)
     }
@@ -561,7 +566,7 @@ export function CheckInPanel({
           <summary><svg className="checkin-media-details__camera" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 5 9.5 3h5L16 5h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg>Фото с остановки <span className="checkin-media-details__toggle" aria-hidden="true">+</span></summary>
           <div className="checkin-media-compose">
           <label>Подпись к фото <input maxLength={160} value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
-          <label className="kb-link-button checkin-photo">{manualResponse ? 'Фото для подтверждения' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy)} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
+          <label className="kb-link-button checkin-photo" aria-busy={busy === 'media' || sending}>{(busy === 'media' || sending) && <span className="checkin-upload-spinner" aria-hidden="true" />}{busy === 'media' ? 'Готовим фото…' : sending ? 'Отправляем…' : manualResponse ? 'Фото для подтверждения' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy) || sending} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
           </div>
           {presentation === 'map-sheet' && gallery}
         </details>

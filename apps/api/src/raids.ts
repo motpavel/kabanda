@@ -378,7 +378,7 @@ export const processMedia: MediaProcessor = async (bytes, declaredContentType) =
   let image: Sharp
   let metadata: Metadata
   try {
-    image = sharp(bytes, { failOn: 'error', limitInputPixels: 12_000_000 })
+    image = sharp(bytes, { failOn: 'error', limitInputPixels: 50_000_000 })
     metadata = await image.metadata()
   } catch {
     throw new RaidError('MEDIA_INVALID', 400, 'Неподдерживаемое изображение')
@@ -386,9 +386,9 @@ export const processMedia: MediaProcessor = async (bytes, declaredContentType) =
   if (
     !metadata.width ||
     !metadata.height ||
-    metadata.width > 8_000 ||
-    metadata.height > 8_000 ||
-    metadata.width * metadata.height > 12_000_000 ||
+    metadata.width > 10_000 ||
+    metadata.height > 10_000 ||
+    metadata.width * metadata.height > 50_000_000 ||
     !['jpeg', 'png', 'webp'].includes(metadata.format ?? '') ||
     (({ jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' } as Record<
       string,

@@ -58,3 +58,31 @@ describe('check-in media boundaries', () => {
     expect(eligibleManualVerifier('a', 'b', ['a', 'b'])).toBe(true)
   })
 })
+
+describe('phone photo preparation', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('resizes portrait photos before persistence and releases image memory', async () => {
+    const { prepareMediaFile } = await import('./platform')
+    const close = vi.fn(), drawImage = vi.fn()
+    const bitmap = { width: 2048, height: 2731, close }
+    const output = new Blob(['prepared'], { type: 'image/jpeg' })
+    let renderedSize: number[] = []
+    const canvas = { width: 0, height: 0,
+      getContext: () => ({ fillStyle: '', fillRect: vi.fn(), drawImage }),
+      toBlob: (callback: (blob: Blob) => void) => { renderedSize = [canvas.width, canvas.height]; callback(output) },
+    }
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(bitmap))
+    vi.stubGlobal('document', { createElement: () => canvas })
+    expect(await prepareMediaFile(new File(['original'], 'phone.jpg', { type: 'image/jpeg' }))).toBe(output)
+    expect(renderedSize).toEqual([1536, 2048])
+    expect(drawImage).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+    expect(canvas.width).toBe(1)
+  })
+  it('explains unsupported formats and decode failures without leaving a pending upload', async () => {
+    const { prepareMediaFile } = await import('./platform')
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('decode')))
+    await expect(prepareMediaFile(new File(['x'], 'phone.heic', { type: 'image/heic' }))).rejects.toThrow('HEIC')
+    await expect(prepareMediaFile(new File(['x'], 'bad.jpg', { type: 'image/jpeg' }))).rejects.toThrow('Не удалось открыть фото')
+  })
+})

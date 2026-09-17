@@ -19,14 +19,26 @@ describe('incremental map geometry', () => {
     const first = [point(0), point(1)], tail = [point(10), point(11)]
     updateTrackLayers(h.map, h.runtime, h.layers, [first, tail])
     const initial = [...h.layers.values()]
-    expect(h.added).toHaveBeenCalledTimes(4)
+    expect(h.added).toHaveBeenCalledTimes(6)
     updateTrackLayers(h.map, h.runtime, h.layers, [first.map(p => ({ ...p })), [...tail, point(12)]])
     expect([...h.layers.values()]).toEqual(initial)
     expect(h.updated).toHaveBeenCalledTimes(2)
-    expect(h.added).toHaveBeenCalledTimes(4)
+    expect(h.added).toHaveBeenCalledTimes(6)
     expect(h.removed).not.toHaveBeenCalled()
     updateTrackLayers(h.map, h.runtime, h.layers, [first.map(p => ({ ...p })), [...tail, point(12)]])
     expect(h.updated).toHaveBeenCalledTimes(2)
+  })
+
+  it('connects isolated fixes after unlocking without changing stored segments', () => {
+    const h = harness()
+    const a = point(0), b = point(300), c = point(600)
+    const segments = [[a], [], [b], [c]]
+    const saved = JSON.stringify(segments)
+    updateTrackLayers(h.map, h.runtime, h.layers, segments)
+    expect(h.layers.get(-3)?.points).toEqual([a, b])
+    expect(h.layers.get(-4)?.points).toEqual([b, c])
+    expect(h.added).toHaveBeenCalledTimes(4)
+    expect(JSON.stringify(segments)).toBe(saved)
   })
 
   it('removes a disappeared segment without leaving its previous path on the map', () => {
@@ -34,6 +46,6 @@ describe('incremental map geometry', () => {
     updateTrackLayers(h.map, h.runtime, h.layers, [[point(0), point(1)], [point(4), point(5)]])
     updateTrackLayers(h.map, h.runtime, h.layers, [[point(0)]])
     expect(h.layers.size).toBe(0)
-    expect(h.removed).toHaveBeenCalledTimes(4)
+    expect(h.removed).toHaveBeenCalledTimes(6)
   })
 })

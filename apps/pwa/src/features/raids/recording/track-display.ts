@@ -7,7 +7,8 @@ const METERS_PER_DEGREE = 111_320
  * Each input segment is independent. Preserve endpoints, sparse samples and
  * reversals; soften small GPS wobbles (max 3 m) and round corners within 2 m.
  */
-export function displayTrackSegment(points: readonly RouteTrackPoint[]): Coordinate[] {
+export function displayTrackSegment(input: readonly RouteTrackPoint[]): Coordinate[] {
+  const points = simplifyTrackWobble(input)
   const raw: Coordinate[] = points.map((point) => [point.latitude, point.longitude])
   if (raw.length < 3) return raw
   const scaleX = METERS_PER_DEGREE * Math.cos(raw[0]![0] * Math.PI / 180)
@@ -63,5 +64,25 @@ export function displayTrackSegment(points: readonly RouteTrackPoint[]): Coordin
     }
   }
   result.push(raw.at(-1)!)
+  return result
+}
+
+/** Remove sub-five-meter lateral noise without joining across sparse GPS fixes. */
+function simplifyTrackWobble(points: readonly RouteTrackPoint[]): readonly RouteTrackPoint[] {
+  if (points.length < 3) return points
+  const result: RouteTrackPoint[] = [points[0]!]
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const a = result.at(-1)!, b = points[i]!, c = points[i + 1]!
+    const dt = Date.parse(c.capturedAt) - Date.parse(a.capturedAt)
+    const scale = METERS_PER_DEGREE * Math.cos(a.latitude * Math.PI / 180)
+    const bx = (b.longitude - a.longitude) * scale, by = (b.latitude - a.latitude) * METERS_PER_DEGREE
+    const cx = (c.longitude - a.longitude) * scale, cy = (c.latitude - a.latitude) * METERS_PER_DEGREE
+    const length2 = cx * cx + cy * cy
+    const t = length2 ? (bx * cx + by * cy) / length2 : -1
+    const lateral = Math.hypot(bx - t * cx, by - t * cy)
+    if (dt > 0 && dt <= 30_000 && length2 <= 120 ** 2 && t > 0 && t < 1 && lateral <= 5) continue
+    result.push(b)
+  }
+  result.push(points.at(-1)!)
   return result
 }

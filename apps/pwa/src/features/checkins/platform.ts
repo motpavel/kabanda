@@ -46,6 +46,38 @@ export function validateMediaFile(file: File): string | null {
   return null
 }
 
+/** Downsample before hashing, IndexedDB and encrypted transport to bound phone memory. */
+export async function prepareMediaFile(file: File): Promise<Blob> {
+  if (!MEDIA_TYPES.has(file.type)) throw new Error('Выберите фото в формате JPEG, PNG или WebP. Для HEIC сохраните копию в JPEG.')
+  if (file.size <= 0 || file.size > 32 * 1024 * 1024) throw new Error('Выберите фото размером до 32 МиБ.')
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file, { resizeWidth: 2048, resizeQuality: 'high', imageOrientation: 'from-image' })
+  } catch {
+    throw new Error('Не удалось открыть фото. Сохраните его в JPEG и попробуйте ещё раз.')
+  }
+  const canvas = document.createElement('canvas')
+  try {
+    const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height))
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Не удалось подготовить фото. Попробуйте другой снимок.')
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (value) => value ? resolve(value) : reject(new Error('Не удалось уменьшить фото. Попробуйте другой снимок.')),
+      'image/jpeg', .82,
+    ))
+    if (blob.size > MAX_MEDIA_BYTES) throw new Error('Фото слишком большое. Выберите другой снимок.')
+    return blob
+  } finally {
+    bitmap.close()
+    canvas.width = canvas.height = 1
+  }
+}
+
 export async function hasQuotaForMedia(fileSize: number): Promise<boolean | null> {
   if (!navigator.storage?.estimate) return null
   try {
