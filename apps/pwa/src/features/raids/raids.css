@@ -1181,8 +1181,8 @@
 /* Only the dashed ring rotates; the rider and its location stay still. */
 .route-live-map__rider { position: relative; width: 36px; height: 36px; background-size: 29px 29px; }
 .route-live-map__rider--navigator {
-  background-color: #e84b43;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 168'%3E%3Ccircle cx='123' cy='116' r='27' fill='none' stroke='white' stroke-width='8'/%3E%3C/svg%3E"), url('/brand/kabanda-logo-reference.png');
+  background-color: #fff;
+  border: 2px solid #e84b43;
 }
 .route-live-map__rider--participant,
 .route-live-map__rider--flock { background-color: #fff; }
