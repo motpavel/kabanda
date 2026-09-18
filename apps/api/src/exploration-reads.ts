@@ -22,15 +22,14 @@ export function parseHistoryPageCursor(raw: string | undefined, user: string, te
   }
 }
 
-/** A richer, opt-in read protocol. The legacy history endpoint remains available
- * to installed older PWAs. Both read the same immutable result tables; no awards
- * or lifecycle decisions are recomputed here. */
+/** Opt-in read protocol for installed-PWA compatibility. The old endpoint stays
+ * available; both read the same immutable result tables, not another score model. */
 export async function readHistoryPage(database: Database, user: string, team: string,
   input: { scope: HistoryScope; limit: number; cursor?: string | undefined }): Promise<HistoryPage> {
   const { scope, limit, cursor } = historyPageQuerySchema.parse(input)
   const after = parseHistoryPageCursor(cursor, user, team, scope)
   const result = await database.query<{
-    raid_id: string | null; title: string; completed_at: Date; partial: boolean; participated: boolean
+    raid_id: string | null; title: string; completed_at: Date; cursor_at: string; partial: boolean; participated: boolean
     team_duration_seconds: number; team_distance_meters: number; team_unique_points: number; team_photos: number
     duration_seconds: number | null; distance_meters: number | null; unique_points: number | null; photos: number | null
   }>(
@@ -41,6 +40,7 @@ export async function readHistoryPage(database: Database, user: string, team: st
      )
      SELECT page.* FROM allowed a LEFT JOIN LATERAL (
        SELECT rr.raid_id, r.title, rr.completed_at, rr.partial,
+         to_char(rr.completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
          rr.team_duration_seconds, rr.team_distance_meters, rr.team_unique_points, rr.team_photos,
          rp.duration_seconds, rp.distance_meters, rp.unique_points, rp.photos,
          (rp.user_id IS NOT NULL) AS participated
@@ -53,8 +53,6 @@ export async function readHistoryPage(database: Database, user: string, team: st
      ) page ON true`,
     [user, team, scope, after?.at ?? null, after?.id ?? null, limit + 1],
   )
-  // No membership and an authorized empty page are different even in the same
-  // database snapshot. Checking access inside the query avoids a TOCTOU leak.
   if (!result.rowCount) throw unavailable()
   const candidates = result.rows.filter(row => row.raid_id !== null)
   const rows = candidates.slice(0, limit)
@@ -69,42 +67,43 @@ export async function readHistoryPage(database: Database, user: string, team: st
       personal: { durationSeconds: Number(row.duration_seconds ?? 0), distanceMeters: Number(row.distance_meters ?? 0),
         uniquePoints: Number(row.unique_points ?? 0), photos: Number(row.photos ?? 0) },
     })),
+    // JS Date truncates PostgreSQL microseconds. The keyset cursor must use the
+    // exact SQL value, otherwise equal timestamps can skip a whole page.
     nextCursor: candidates.length > limit && last ? Buffer.from(JSON.stringify({
-      v: 2, user, team, scope, at: last.completed_at.toISOString(), id: last.raid_id,
+      v: 2, user, team, scope, at: last.cursor_at, id: last.raid_id,
     })).toString('base64url') : null,
   }
 }
 
-/** A single bounded map read, not one HTTP call per marker. Counts are visits
- * credited to individual participants, not the number of group stops. Frozen
- * results authorize completed visits; live credits retain the existing owner /
- * active-viewer visibility rule. Attempt, pending claim and GPS rows never award
- * anything. The same stable store keys are used by start's canonical import. */
+/** One bounded read for the map. Counts refer to individual credited visits,
+ * not group stops. Frozen results authorize completed visits; live credits keep
+ * the existing owner / active-viewer rule. Pending attempts cannot award visits. */
 export async function readPointProgress(database: Database, user: string, team: string,
   input: PointProgressQuery): Promise<PointProgress> {
   const collection = input.category === 'attractions' ? input.collection ?? null : null
   const result = await database.query<{
-    stable_key: string | null; point_id: string | null; personal_count: string; team_count: string
+    collection_available: boolean; stable_key: string | null; point_id: string | null; personal_count: string; team_count: string
   }>(
     `WITH allowed AS (
-       SELECT m.kabanda_id, m.role FROM kabanda_memberships m
-       JOIN kabandas k ON k.id = m.kabanda_id AND k.archived_at IS NULL
-       WHERE m.user_id = $1 AND m.kabanda_id = $2 AND m.removed_at IS NULL
-         AND ($3::text = 'stores' OR EXISTS (
+       SELECT m.kabanda_id, m.role,
+         ($3::text = 'stores' OR EXISTS (
            SELECT 1 FROM point_collections pc WHERE pc.id = $4::uuid
              AND pc.kabanda_id = k.id AND pc.archived_at IS NULL
-         ))
+         )) AS collection_available
+       FROM kabanda_memberships m
+       JOIN kabandas k ON k.id = m.kabanda_id AND k.archived_at IS NULL
+       WHERE m.user_id = $1 AND m.kabanda_id = $2 AND m.removed_at IS NULL
      ), catalog AS (
        SELECT s.stable_key, p.id AS point_id FROM allowed a
        CROSS JOIN jsonb_array_elements_text($5::jsonb) s(stable_key)
        LEFT JOIN points p ON p.kabanda_id = a.kabanda_id AND p.stable_key = s.stable_key
          AND p.source = 'kb_store' AND p.archived_at IS NULL
-       WHERE $3::text = 'stores'
+       WHERE $3::text = 'stores' AND a.collection_available
        UNION ALL
        SELECT p.stable_key, p.id FROM allowed a
        JOIN collection_points cp ON cp.collection_id = $4::uuid AND cp.archived_at IS NULL
        JOIN points p ON p.id = cp.point_id AND p.kabanda_id = a.kabanda_id AND p.archived_at IS NULL
-       WHERE $3::text = 'attractions'
+       WHERE $3::text = 'attractions' AND a.collection_available
      ), bounded AS (
        SELECT DISTINCT stable_key, point_id FROM catalog ORDER BY stable_key, point_id LIMIT 501
      ), event_counts AS (
@@ -138,13 +137,14 @@ export async function readPointProgress(database: Database, user: string, team: 
        SELECT source_point_id, coalesce(sum(visits) FILTER (WHERE user_id = $1), 0)::text AS personal_count,
          sum(visits)::text AS team_count FROM visits GROUP BY source_point_id
      )
-     SELECT b.stable_key, b.point_id, coalesce(t.personal_count, '0') AS personal_count,
+     SELECT a.collection_available, b.stable_key, b.point_id, coalesce(t.personal_count, '0') AS personal_count,
        coalesce(t.team_count, '0') AS team_count
      FROM allowed a LEFT JOIN bounded b ON true LEFT JOIN totals t ON t.source_point_id = b.point_id
      ORDER BY b.stable_key, b.point_id`,
     [user, team, input.category, collection, JSON.stringify(IZHEVSK_KB_STORES.map(store => store.id))],
   )
   if (!result.rowCount) throw unavailable()
+  if (!result.rows[0]!.collection_available) throw new KabandaError('POINT_COLLECTION_UNAVAILABLE', 404, 'Набор точек недоступен')
   const rows = result.rows.filter(row => row.stable_key !== null)
   return {
     category: input.category, collectionId: collection, complete: rows.length <= 500,
