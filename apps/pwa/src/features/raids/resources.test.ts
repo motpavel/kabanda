@@ -38,7 +38,7 @@ describe('shared raid resources and persisted membership', () => {
   it('persists a confirmed empty list without deleting cards or queued work', async () => {
     await saveRaidProjection('user', raid)
     await enqueueOperation('check-in.submit', raid.id, { synthetic: true })
-    const list = actionableResource('user', 'crew')
+    const list = actionableResource('user', 'crew', 'member')
     vi.mocked(listActionableRaids).mockResolvedValue([])
     await list.refresh(); await list.settled()
     expect(await readActionableRaidProjections('user', 'crew')).toEqual([])
@@ -56,7 +56,7 @@ describe('shared raid resources and persisted membership', () => {
   })
 
   it('ignores late list and detail reads after an equal-version readiness/participant command', async () => {
-    const list = actionableResource('user', 'crew'), detail = raidResource('user', raid.id)
+    const list = actionableResource('user', 'crew', 'member'), detail = raidResource('user', raid.id)
     await list.refresh(); await list.settled()
     const oldList = deferred<RaidProjection[]>(), oldDetail = deferred<RaidProjection>()
     vi.mocked(listActionableRaids).mockReturnValue(oldList.promise)
@@ -142,12 +142,37 @@ describe('shared raid resources and persisted membership', () => {
   })
 
   it('removes a confirmed decline from memory and the persisted actionable snapshot', async () => {
-    const list = actionableResource('user', 'crew')
+    const list = actionableResource('user', 'crew', 'member')
     await list.refresh(); await list.settled()
+    vi.mocked(listActionableRaids).mockResolvedValue([])
     confirm({ ...raid, organizerUserId: 'organizer', participants: [{ ...raid.participants[0]!, state: 'declined' }], allowedActions: [] },
       '/api/raids/ride/participants/me/decline')
     await list.settled()
     expect(list.state.data).toEqual([])
+    expect(await readActionableRaidProjections('user', 'crew')).toEqual([])
+  })
+
+  it('keeps a nonterminal raid actionable for a team owner after declining participation', async () => {
+    const ownerList = actionableResource('user', 'crew', 'owner')
+    await ownerList.refresh(); await ownerList.settled()
+    const declined = { ...raid, organizerUserId: 'organizer',
+      participants: [{ ...raid.participants[0]!, state: 'declined' as const }], allowedActions: [] }
+    vi.mocked(listActionableRaids).mockResolvedValue([declined])
+    confirm(declined, '/api/raids/ride/participants/me/decline')
+    await ownerList.settled()
+    expect(ownerList.state.data).toEqual([declined])
+    expect((await readActionableRaidProjections('user', 'crew'))?.map(item => item.raid)).toEqual([declined])
+  })
+
+  it('removes a confirmed leave from a member actionable snapshot', async () => {
+    const memberList = actionableResource('user', 'crew', 'member')
+    await memberList.refresh(); await memberList.settled()
+    vi.mocked(listActionableRaids).mockResolvedValue([])
+    confirm({ ...raid, organizerUserId: 'organizer', state: 'active',
+      participants: [{ ...raid.participants[0]!, state: 'left' }], allowedActions: [] },
+      '/api/raids/ride/participants/me/leave')
+    await memberList.settled()
+    expect(memberList.state.data).toEqual([])
     expect(await readActionableRaidProjections('user', 'crew')).toEqual([])
   })
 })

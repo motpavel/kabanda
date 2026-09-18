@@ -37,7 +37,7 @@ export function ProductionRaidsHub({
   kabanda: KabandaSummary
   active?: boolean
 }) {
-  const resource = useActionableRaids(identityId, kabanda.id, active)
+  const resource = useActionableRaids(identityId, kabanda.id, kabanda.role, active)
   const historyResource = useRaidHistory(identityId, kabanda.id, active)
   const actionable = resource.data ?? []
   const history = historyResource.data?.raids ?? []

@@ -15,15 +15,18 @@ import type { ProductionResourceState } from './production-model'
 
 type State<T> = { data: T | null; status: ProductionResourceState; message: string | null; savedAt: string | null }
 type Kind = 'actionable' | 'raid' | 'history' | 'progress'
+type KabandaRole = 'owner' | 'member'
 const entries = new Map<string, RaidResource<unknown>>()
 const deniedTeams = new Set<string>()
 const teamKey = (identityId: string, kabandaId: string) => JSON.stringify([identityId, kabandaId])
 const online = () => typeof navigator === 'undefined' || navigator.onLine
-const isActionableFor = (raid: RaidProjection, identityId: string) => actionableStates.has(raid.state) && (
-  raid.organizerUserId === identityId ||
-  raid.participants.some(participant => participant.id === identityId &&
+const actionableMembership = (raid: RaidProjection, identityId: string, role?: KabandaRole): boolean | null => {
+  if (!actionableStates.has(raid.state)) return false
+  if (role === 'owner') return true
+  if (role !== 'member') return null
+  return raid.participants.some(participant => participant.id === identityId &&
     ['invited', 'accepted', 'ready', 'active'].includes(participant.state))
-)
+}
 
 /** Session resource shared by mounted, hidden and returning screens. ReadCache's
  * generation fences network, hydration and queued disk writes, including equal versions. */
@@ -36,7 +39,8 @@ export class RaidResource<T> {
   private retired = false
   private writes: Promise<unknown> = Promise.resolve()
   constructor(readonly identityId: string, public kabandaId: string, readonly kind: Kind,
-    readonly id: string, readonly key: string, private load: () => Promise<T>) {}
+    readonly id: string, readonly key: string, private load: () => Promise<T>, public kabandaRole?: KabandaRole) {}
+  registerKabandaRole(role?: KabandaRole) { if (role) this.kabandaRole = role }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   snapshot = () => this.state
   private set(state: State<T>) { this.state = state; for (const listener of this.listeners) listener() }
@@ -185,8 +189,11 @@ function resource<T>(identityId: string, kabandaId: string, kind: Kind, id: stri
   }
   return entry as RaidResource<T>
 }
-export const actionableResource = (identityId: string, kabandaId: string) =>
-  resource(identityId, kabandaId, 'actionable', kabandaId, null, () => listActionableRaids(kabandaId))
+export const actionableResource = (identityId: string, kabandaId: string, role?: KabandaRole) => {
+  const entry = resource<RaidProjection[]>(identityId, kabandaId, 'actionable', kabandaId, null, () => listActionableRaids(kabandaId))
+  entry.registerKabandaRole(role)
+  return entry
+}
 export const raidResource = (identityId: string, raidId: string) =>
   resource(identityId, '', 'raid', raidId, null, () => getRaid(raidId))
 export const historyResource = (identityId: string, kabandaId: string, limit = 12, cursor?: string) =>
@@ -227,7 +234,15 @@ function publishRaid(identityId: string, raid: RaidProjection, source?: RaidReso
     if (entry.kind === 'actionable') {
       const list = entry.state.data as RaidProjection[] | null
       if (!list) entry.invalidate()
-      if (list) entry.accept(list.flatMap(item => item.id !== raid.id ? [item] : isActionableFor(raid, identityId) ? [raid] : []), true, entry.state.status)
+      if (list) {
+        const membership = actionableMembership(raid, identityId, entry.kabandaRole)
+        if (membership === null) {
+          // Without the team role we cannot reproduce the server's owner visibility.
+          // Apply the confirmed card in memory, discard list membership on disk, revalidate.
+          entry.accept(list.map(item => item.id === raid.id ? raid : item), false, entry.state.status)
+          entry.invalidate()
+        } else entry.accept(list.flatMap(item => item.id !== raid.id ? [item] : membership ? [raid] : []), true, entry.state.status)
+      }
     }
     if ((entry.kind === 'history' || entry.kind === 'progress') &&
       raid.state === 'completed' && previous?.state !== 'completed') {
@@ -272,7 +287,7 @@ subscribeConfirmedWrites(event => {
   if (/\/kabandas\/[^/]+\/raids$/.test(event.path)) {
     const list = actionableResource(event.identityId, raid.kabandaId)
     // The command proves this raid exists, not the membership of the rest of a list.
-    if (isActionableFor(raid, event.identityId) && list.state.data && !list.state.data.some(item => item.id === raid.id)) {
+    if (actionableMembership(raid, event.identityId, list.kabandaRole) === true && list.state.data && !list.state.data.some(item => item.id === raid.id)) {
       list.accept([...list.state.data, raid], true, list.state.status)
     }
   }
@@ -308,8 +323,8 @@ export function useRaidResource<T>(entry: RaidResource<T>, active: boolean, inte
   const refresh = useVisibleRead(entry.refresh, entry.key, active, interval)
   return { ...state, refresh }
 }
-export function useActionableRaids(identityId: string, kabandaId: string, active = true) {
-  const entry = useMemo(() => actionableResource(identityId, kabandaId), [identityId, kabandaId])
+export function useActionableRaids(identityId: string, kabandaId: string, role: KabandaRole, active = true) {
+  const entry = useMemo(() => actionableResource(identityId, kabandaId, role), [identityId, kabandaId, role])
   return useRaidResource(entry, active, 10_000)
 }
 export function useRaidHistory(identityId: string, kabandaId: string, active = true) {

@@ -19,7 +19,7 @@ export function RaidHomeCard({
   kabanda: KabandaSummary
   active?: boolean
 }) {
-  const resource = useActionableRaids(identityId, kabanda.id, active)
+  const resource = useActionableRaids(identityId, kabanda.id, kabanda.role, active)
   const actionable = resource.data ?? []
   const resourceState = resource.status
   const resourceMessage = resource.message
