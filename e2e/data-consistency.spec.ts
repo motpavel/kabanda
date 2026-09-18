@@ -24,6 +24,7 @@ async function mockApi(page: Page, list: () => Promise<unknown[]>, command = asy
     else if (path === '/api/kabandas') body = { kabandas: [team] }
     else if (path.endsWith('/participants/me/accept')) body = { raid: await command() }
     else if (path.endsWith('/raids') && url.searchParams.get('scope') === 'actionable') body = { raids: await list() }
+    else if (path.endsWith('/raids/history/page')) body = { schemaVersion: 2, scope: url.searchParams.get('scope') ?? 'all', raids: [], nextCursor: null }
     else if (path.endsWith('/raids/history')) body = { raids: [], nextCursor: null }
     else if (path.endsWith('/progress')) body = { progress: { team: metrics, personal: metrics } }
     else if (path.endsWith('/members')) body = { members: [{ id: userId, displayName: user.displayName, role: 'member', avatarUrl: null }] }
@@ -103,7 +104,7 @@ test('empty server list survives reload with unavailable raid API and a verified
   })
   await page.reload()
   await expect(page.getByTestId('production-raids-hub')).toBeVisible()
-  await expect(page.getByText('Не удалось обновить данные.', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('production-raids-hub').getByText('Не удалось обновить данные.', { exact: true }).first()).toBeVisible()
   await expect(page.getByTestId('production-raid-invitations')).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('empty-offline.png') })
 })
@@ -115,10 +116,7 @@ test('same-user session renewal does not strand retained Home and Raids in loadi
   await expect(page.getByText('Вас ждут в рейде')).toBeVisible()
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Принять', exact: true })).toBeEnabled()
-
   empty = true
-  // Simulate another same-origin tab renewing this user's relay session. There
-  // is no real credential or backend mutation: all API calls remain synthetic.
   await page.evaluate(identityId => {
     window.dispatchEvent(new StorageEvent('storage', {
       key: 'kabanda:relay-session:v1',
@@ -126,7 +124,6 @@ test('same-user session renewal does not strand retained Home and Raids in loadi
       newValue: JSON.stringify({ opaque: 'synthetic-after', identityId }),
     }))
   }, userId)
-
   await expect(page.getByTestId('production-new-raid')).toBeVisible()
   await expect(page.getByTestId('production-raid-invitations')).toHaveCount(0)
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
@@ -149,12 +146,9 @@ test('accepting a direct-link raid updates a previously empty Home before list r
   }, async () => { confirmed = true; return plannedAcceptance })
   await page.route(`**/api/raids/${raidId}/live`, route =>
     route.fulfill({ json: { raid: confirmed ? plannedAcceptance : plannedInvitation } }))
-
   try {
     await page.goto(`/app?kabanda=${teamId}`)
     await expect(page.getByRole('heading', { name: 'Соберёмся на прогулку?' })).toBeVisible()
-    // Enter an exact raid link through the same SPA navigation contract; keep
-    // the already visited Home mounted with its confirmed empty list.
     await page.evaluate(id => {
       window.history.pushState(null, '', `/app?raid=${id}`)
       window.dispatchEvent(new PopStateEvent('popstate'))
