@@ -88,7 +88,7 @@ def prepare(args):
         'APP_ORIGIN': args.app_origin,
         'APP_BASE_PATH': '/',
         'API_BUILD_ID': args.build_id,
-        'EXPECTED_MIGRATION': '0018_raid_destination.sql',
+        'EXPECTED_MIGRATION': '0019_raid_template_description.sql',
         'RELAY_SESSION_SECRET': session_secret,
         'RELAY_BLOB_BUCKET': args.blob_bucket,
     }

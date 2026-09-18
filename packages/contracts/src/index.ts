@@ -172,6 +172,7 @@ export const raidTemplatePointInputSchema = z.object({
 }).strict()
 
 export const createRaidTemplateSchema = z.object({
+  description: z.string().trim().max(3000).optional(),
   scope: z.enum(['kabanda', 'all_authenticated']).default('kabanda'),
   title: z.string().trim().min(1).max(120),
   coverImage: z

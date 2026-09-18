@@ -108,7 +108,7 @@ sudo docker compose --env-file /etc/kabanda/compose.env -f infra/yandex/compose.
 ```
 
 Only after the separately reviewed restore has populated the destination and
-created the application role, check schema `0018_raid_destination.sql`, restore
+created the application role, check schema `0019_raid_template_description.sql`, restore
 counts and ownership. The expected API connection is strictly
 `127.0.0.1:54329/kabanda`, using `kabanda_app`. The API startup guard rejects a
 connection to another host/port/database. Do not start a second writer against

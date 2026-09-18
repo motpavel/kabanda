@@ -92,6 +92,17 @@ function legacyFingerprint(kabandaId: string, value: CreateRaidTemplate): string
 }
 
 describePostgres('raid template PostgreSQL invariants', () => {
+  it('persists author description in detail and catalogue and fingerprints edits', async () => {
+    const { ownerId, kabandaId } = await createKabanda('description')
+    const value = { ...input(), description: 'По берегу.\nБерём воду и встречаем закат.' }
+    const key = randomUUID()
+    const created = await raidTemplates!.createTemplate(ownerId, kabandaId, value, key)
+    expect(created.template.description).toBe(value.description)
+    expect((await raidTemplates!.getTemplate(ownerId, created.template.id)).description).toBe(value.description)
+    expect((await raidTemplates!.listTemplates(ownerId, kabandaId))[0]!.description).toBe(value.description)
+    await expect(raidTemplates!.createTemplate(ownerId, kabandaId, { ...value, description: 'Другая идея' }, key)).rejects.toMatchObject({ statusCode: 409 })
+  })
+
   beforeEach(async () => {
     await pool!.query(
       `TRUNCATE raid_template_receipts, raid_template_points, raid_templates,

@@ -1490,6 +1490,7 @@ describe('API foundation', () => {
       scope: 'kabanda',
       kabandaId,
       title: 'Набережные и мосты',
+      description: 'Вечер у воды',
       version: 1,
       cover: {
         url: `/api/raid-templates/${templateId}/cover`,

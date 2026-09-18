@@ -35,6 +35,8 @@ describe('raid template catalog', () => {
     ]} />)
 
     expect(markup.indexOf('Старый маршрут')).toBeLessThan(markup.indexOf('Новый маршрут'))
+    expect(markup).toContain('?routeTemplate=old&amp;kabanda=kabanda-1')
+    expect(markup).not.toContain('?createRaid=')
     expect(markup).toContain('4,2 км')
     expect(markup).toContain('Расстояние по прямым отрезкам')
     expect(markup).not.toContain('Веломаршрут')

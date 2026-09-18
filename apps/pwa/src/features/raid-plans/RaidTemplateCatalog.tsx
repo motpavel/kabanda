@@ -64,7 +64,7 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
 export function RaidTemplateGrid({ templates, kabandaId, identityId, disabled = false }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string; disabled?: boolean }) {
   const chronological = [...templates].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
   return <div className="prd-template-grid">
-    {chronological.map((template) => <a className="prd-template-card" key={template.id} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} href={disabled ? undefined : `${appPath('app')}?createRaid=${encodeURIComponent(kabandaId ?? template.kabandaId)}&template=${encodeURIComponent(template.id)}`}>
+    {chronological.map((template) => <a className="prd-template-card" key={template.id} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} href={disabled ? undefined : `${appPath('app')}?routeTemplate=${encodeURIComponent(template.id)}&kabanda=${encodeURIComponent(kabandaId ?? template.kabandaId)}`}>
       {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
       <div>
         <h3>{template.title}</h3>
@@ -79,7 +79,7 @@ export function RaidTemplateGrid({ templates, kabandaId, identityId, disabled = 
   </div>
 }
 
-function pointWord(count: number): string {
+export function pointWord(count: number): string {
   const mod100 = count % 100
   const mod10 = count % 10
   if (mod100 >= 11 && mod100 <= 14) return 'точек'

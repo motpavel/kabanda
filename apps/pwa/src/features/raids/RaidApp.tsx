@@ -70,6 +70,7 @@ import { FinalizationPanel } from '../results/FinalizationPanel'
 import { ResultPanel } from '../results/ResultPanel'
 import { leaveRaid } from '../results/api'
 import { RaidTemplateEditorRoute } from '../raid-plans/editor/RaidTemplateEditorPage'
+import { RaidTemplateDetail, RoutePreview } from '../raid-plans/RaidTemplateDetail'
 import { listRaidTemplates } from '../raid-plans/api'
 import type { RaidTemplateSummary } from '../raid-plans/types'
 import './raids.css'
@@ -150,6 +151,7 @@ export function RaidApp({ route }: { route: Exclude<RaidRoute, { kind: 'home' }>
   if (session.status === 'unavailable') return <RaidShell><EmptyState title="Не удалось проверить вход" detail="Соединение недоступно, а сохранённой identity на этом устройстве нет. Попробуйте ещё раз онлайн." /></RaidShell>
   if (route.kind === 'invalid') return <RaidShell><EmptyState title="Ссылка на рейд некорректна" detail="Откройте рейд с главной страницы КАБАНДЫ." /></RaidShell>
   if (session.source === 'cached' && route.kind !== 'raid') return <RaidShell><EmptyState title="Доступна только сохранённая копия" detail="Создание рейда требует подтверждённой онлайн-сессии." /></RaidShell>
+  if (route.kind === 'template') return <RaidShell prestart><RaidTemplateDetail key={`${session.identity.id}:${route.templateId}`} identityId={session.identity.id} templateId={route.templateId} kabandaId={route.kabandaId} /></RaidShell>
   if (route.kind === 'create-template') return <RaidTemplateEditorRoute identityId={session.identity.id} kabandaId={route.kabandaId} />
   if (route.kind === 'create') return <CreateRaidPage key={`${session.identity.id}:${route.kabandaId}`} identityId={session.identity.id} kabandaId={route.kabandaId} />
   return <RaidDetailPage
@@ -343,7 +345,7 @@ function CreateRaidPage({ identityId, kabandaId, editing, onUpdated }: { identit
       {kabanda && !mode && <RaidModePicker onSelect={(value) => { setMode(value); setRestoredTitle(null) }} />}
       {kabanda && mode && (
         <form key={mode} className="raid-create-form raid-departure-form" onSubmit={submit}>
-            {mode === 'route' ? <RouteRaidCover /> : <FreeHuntCover />}
+            {mode === 'free' && <FreeHuntCover />}
             {mode === 'free' ? <div className="raid-departure-field"><label htmlFor="raid-category">По каким точкам едем?</label>
               <select id="raid-category" disabled={Boolean(editing)} value={pointCategory} onChange={(event) => setPointCategory(event.target.value as 'stores' | 'attractions')}>
                 <option value="stores">Красное&Белое</option><option value="attractions">Достопримечательности</option>
@@ -354,6 +356,7 @@ function CreateRaidPage({ identityId, kabandaId, editing, onUpdated }: { identit
             </select>
             {templatesUnavailable && <p role="alert">Каталог не загрузился. Обновите страницу, чтобы выбрать маршрут.</p>}
             {!templatesUnavailable && templates.length === 0 && <a href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}>Создать первый маршрут</a>}</div>}
+            {mode === 'route' && templates.find(template => template.id === routeTemplateId) && <RoutePreview template={templates.find(template => template.id === routeTemplateId)!} identityId={identityId} kabandaId={kabandaId} />}
             <fieldset className="raid-segmented"><legend>Когда едем</legend><div className="raid-start-options" data-scheduled={startMode === 'later'}><span aria-hidden="true" className="raid-start-options__selection" /><button type="button" aria-pressed={startMode === 'now'} onClick={() => { setStartMode('now'); setRestoredTitle(null) }}>Сейчас</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => { setStartMode('later'); setRestoredTitle(null) }}>Запланировать</button></div></fieldset>
             {startMode === 'later' && <div className="raid-departure-field"><label htmlFor="raid-time">Дата и время</label><input id="raid-time" type="datetime-local" required value={startsAt} onChange={(event) => { setStartsAt(event.target.value); setRestoredTitle(null) }} /></div>}
             <details className="raid-preparation__details raid-meeting-details"><summary><span>Место встречи и заметка<small>Необязательно</small></span></summary><div className="raid-disclosure-content">

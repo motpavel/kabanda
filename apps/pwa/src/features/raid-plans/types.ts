@@ -36,6 +36,7 @@ export interface RaidTemplateSummary {
   kabandaId: string
   scope: 'kabanda' | 'all_authenticated'
   title: string
+  description?: string
   version: number
   cover: RaidTemplateCover
   pointCount: number
@@ -80,6 +81,7 @@ export interface RaidTemplateDraft {
   kabandaId: string
   scope: 'kabanda' | 'all_authenticated'
   title: string
+  description?: string
   coverImage: string | null
   points: DraftRaidTemplatePoint[]
   selectedPointId: string | null

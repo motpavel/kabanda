@@ -161,6 +161,7 @@
 }
 
 .rt-editor__basics > input,
+.rt-editor__basics > textarea,
 .rt-point-sheet input,
 .rt-point-sheet textarea {
   width: 100%;
@@ -794,3 +795,5 @@ body.rt-point-sheet-open { overflow: hidden; }
   .rt-point-sheet,
   .rt-point-sheet textarea { transition: none; }
 }
+
+.rt-editor__basics > textarea { min-height: 112px; resize: vertical; line-height: 1.5; }

@@ -35,6 +35,7 @@ export type RaidTemplateSummary = {
   scope: 'kabanda' | 'all_authenticated'
   kabandaId: string
   title: string
+  description: string
   version: number
   cover: RaidTemplateCoverProjection
   pointCount: number
@@ -90,6 +91,7 @@ type RaidTemplateRow = {
   scope: 'kabanda' | 'all_authenticated'
   kabanda_id: string
   title: string
+  description: string
   version: number
   point_count: number
   cover_sha256: string
@@ -112,6 +114,7 @@ function requestFingerprint(
       command: 'create-raid-template',
       kabandaId,
       scope: input.scope,
+      ...(input.description ? { description: input.description } : {}),
       title: input.title,
       coverImage: input.coverImage,
       points: input.points,
@@ -181,7 +184,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 }
 
 const templateSelect = `SELECT t.id, t.scope, t.kabanda_id,
-  t.title, t.version, t.point_count, t.cover_sha256, t.cover_width, t.cover_height,
+  t.title, t.description, t.version, t.point_count, t.cover_sha256, t.cover_width, t.cover_height,
   t.distance_method, t.estimated_distance_meters, t.created_at, t.updated_at
  FROM raid_templates t`
 
@@ -198,7 +201,7 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
     operationId: string,
   ): Promise<CreateRaidTemplateResponse> {
     const fingerprint = requestFingerprint(kabandaId, input)
-    const acceptedReplayFingerprints = input.scope === 'kabanda'
+    const acceptedReplayFingerprints = input.scope === 'kabanda' && !input.description
       ? [fingerprint, legacyRequestFingerprint(kabandaId, input)]
       : [fingerprint]
     const estimatedDistanceMeters = straightSegmentsDistanceMeters(input.points)
@@ -252,9 +255,9 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
         `INSERT INTO raid_templates
           (kabanda_id, scope, created_by_user_id, title, point_count,
            cover_bytes, cover_content_type, cover_size_bytes, cover_width, cover_height,
-           cover_sha256, distance_method, estimated_distance_meters)
+           cover_sha256, distance_method, estimated_distance_meters, description)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-           'straight_segments', $12)
+           'straight_segments', $12, $13)
          RETURNING id, created_at`,
         [
           kabandaId,
@@ -269,6 +272,7 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
           cover.height,
           cover.sha256,
           estimatedDistanceMeters,
+          input.description ?? '',
         ],
       )
       const template = inserted.rows[0]
@@ -475,6 +479,7 @@ export class DatabaseRaidTemplateService implements RaidTemplateService {
       scope: row.scope,
       kabandaId: row.kabanda_id,
       title: row.title,
+      description: row.description,
       version: Number(row.version),
       cover: {
         url: `/api/raid-templates/${encodeURIComponent(row.id)}/cover`,

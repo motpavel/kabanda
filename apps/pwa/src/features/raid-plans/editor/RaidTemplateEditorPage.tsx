@@ -231,6 +231,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
       await createRaidTemplate(kabanda.id, {
         scope: current.scope,
         title: current.title.trim(),
+        description: (current.description ?? '').trim(),
         coverImage: current.coverImage!,
         points: current.points.map(({ name, address, comment, latitude, longitude }) => ({
           name: name.trim(),
@@ -273,6 +274,8 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         required
         value={draft.title}
       />
+      <label htmlFor="rt-template-description">О маршруте <span>· необязательно</span></label>
+      <textarea id="rt-template-description" rows={4} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути, почему стоит проехать этот маршрут и что взять с собой" />
       <label className={`rt-cover${draft.coverImage ? ' rt-cover--ready' : ''}`}>
         <input accept="image/jpeg,image/png,image/webp" aria-label={draft.coverImage ? 'Заменить обложку маршрута' : 'Добавить обложку маршрута'} disabled={coverState === 'processing'} onChange={(event) => void prepareCover(event)} type="file" />
         {draft.coverImage ? <img alt="Предпросмотр обложки маршрута" src={draft.coverImage} /> : <span aria-hidden="true" className="rt-cover__icon">＋</span>}

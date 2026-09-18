@@ -23,7 +23,7 @@ const environmentSchema = z.object({
   RELAY_SESSION_SECRET: z.string().min(32).optional(),
   RELAY_BLOB_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional(),
   RELAY_S3_CREDENTIALS_FILE: z.string().min(1).optional(),
-  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0018_raid_destination.sql'),
+  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0019_raid_template_description.sql'),
   DATABASE_URL: z
     .string()
     .min(1)
