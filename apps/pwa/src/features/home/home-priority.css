@@ -1,0 +1,4 @@
+.kb-home > .kb-home-next { min-width: 0; }
+.kb-home .kb-home-route-choice { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; margin-top: 6px; color: var(--home-action); font-size: .82rem; font-weight: 650; }
+.kb-home--in-raid .kb-home-hero-copy { padding-block: 14px; }
+.kb-home--in-raid .kb-home-hero-copy h1 { font-size: clamp(1.2rem, 3vw, 1.65rem); }
