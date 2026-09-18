@@ -39,6 +39,8 @@ import {
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
 import { MapViewportMemory, type MapView } from './map-viewport'
+import { pointVisitProgress, visitStateLabel, type VisitState } from './point-progress'
+import { usePointProgress } from '../results/exploration-resources'
 import { IZHEVSK_KB_STORES } from './izhevsk-kb-stores'
 import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
@@ -53,12 +55,15 @@ import type {
   ProviderState,
 } from './types'
 import './kabandas.css'
+import './point-progress.css'
 
 type MapPointCategory = 'stores' | 'attractions'
 type MapPoint = KabandaPoint & {
   category: MapPointCategory
   address?: string
   hours?: string
+  visitState?: VisitState
+  historyPointId?: string | null
 }
 
 const STORE_MAP_POINTS: readonly MapPoint[] = IZHEVSK_KB_STORES.map((store) => ({
@@ -72,6 +77,7 @@ const STORE_MAP_POINTS: readonly MapPoint[] = IZHEVSK_KB_STORES.map((store) => (
   visitedByTeam: false,
   visitedByMeCount: 0,
   visitedByTeamCount: 0,
+  visitState: 'unknown',
   category: 'stores',
   address: store.address,
   hours: store.hours,
@@ -260,7 +266,6 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
         <div><h1>{sectionHeading(activeSection).title}</h1><p>{sectionHeading(activeSection).description}</p></div>
       </section>}
 
-
       {activeSection === 'kabanda' && user.identityKind === 'verified' && showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
       {error && <p className="kb-error" role="alert">{error} <button type="button" disabled={loading} onClick={() => { setLoading(true); setListRetry(value => value + 1) }}>Повторить</button></p>}
       {loading ? <p className="kb-muted" aria-busy="true">Загружаем команды…</p> : null}
@@ -364,8 +369,17 @@ function KabandaWorkspace({
   const coverInputRef = useRef<HTMLInputElement>(null)
   const webglAvailable = useMemo(detectWebgl, [])
   const pointsKnown = loadedCollectionId !== null && loadedCollectionId === kabanda.pointsCollectionId
+  // Attractions already expose canonical cumulative visits through /api/points.
+  // Stores keep their static geometry, but never derive awards from that catalog.
+  const storeProgress = usePointProgress(user.id, kabanda.id, 'stores', null, active && section === 'map' && pointCategory === 'stores')
+  const storePoints = useMemo<MapPoint[]>(() => STORE_MAP_POINTS.map(point => {
+    const visit = pointVisitProgress(storeProgress.data, point)
+    return { ...point, visitState: visit.visitState, historyPointId: visit.historyPointId,
+      visitedByMe: visit.visitState === 'personal', visitedByTeam: visit.visitState === 'personal' || visit.visitState === 'team',
+      visitedByMeCount: visit.personalCount ?? 0, visitedByTeamCount: visit.teamCount ?? 0 }
+  }), [storeProgress.data])
   const attractionPoints = useMemo<MapPoint[]>(() => pointsKnown ? points.map((point) => ({ ...point, category: 'attractions' })) : [], [points, pointsKnown])
-  const visiblePoints = pointCategory === 'stores' ? STORE_MAP_POINTS : attractionPoints
+  const visiblePoints = pointCategory === 'stores' ? storePoints : attractionPoints
   const activeProviderState = pointCategory === 'attractions'
     ? attractionState === 'failed' ? 'failed' : attractionState === 'checking' ? 'checking' : providerState
     : providerState
@@ -436,8 +450,8 @@ function KabandaWorkspace({
     return () => { subscribed = false }
   }, [kabanda.id, kabanda.pointsCollectionId, user.id, needsPoints])
 
-
   const selectedPoint = visiblePoints.find(({ id }) => id === selectedPointId) ?? null
+  const selectedHistoryId = selectedPoint?.category === 'attractions' ? selectedPoint.id : selectedPoint?.historyPointId
   const rename = async (event: FormEvent) => {
     event.preventDefault()
     const name = renameDraft.trim()
@@ -518,6 +532,9 @@ function KabandaWorkspace({
   const notices = <>
     {section === 'map' && pointCategory === 'attractions' && staleAt && <p className="kb-stale" role="status">Сохранённые данные от {new Date(staleAt).toLocaleString('ru-RU')}.</p>}
     {section === 'map' && pointCategory === 'attractions' && pointMessage && <p className="kb-notice" role="status">{pointMessage}</p>}
+    {section === 'map' && pointCategory === 'stores' && storeProgress.status === 'loading' && <p className="kb-notice" role="status">Проверяем посещения. Точки уже доступны на карте.</p>}
+    {section === 'map' && pointCategory === 'stores' && storeProgress.status === 'stale' && !storeProgress.message && <p className="kb-stale" role="status">Сохранённые посещения. Уточняем данные.</p>}
+    {section === 'map' && pointCategory === 'stores' && storeProgress.message && <p className="kb-notice" role="status">{storeProgress.message} <button type="button" onClick={() => void storeProgress.refresh()}>Обновить посещения</button></p>}
     {message && <p className="kb-notice" role="status">{message}</p>}
   </>
 
@@ -557,7 +574,8 @@ function KabandaWorkspace({
           )}
           <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.category === 'stores' ? selectedPoint.address ?? selectedPoint.name : selectedPoint?.name ?? ''} kicker={selectedPoint?.category === 'stores' ? 'КРАСНОЕ&БЕЛОЕ' : 'ТОЧКА ГОРОДА'}>
             {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
-            {selectedPoint?.category === 'attractions' && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedPoint.id}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedPoint.id} onOpenRaid={() => undefined} />}
+            {selectedPoint && <p className="kb-point-visit-state" data-visit-state={mapVisitState(selectedPoint)}>{visitStateLabel(mapVisitState(selectedPoint))}</p>}
+            {selectedHistoryId && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}
           </PointInfoSheet>
         </div>
       </section>
@@ -572,8 +590,10 @@ function KabandaWorkspace({
       </section>
     )
 
-  const personalPoints = pointsKnown ? points.filter(({ visitedByMe }) => visitedByMe).length : null
-  const teamPoints = pointsKnown ? points.filter(({ visitedByTeam }) => visitedByTeam).length : null
+  // The same frozen-result totals as Home, across every point category. Counting
+  // the currently loaded attraction slice would hide all store/custom progress.
+  const personalPoints = progress?.personal.uniquePoints ?? null
+  const teamPoints = progress?.team.uniquePoints ?? null
   const completedRaids = progress?.team.completedRaids ?? null
   const memberCount = members.length || kabanda.memberCount
   const roleLabel = kabanda.role === 'owner' ? 'Вы вожак' : 'Вы участник'
@@ -618,7 +638,7 @@ function KabandaWorkspace({
               </div>
             </div>
           </div>
-          <div className="kb-team-stats" aria-label="Статистика Кабанды">
+          <div className="kb-team-stats" aria-label="Статистика Кабанды" title="Итоги завершённых рейдов, все категории точек">
             <TeamMetric icon="point" value={personalPoints} label="точек лично" />
             <TeamMetric icon="members" value={teamPoints} label="точек команды" />
             <TeamMetric icon="bike" value={completedRaids} label="рейдов" />
@@ -848,9 +868,16 @@ function Brand() {
   return <a className="kb-brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img src={appPath('brand/kabanda-logo-reference.png')} alt="" /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark-ui.png')} alt="КАБАНДА" /></a>
 }
 
+function mapVisitState(point: MapPoint): VisitState {
+  return point.visitState ?? (point.visitedByMe ? 'personal' : point.visitedByTeam ? 'team' : 'unvisited')
+}
+function mapMarkerClass(point: MapPoint, selected: boolean) {
+  return `kb-yandex-marker kb-yandex-marker--${point.category} kb-visit--${mapVisitState(point)}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}${selected ? ' selected' : ''}`
+}
+
 function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void }) {
   if (!points.length) return <div className="kb-empty-inline"><strong>Точек пока нет</strong><span>Когда вожак добавит места, они появятся здесь.</span></div>
-  return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
+  return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category} kb-visit--${mapVisitState(point)}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong>{point.category === 'stores' && <small>{point.address}</small>}<small>{visitStateLabel(mapVisitState(point))}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 
 const USER_LOCATION_MAP_ZOOM = 14
@@ -946,10 +973,8 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
 
     for (const point of points) {
       const selected = selectedId === point.id
-      const markerClass = `kb-yandex-marker kb-yandex-marker--${point.category}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}${selected ? ' selected' : ''}`
-      const ariaLabel = point.category === 'stores'
-        ? `${point.name}. ${point.address}`
-        : `${point.name}. ${point.visitedByMe ? 'Посещено лично' : point.visitedByTeam ? 'Посещено командой' : 'Не посещено'}`
+      const markerClass = mapMarkerClass(point, selected)
+      const ariaLabel = `${point.name}. ${point.category === 'stores' ? `${point.address}. ` : ''}${visitStateLabel(mapVisitState(point))}`
       const placemark = new runtime.Placemark([point.latitude, point.longitude], {
         markerClass,
         ariaLabel,
@@ -981,7 +1006,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
   useEffect(() => {
     for (const [id, marker] of markersRef.current) {
       const selected = id === selectedId
-      marker.placemark.properties.set('markerClass', `kb-yandex-marker kb-yandex-marker--${marker.point.category}${(marker.point.visitedByMe || marker.point.visitedByTeam) ? ' visited' : ''}${selected ? ' selected' : ''}`)
+      marker.placemark.properties.set('markerClass', mapMarkerClass(marker.point, selected))
       marker.placemark.properties.set('selected', String(selected))
       marker.placemark.options.set('zIndex', selected ? 24 : 20)
     }
