@@ -228,11 +228,11 @@ export function RaidPreparationPanel(props: Props) {
         </li>
       })}</ul>
     </div>
-    {participating && raid.state === 'lobby' && <div className="raid-preparation__status" data-ready={canStart} role="status" aria-live="polite">
-      <p>{myPresence === 'nearby' || myPresence === 'manual' ? '✓ Вы на месте' : checking ? 'Определяем геопозицию…' : 'Определяем место встречи'}</p>
-      {isNavigator && <p>{raid.navigatorReady ? '✓ Телефон готов к записи' : facts && !facts.indexedDbWritable ? 'Не удаётся сохранить маршрут на телефоне' : 'Проверяем готовность телефона'}</p>}
-      {!isNavigator && nav && <p>{raid.navigatorReady ? `✓ Телефон ${nav.displayName} готов` : `Ждём готовность телефона ${nav.displayName}`}</p>}
-      {canStart && <p>Всё готово. Можно ехать.</p>}
+    {participating && raid.state === 'lobby' && <div className="raid-ready-banner" data-ready={raid.navigatorReady && online && !stale} role="status" aria-live="polite">
+      <span className="raid-ready-banner__icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><rect x="9" y="3" width="25" height="40" rx="6" stroke="currentColor" strokeWidth="3"/><path d="M18 8h7M19 37h5" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>{raid.navigatorReady && online && !stale ? <><circle cx="34" cy="31" r="13" fill="currentColor"/><path d="m28 31 4 4 8-9" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/></> : <circle cx="34" cy="31" r="11" stroke="currentColor" strokeWidth="3"/>}</svg></span>
+      <div><strong>{!online || stale ? 'Ожидаем связь' : raid.navigatorReady ? 'Телефон готов к записи' : 'Проверяем телефон'}</strong>
+      <p>{isNavigator ? 'Ваш телефон будет записывать маршрут всей Кабанды.' : nav ? `Маршрут будет записывать ${nav.displayName}.` : 'Выбираем телефон для записи маршрута.'}</p>
+      <small>{myPresence === 'nearby' || myPresence === 'manual' ? 'Вы у места старта' : checking ? 'Уточняем ваше местоположение…' : 'Место старта ещё не подтверждено'}{canStart ? ' · Всё готово к поездке' : ''}</small></div>
     </div>}
     {!online && <p className="kb-notice" role="status">Нет связи. Подготовка продолжится после подключения. Рейд сам не начнётся.</p>}
     {stale && <button type="button" onClick={() => void props.onRefresh()}>Обновить данные</button>}
@@ -241,6 +241,7 @@ export function RaidPreparationPanel(props: Props) {
 
     {facts && <details className="raid-preparation__details"><summary><span>Проверка телефона<small>{checking ? 'Проверяем…' : rows.some(row => row.status === 'fail') ? 'Есть пункты, требующие внимания' : 'Геолокация, связь и запись маршрута'}</small></span></summary><ul className="raid-phone-checks">{rows.map(row => <li key={row.id}><span className={`raid-check-icon raid-check-icon--${row.status}`} aria-label={{ pass: 'Готово', warn: 'Обратите внимание', fail: 'Ошибка', unknown: 'Не проверено' }[row.status]}>{{ pass: '✓', warn: '!', fail: '!', unknown: '–' }[row.status]}</span><span><strong>{row.label}</strong><small>{row.detail}</small></span></li>)}</ul></details>}
     <p className="kb-muted">Во время записи держите Кабанду открытой на телефоне навигатора.</p>
+    {organizer && <button className="raid-cancel-button" type="button" disabled={busy || stale || !online} onClick={() => { if (window.confirm('Отменить рейд для всей команды?')) void action('cancel') }}>Отменить рейд</button>}
     <div className="raid-preparation__action">
       {me?.state === 'invited' ? <><button className="kb-primary" disabled={busy || stale || !online} onClick={() => void action('accept')}>Еду</button><button type="button" disabled={busy || stale || !online} onClick={() => void action('decline')}>Не поеду</button></>
         : raid.state === 'planned' && organizer ? <button className="kb-primary" disabled={busy || stale || !online} onClick={() => void action('prepare')}>Открыть сбор</button>
@@ -249,6 +250,6 @@ export function RaidPreparationPanel(props: Props) {
         : organizer ? <button className="kb-primary" disabled={busy || (!canStart && pendingAction.current?.name !== 'start') || stale || !online} onClick={() => void action('start')}>{busy ? 'Подтверждаем…' : pendingAction.current?.name === 'start' ? 'Проверить старт' : canStart ? 'Поехали' : waiters.some(p => p.id !== identityId) ? 'Ждём участников' : 'Подготовка к старту…'}</button>
         : participating ? <p role="status">Вы едете. Рейд запустит организатор.</p> : null}
     </div>
-    {organizer && <details className="raid-preparation__details"><summary>Управление рейдом</summary><button type="button" disabled={busy || stale || !online} onClick={() => { if (window.confirm('Отменить рейд для всей команды?')) void action('cancel') }}>Отменить рейд</button></details>}
+
   </section>
 }

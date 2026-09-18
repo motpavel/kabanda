@@ -20,6 +20,7 @@ import type { KabandaSummary } from '../kabandas/types'
 import { getActiveIdentityId } from '../offline/ledger'
 import {
   createRaid,
+  updateRaidSetup,
   reportReadiness,
   sendParticipantCommand,
   sendRaidCommand,
@@ -27,6 +28,7 @@ import {
 import {
   clearCreateRaidAttempt,
   localDateTimeInputToIso,
+  isoToLocalDateTimeInput,
   matchesCreateRaidAttempt,
   normalizeCreateRaidPayload,
   persistCreateRaidAttempt,
@@ -199,7 +201,8 @@ function RaidSignIn() {
   )
 }
 
-function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabandaId: string }) {
+function CreateRaidPage({ identityId, kabandaId, editing, onUpdated }: { identityId: string; kabandaId: string; editing?: RaidProjection; onUpdated?: (raid: RaidProjection) => Promise<void> }) {
+  const pendingEdit = useRef<{ fingerprint: string; key: string; expectedVersion: number } | null>(null)
   const [templates, setTemplates] = useState<RaidTemplateSummary[]>([])
   const [routeTemplateId, setRouteTemplateId] = useState(() => new URLSearchParams(window.location.search).get('template') ?? '')
   const [templatesUnavailable, setTemplatesUnavailable] = useState(false)
@@ -220,6 +223,17 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
     setDescription('')
     setStartMode('now')
     setStartsAt('')
+    if (editing) {
+      setMode(editing.routeTemplateId ? 'route' : 'free')
+      setRouteTemplateId(editing.routeTemplateId ?? '')
+      setPointCategory(editing.pointCategory ?? 'attractions')
+      setMeetingPlace(editing.meetingPlace ?? '')
+      setDescription(editing.description ?? '')
+      setRestoredTitle(editing.title)
+      setStartMode(editing.scheduledAt ? 'later' : 'now')
+      setStartsAt(editing.scheduledAt ? isoToLocalDateTimeInput(editing.scheduledAt) ?? '' : '')
+      return
+    }
     const attempt = readCreateRaidAttempt(identityId)
     const restored = restoreCreateRaidForm(attempt, identityId, kabandaId)
     if (!attempt || !restored) return
@@ -232,7 +246,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
     setStartMode(restored.startMode)
     setStartsAt(restored.startsAt)
     setRouteTemplateId(restored.routeTemplateId ?? '')
-  }, [identityId, kabandaId])
+  }, [identityId, kabandaId, editing?.id])
 
   useEffect(() => {
     let active = true
@@ -274,6 +288,21 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
         scheduledAt,
         ...(mode === 'route' ? { routeTemplateId } : { pointCategory }),
       }
+      if (editing) {
+        const fingerprint = JSON.stringify(input)
+        const previous = pendingEdit.current
+        const attempt = previous?.fingerprint === fingerprint ? previous : { fingerprint, key: crypto.randomUUID(), expectedVersion: editing.version }
+        pendingEdit.current = attempt
+        try {
+          const updated = await updateRaidSetup(editing.id, { expectedVersion: attempt.expectedVersion, title: input.title, scheduledAt, description: input.description, meetingPlace: input.meetingPlace }, attempt.key)
+          await onUpdated?.(updated)
+        } catch (error) {
+          if (error instanceof ApiError && error.status < 500) pendingEdit.current = null
+          throw error
+        }
+        navigateApp(`${appPath('app')}?raid=${encodeURIComponent(editing.id)}`)
+        return
+      }
       const normalizedPayload = normalizeCreateRaidPayload(input)
       const previous = readCreateRaidAttempt(identityId) ?? fallbackAttempt.current
       if (
@@ -296,6 +325,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
         attempt.key,
       )
       clearCreateRaidAttempt(identityId, attempt)
+      window.history.replaceState(null, '', `${appPath('app')}?raid=${encodeURIComponent(raid.id)}&edit=1`)
       fallbackAttempt.current = null
       navigateApp(`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`)
     } catch {
@@ -306,7 +336,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
   return (
     <RaidShell prestart>
       <div className="raid-departure">
-      {mode ? <button className="raid-departure-back" type="button" disabled={status === 'saving'} onClick={() => setMode(null)}>← Выбор режима</button> : <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Рейды</a>}
+      {editing ? <a className="raid-back" href={`${appPath('app')}?raid=${encodeURIComponent(editing.id)}`}>← К подготовке</a> : mode ? <button className="raid-departure-back" type="button" disabled={status === 'saving'} onClick={() => setMode(null)}>← Выбор режима</button> : <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Рейды</a>}
       <header className="raid-departure-heading"><h1>{mode === null ? 'Выйти в рейд' : mode === 'free' ? 'Свободная охота' : 'По маршруту'}</h1></header>
       {status === 'loading' && <RiderLoader label="Загружаем Кабанду" />}
       {status === 'error' && <p className="kb-error" role="alert">Не удалось открыть форму или сохранить рейд. Проверьте будущее время, доступ и соединение.</p>}
@@ -315,10 +345,10 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
         <form key={mode} className="raid-create-form raid-departure-form" onSubmit={submit}>
             {mode === 'route' ? <RouteRaidCover /> : <FreeHuntCover />}
             {mode === 'free' ? <div className="raid-departure-field"><label htmlFor="raid-category">По каким точкам едем?</label>
-              <select id="raid-category" value={pointCategory} onChange={(event) => setPointCategory(event.target.value as 'stores' | 'attractions')}>
+              <select id="raid-category" disabled={Boolean(editing)} value={pointCategory} onChange={(event) => setPointCategory(event.target.value as 'stores' | 'attractions')}>
                 <option value="stores">Красное&Белое</option><option value="attractions">Достопримечательности</option>
               </select></div> : <div className="raid-departure-field"><label htmlFor="raid-route">Маршрут</label>
-            <select id="raid-route" required value={routeTemplateId} onChange={(event) => { setRouteTemplateId(event.target.value); setRestoredTitle(null) }}>
+            <select id="raid-route" disabled={Boolean(editing)} required value={routeTemplateId} onChange={(event) => { setRouteTemplateId(event.target.value); setRestoredTitle(null) }}>
               <option value="">Выберите маршрут</option>
               {templates.map((template) => <option key={template.id} value={template.id}>{template.title} · {template.pointCount} точек</option>)}
             </select>
@@ -335,7 +365,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
             </div>
             </details>
             <p className="raid-departure-hint">Поездка для всей Кабанды. Личное приглашение можно отправить ссылкой после создания.</p>
-          <div className="raid-departure-action"><button className="kb-primary raid-primary" type="submit" disabled={status === 'saving' || (mode === 'route' && (!routeTemplateId || templatesUnavailable)) || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Сохраняем…' : startMode === 'later' ? 'Запланировать рейд' : 'К подготовке'}</button></div>
+          <div className="raid-departure-action"><button className="kb-primary raid-primary" type="submit" disabled={status === 'saving' || (mode === 'route' && (!routeTemplateId || (!editing && templatesUnavailable))) || (startMode === 'later' && !startsAt)}>{status === 'saving' ? 'Сохраняем…' : editing ? 'Сохранить изменения' : startMode === 'later' ? 'Запланировать рейд' : 'К подготовке'}</button></div>
         </form>
       )}
       </div>
@@ -571,7 +601,11 @@ function RaidDetailPage({
     <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />
   </RaidShell>
 
-  if (['draft', 'planned', 'lobby'].includes(raid.state)) return <RaidShell prestart backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
+  if (['draft', 'planned', 'lobby'].includes(raid.state) && raid.organizerUserId === user.id && new URLSearchParams(window.location.search).has('edit')) {
+    return <CreateRaidPage key={raid.id} identityId={user.id} kabandaId={raid.kabandaId} editing={raid} onUpdated={resource.applyRaid} />
+  }
+
+  if (['draft', 'planned', 'lobby'].includes(raid.state)) return <RaidShell prestart backHref={raid.organizerUserId === user.id ? `${appPath('app')}?raid=${encodeURIComponent(raid.id)}&edit=1` : `${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
     <header className="raid-preparation__heading"><p className="kb-kicker">Сбор перед поездкой</p><h1>{raid.title}</h1>{raid.meetingPlace && <p>{raid.meetingPlace}</p>}{raid.description && <p>{raid.description}</p>}</header>
     {message && <p className="kb-notice" role="status">{message}</p>}
     {resource.error && <p className="kb-error" role="alert">{resource.error}</p>}

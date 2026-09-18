@@ -58,7 +58,7 @@ export function localDateTimeInputToIso(value: string): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
 
-function isoToLocalDateTimeInput(value: string): string | null {
+export function isoToLocalDateTimeInput(value: string): string | null {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime()) || date.toISOString() !== value) return null
   const localTimestamp = date.getTime() - date.getTimezoneOffset() * 60_000

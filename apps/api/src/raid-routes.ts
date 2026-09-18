@@ -174,6 +174,19 @@ export async function registerRaidRoutes(
     return reply.status(201).send(response)
   })
 
+  app.patch('/api/raids/:raidId/setup', async (request, reply) => {
+    const user = await currentUser(request, dependencies)
+    if (!user) return authRequired(reply)
+    const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
+    const input = commandSchema.extend({
+      title: z.string().trim().min(1).max(120),
+      scheduledAt: z.iso.datetime({ offset: true }).nullable(),
+      description: z.string().trim().max(500).nullable(),
+      meetingPlace: z.string().trim().max(200).nullable(),
+    }).parse(request.body)
+    return dependencies.raids.updateSetup(user.id, raidId, input, operationId(request))
+  })
+
   app.post('/api/raids/:raidId/prepare', async (request, reply) => {
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)

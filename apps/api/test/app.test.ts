@@ -84,6 +84,7 @@ function createRaids(overrides: Partial<RaidService> = {}): RaidService {
   return {
     createDraft: vi.fn(),
     prepareRaid: vi.fn(),
+    updateSetup: vi.fn(),
     command: vi.fn(),
     reportReadiness: vi.fn(),
     acquireNavigatorLease: vi.fn(),
@@ -998,6 +999,18 @@ describe('API foundation', () => {
       { title: 'Рейд участника', description: 'Вечерний круг' },
       'member-create-raid',
     )
+  })
+
+  it('validates and authorizes setup changes through the existing authenticated session', async () => {
+    const updateSetup = vi.fn().mockResolvedValue({ raid: { state: 'planned' } })
+    const app = await createTestApp(createAuth({ getUser: vi.fn().mockResolvedValue(user) }), createKabandas(), createRaids({ updateSetup }))
+    const request = { method: 'PATCH' as const, url: '/api/raids/81297402-898c-48d6-bc78-c74b6b38205c/setup', headers: { origin: testOrigin, cookie: 'kabanda_session=session', 'idempotency-key': 'edit-setup-operation' } }
+    const payload = { expectedVersion: 2, title: 'Evening ride', scheduledAt: '2030-09-19T12:00:00Z', description: null, meetingPlace: 'Park' }
+    expect((await app.inject({ ...request, payload })).statusCode).toBe(200)
+    expect(updateSetup).toHaveBeenCalledWith(user.id, '81297402-898c-48d6-bc78-c74b6b38205c', payload, 'edit-setup-operation')
+    expect((await app.inject({ ...request, payload: { ...payload, scheduledAt: 'invalid' } })).statusCode).toBe(400)
+    expect(updateSetup).toHaveBeenCalledTimes(1)
+    await app.close()
   })
 
   it('validates a combined preparation request without invoking start', async () => {

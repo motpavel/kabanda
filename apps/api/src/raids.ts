@@ -488,6 +488,8 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 }
 
 export interface RaidService {
+  updateSetup(actorUserId: string, raidId: string, input: { expectedVersion: number; title: string; scheduledAt: string | null; meetingPlace: string | null; description: string | null }, operationId: string): Promise<{ raid: RaidProjection }>
+
   setDestination(actorUserId: string, raidId: string, input: { expectedVersion: number; pointSnapshotId: string }, operationId: string): Promise<RaidCommandResponse>
   prepareRaid(actorUserId: string, raidId: string, input: PrepareRaidInput, operationId: string): Promise<{ raid: RaidProjection; presence: RaidPresenceRoster }>
   createDraft(
@@ -727,6 +729,26 @@ export class DatabaseRaidService implements RaidService {
         mutatesState: true,
         response,
       })
+      return response
+    })
+  }
+
+  async updateSetup(actorUserId: string, raidId: string, input: { expectedVersion: number; title: string; scheduledAt: string | null; meetingPlace: string | null; description: string | null }, operationId: string): Promise<{ raid: RaidProjection }> {
+    const requestFingerprint = fingerprint('update-setup', raidId, input)
+    return transaction(this.pool, async client => {
+      await this.lockOperation(client, actorUserId, operationId)
+      const replay = await this.replay<{ raid: RaidProjection }>(client, actorUserId, operationId, requestFingerprint)
+      if (replay) return replay
+      const raid = await this.lockRaid(client, actorUserId, raidId)
+      if (raid.organizer_user_id !== actorUserId) throw this.forbiddenCommand()
+      this.requireVersion(raid, input.expectedVersion)
+      if (!['draft', 'planned', 'lobby'].includes(raid.state)) throw this.invalidTransition(raid)
+      if (input.scheduledAt && (!Number.isFinite(Date.parse(input.scheduledAt)) || Date.parse(input.scheduledAt) <= Date.now())) throw new RaidError('RAID_SCHEDULE_INVALID', 400, 'Выберите будущее время')
+      await client.query(`UPDATE raids SET title=$2, description=$3, meeting_place=$4, scheduled_at=$5,
+        state=$6, version=version+1, updated_at=now() WHERE id=$1`,
+        [raidId, input.title, input.description, input.meetingPlace, input.scheduledAt, input.scheduledAt ? 'planned' : 'lobby'])
+      const response = { raid: await this.project(client, actorUserId, raidId) }
+      await this.storeReceipt(client, { actorUserId, operationId, raidId, command: 'update-setup', requestFingerprint, expectedVersion: input.expectedVersion, fromState: raid.state, mutatesState: true, response })
       return response
     })
   }

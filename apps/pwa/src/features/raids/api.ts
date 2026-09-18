@@ -203,3 +203,8 @@ export function prepareRaid(raidId: string, input: PrepareRaidInput, key: string
     method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(input),
   })
 }
+
+export async function updateRaidSetup(raidId: string, input: { expectedVersion: number; title: string; scheduledAt: string | null; description: string | null; meetingPlace: string | null }, key: string): Promise<RaidProjection> {
+  const response = await requestJson<{ raid: RaidProjection }>(`/api/raids/${encodeURIComponent(raidId)}/setup`, { method: 'PATCH', headers: { 'Idempotency-Key': key }, body: JSON.stringify(input) })
+  return response.raid
+}
