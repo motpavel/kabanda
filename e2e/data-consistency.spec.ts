@@ -107,3 +107,30 @@ test('empty server list survives reload with unavailable raid API and a verified
   await expect(page.getByTestId('production-raid-invitations')).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('empty-offline.png') })
 })
+
+test('same-user session renewal does not strand retained Home and Raids in loading', async ({ page }, info) => {
+  let empty = false
+  await mockApi(page, async () => empty ? [] : [invited])
+  await page.goto(`/app?kabanda=${teamId}`)
+  await expect(page.getByText('Вас ждут в рейде')).toBeVisible()
+  await page.getByRole('link', { name: 'Рейды', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Принять', exact: true })).toBeEnabled()
+
+  empty = true
+  // Simulate another same-origin tab renewing this user's relay session. There
+  // is no real credential or backend mutation: all API calls remain synthetic.
+  await page.evaluate(identityId => {
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'kabanda:relay-session:v1',
+      oldValue: JSON.stringify({ opaque: 'synthetic-before', identityId }),
+      newValue: JSON.stringify({ opaque: 'synthetic-after', identityId }),
+    }))
+  }, userId)
+
+  await expect(page.getByTestId('production-new-raid')).toBeVisible()
+  await expect(page.getByTestId('production-raid-invitations')).toHaveCount(0)
+  await page.getByRole('link', { name: 'Главная', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Соберёмся на прогулку?' })).toBeVisible()
+  await expect(page.getByText('Вас ждут в рейде')).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('renewed-session-home.png') })
+})
