@@ -320,29 +320,30 @@ export function revalidateRaidSession(identityId: string) {
   for (const entry of entries.values()) if (entry.identityId === identityId) entry.revalidateSession()
 }
 
-/** Without an identity, retire everything. When the API confirms an identity,
- * keep matching consumers created during an offline bootstrap refreshable.
- * Other identities are retired immediately; no operational queue is touched. */
-export function resetRaidResources(confirmedIdentity?: string) {
+/** Without an identity, retire everything. Otherwise retain matching objects,
+ * including offline-mounted consumers, but invalidate their permission state.
+ * This does not activate an identity or authorize a command: only a fresh API
+ * response can make them ready. Other identities are retired immediately. */
+export function resetRaidResources(retainedIdentity?: string) {
   for (const [key, entry] of entries) {
-    if (confirmedIdentity && entry.identityId === confirmedIdentity) entry.revalidateSession()
+    if (retainedIdentity && entry.identityId === retainedIdentity) entry.revalidateSession()
     else { entry.retire(); entries.delete(key) }
   }
-  for (const key of deniedTeams) if (JSON.parse(key)[0] !== confirmedIdentity) deniedTeams.delete(key)
+  for (const key of deniedTeams) if (JSON.parse(key)[0] !== retainedIdentity) deniedTeams.delete(key)
 }
 
 if (typeof window !== 'undefined') {
   let identity: string | null | undefined
   window.addEventListener('storage', event => {
     if (event.key !== null && event.key !== 'kabanda:relay-session:v1') return
-    let sameIdentity = false
+    let retainedIdentity: string | undefined
     try {
       const saved = JSON.parse(event.newValue ?? 'null') as { opaque?: unknown; identityId?: unknown } | null
-      sameIdentity = typeof identity === 'string' && Boolean(saved &&
-        typeof saved.opaque === 'string' && saved.opaque.length <= 32_768 && saved.identityId === identity)
-    } catch { /* A cleared, corrupt or different session must drop the old identity's views. */ }
-    if (sameIdentity && identity) revalidateRaidSession(identity)
-    else resetRaidResources()
+      if (saved && typeof saved.opaque === 'string' && saved.opaque.length > 0 &&
+        saved.opaque.length <= 32_768 && typeof saved.identityId === 'string') retainedIdentity = saved.identityId
+    } catch { /* Cleared, corrupt and anonymous sessions drop all old views. */ }
+    // Also works before the first /me reply after an offline document reload.
+    resetRaidResources(retainedIdentity)
   })
   window.addEventListener('kabanda:identity-changed', event => {
     const next = (event as CustomEvent<{ userId: string | null }>).detail.userId
