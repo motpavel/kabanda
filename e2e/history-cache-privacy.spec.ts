@@ -76,6 +76,10 @@ test('confirmed access denial removes personal store counters and their read sna
   await shell(page)
   await page.route('**/raids/history/page?*', route => route.fulfill({ json: { schemaVersion: 2, scope: 'all', raids: [], nextCursor: null } }))
   let denied = false
+  let receivedDenials = 0
+  page.on('response', response => {
+    if (new URL(response.url()).pathname === `/api/kabandas/${teamId}/points/progress` && response.status() === 403) receivedDenials++
+  })
   await page.route('**/points/progress?*', async route => {
     if (denied) return route.fulfill({ status: 403, json: { error: { code: 'FORBIDDEN', message: 'Synthetic access revoked' } } })
     await route.fulfill({ json: { category: 'stores', collectionId: null, complete: true,
@@ -88,6 +92,13 @@ test('confirmed access denial removes personal store counters and their read sna
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
   denied = true
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
+  // Focus/visibility/tab resumes coalesce for 1s by contract. An immediate
+  // tab round-trip need not send a new request. Exercise a subsequent resume
+  // and observe its actual 403; only then is denial known by the application.
+  await expect.poll(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    return receivedDenials
+  }, { intervals: [1100], timeout: 6000 }).toBeGreaterThan(0)
   await expect(firstMarker).toHaveAttribute('aria-label', /Посещения пока неизвестны/)
   await expect(firstMarker).toHaveClass(/kb-visit--unknown/)
   await expect(page.locator('.kb-map-notices')).toContainText('Доступ отозван')
