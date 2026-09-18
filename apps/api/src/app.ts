@@ -267,7 +267,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const signal = alphaDiagnosticSignalSchema.parse(request.body)
       const headerSession = boundedHeader(request.headers['x-kabanda-diagnostic-session'], z.uuid())
       const headerBuild = boundedHeader(request.headers['x-kabanda-client-build'], buildIdentifierSchema)
-      if (headerSession !== signal.diagnosticSessionId || headerBuild !== signalHeaderSession(headerSession) || headerBuild !== signal.clientBuild) {
+      if (headerSession !== signal.diagnosticSessionId || headerBuild !== signal.clientBuild) {
         return reply.status(400).send({
           error: { code: 'DIAGNOSTIC_CONTEXT_MISMATCH', message: 'Диагностический контекст не совпадает' },
         })
