@@ -8,6 +8,10 @@ import { formatDistance, formatDuration } from './state'
 import { usePagedHistory } from './exploration-resources'
 import './history-pagination.css'
 
+// Legacy presentational callers do not yet carry the participation flag.
+// Connected history supplies the server-confirmed flag; never infer it from metrics.
+type HistoryCardItem = RaidHistoryItem & { participated?: boolean }
+
 export function PagedRaidHistory({ identityId, kabandaId, coverImage, active }: {
   identityId: string; kabandaId: string; coverImage: string; active: boolean
 }) {
@@ -28,7 +32,7 @@ export function PagedRaidHistory({ identityId, kabandaId, coverImage, active }: 
 export function ProductionHistory({ coverImage, history, filter = 'all', onFilterChange,
   status = 'ready', message = null, hasMore = false, loadingMore = false, onMore, onRetry,
 }: {
-  coverImage: string; history: RaidHistoryItem[] | null; filter?: HistoryScope
+  coverImage: string; history: HistoryCardItem[] | null; filter?: HistoryScope
   onFilterChange?: (scope: HistoryScope) => void; status?: ProductionResourceState
   message?: string | null; hasMore?: boolean; loadingMore?: boolean
   onMore?: () => void; onRetry?: () => void
@@ -51,7 +55,7 @@ export function ProductionHistory({ coverImage, history, filter = 'all', onFilte
         <div className="rdp-history-list">{rows.map(raid => <HistoryCard key={raid.raidId} coverImage={coverImage} raid={raid} />)}</div>}
     </>}
     {(message || status === 'error' || denied) && <div className="prd-history-page-error" role="status">
-      <p>{message ?? 'История пока не загрузилась.'}</p>
+      <p>{message ?? (denied ? 'История недоступна для этого аккаунта.' : 'История пока не загрузилась.')}</p>
       {onRetry && <button type="button" onClick={onRetry} disabled={loadingMore}>Повторить загрузку</button>}
     </div>}
     {rows !== null && hasMore && <div className="prd-history-pagination" aria-busy={loadingMore}>
@@ -75,11 +79,12 @@ function HistoryEmpty({ coverImage, mine }: { coverImage: string; mine: boolean 
   </article>
 }
 
-function HistoryCard({ coverImage, raid }: { coverImage: string; raid: RaidHistoryItem }) {
+function HistoryCard({ coverImage, raid }: { coverImage: string; raid: HistoryCardItem }) {
   const achievement = historyAchievement(raid)
+  const absent = raid.participated === false
   const dateLabel = new Date(raid.completedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   return <a
-    aria-label={`Открыть историю рейда: ${raid.title}. ${formatDistance(raid.team.distanceMeters)}, ${raid.team.uniquePoints} точек, ${raid.team.photos} фото. ${dateLabel}`}
+    aria-label={`Открыть историю рейда: ${raid.title}. ${formatDistance(raid.team.distanceMeters)}, ${raid.team.uniquePoints} точек, ${raid.team.photos} фото. ${dateLabel}${absent ? '. Вы не участвовали' : ''}`}
     className="rdp-history-card prd-history-card"
     href={`${appPath('app')}?raid=${encodeURIComponent(raid.raidId)}`}
   >
@@ -90,7 +95,7 @@ function HistoryCard({ coverImage, raid }: { coverImage: string; raid: RaidHisto
     <span className="rdp-history-card__body">
       <span className="rdp-history-card__head">
         <span className="rdp-history-card__title"><strong>{raid.title}</strong><small>{raid.partial ? 'Результат сохранён частично' : `В пути ${formatDuration(raid.team.durationSeconds)}`}</small></span>
-        <span className="prd-history-personal" aria-label="Личный результат">{formatDistance(raid.personal.distanceMeters)}</span>
+        <span className={`prd-history-personal${absent ? ' prd-history-personal--absent' : ''}`} aria-label={absent ? 'Без личного участия' : 'Личный результат'}>{absent ? 'Не участвовали' : formatDistance(raid.personal.distanceMeters)}</span>
       </span>
       <span className="rdp-history-card__metrics">
         <span><Icon name="route" size={18} />{formatDistance(raid.team.distanceMeters)}</span>
