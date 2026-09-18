@@ -95,7 +95,8 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
         if (!this.element) return
         const markerClass = this.values.markerClass
         if (typeof markerClass === 'string') this.element.className = markerClass
-        const ariaLabel = this.values.ariaLabel
+        // Point layouts use ariaLabel; rider layouts interpolate properties.label.
+        const ariaLabel = this.values.ariaLabel ?? this.values.label
         if (typeof ariaLabel === 'string') this.element.setAttribute('aria-label', ariaLabel)
         const selected = this.values.selected
         if (typeof selected === 'string') this.element.setAttribute('aria-pressed', selected)
@@ -149,8 +150,10 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
           const markerClass = placemark.values.markerClass
           const iconLayout = placemark.settings.iconLayout
           const rider = typeof iconLayout === 'string' && iconLayout.includes('route-live-map__rider')
-          const element = document.createElement(typeof markerClass === 'string' ? 'button' : 'span')
+          const imageRole = typeof iconLayout === 'string' && iconLayout.includes('role="img"')
+          const element = document.createElement(typeof markerClass === 'string' && !imageRole ? 'button' : 'span')
           if (element instanceof HTMLButtonElement) element.type = 'button'
+          if (imageRole) element.setAttribute('role', 'img')
           if (typeof markerClass !== 'string') {
             element.className = rider ? 'route-live-map__rider' : 'kb-yandex-user-location'
             element.setAttribute('aria-label', rider ? 'Моё положение' : 'Моё местоположение')
