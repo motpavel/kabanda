@@ -141,8 +141,13 @@ test('offline route, check-in and photo survive reload and replay once', async (
   const localBaseline = await localCounts(page, raid.id)
 
   await context.setOffline(true)
-  await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
-  await expect.poll(async () => (await localCounts(page, raid.id)).routeMaxSequence, {
+  await expect.poll(async () => {
+    // The foreground recorder polls at five-second intervals and rejects old
+    // fixes. A single setGeolocation keeps one timestamp in Chromium: provide
+    // new synthetic fixes while waiting, without relaxing freshness or sequence checks.
+    await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
+    return (await localCounts(page, raid.id)).routeMaxSequence
+  }, {
     timeout: 30_000,
   }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence

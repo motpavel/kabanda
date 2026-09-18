@@ -6,6 +6,17 @@ export class ReadCache {
   private identityGeneration = 0
   private mutations = 0
 
+  evict(matches: (key: string) => boolean) {
+    for (const key of this.values.keys()) if (matches(key)) this.values.delete(key)
+    for (const key of this.pending.keys()) if (matches(key)) this.pending.delete(key)
+  }
+
+  /** Fence consumer state and persistence with the same generation as reads. */
+  fence(): () => boolean {
+    const generation = this.generation
+    return () => generation === this.generation
+  }
+
   invalidate(identityChanged = false) {
     this.generation += 1
     if (identityChanged) this.identityGeneration += 1
@@ -29,7 +40,7 @@ export class ReadCache {
       const identityGeneration = this.identityGeneration
       pending = Promise.resolve().then(operation).then((value) => {
         if (identityGeneration !== this.identityGeneration) throw new TypeError('Identity changed during read')
-        if (generation === this.generation && this.mutations === 0 && maxAgeMs > 0) {
+        if (generation === this.generation && this.pending.get(key) === pending && this.mutations === 0 && maxAgeMs > 0) {
           // Keep a bounded session cache even when browsing many raids.
           if (this.values.size >= 100) this.values.delete(this.values.keys().next().value!)
           this.values.set(key, { value: structuredClone(value), savedAt: Date.now() })

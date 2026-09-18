@@ -1,61 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { appPath } from '../../lib/paths'
-import { getKabandaProgress, listRaidHistory } from './api'
-import {
-  readKabandaProgress,
-  readRaidHistory,
-  saveKabandaProgress,
-  saveRaidHistory,
-  newestFirst,
-} from './cache'
+import { useRaidHistory, useKabandaProgress } from '../raids/resources'
 import { formatDistance } from './state'
-import type { KabandaProgress, RaidHistoryItem } from './types'
 
 export function RaidHistory({ identityId, kabandaId }: { identityId: string; kabandaId: string }) {
   const listRef = useRef<HTMLDivElement>(null)
-  const [raids, setRaids] = useState<RaidHistoryItem[]>([])
-  const [progress, setProgress] = useState<KabandaProgress | null>(null)
-  const [staleAt, setStaleAt] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(async () => {
-    const [historyResult, progressResult] = await Promise.allSettled([
-      listRaidHistory(kabandaId, 12),
-      getKabandaProgress(kabandaId),
-    ])
-    let stale: string | null = null
-    if (historyResult.status === 'fulfilled') {
-      setRaids(newestFirst(historyResult.value).raids)
-      await saveRaidHistory(identityId, kabandaId, historyResult.value)
-    } else {
-      const cached = await readRaidHistory(identityId, kabandaId)
-      if (cached) { setRaids(cached.page.raids); stale = cached.savedAt }
-    }
-    if (progressResult.status === 'fulfilled') {
-      setProgress(progressResult.value)
-      await saveKabandaProgress(identityId, kabandaId, progressResult.value)
-    } else {
-      const cached = await readKabandaProgress(identityId, kabandaId)
-      if (cached) { setProgress(cached.progress); stale = stale ?? cached.savedAt }
-    }
-    setStaleAt(stale)
-    setLoading(false)
-  }, [identityId, kabandaId])
-
-  useEffect(() => {
-    void refresh()
-    const resume = () => {
-      if (document.visibilityState === 'visible' && navigator.onLine) void refresh()
-    }
-    window.addEventListener('online', resume)
-    window.addEventListener('focus', resume)
-    document.addEventListener('visibilitychange', resume)
-    return () => {
-      window.removeEventListener('online', resume)
-      window.removeEventListener('focus', resume)
-      document.removeEventListener('visibilitychange', resume)
-    }
-  }, [refresh])
+  const history = useRaidHistory(identityId, kabandaId)
+  const stats = useKabandaProgress(identityId, kabandaId)
+  const raids = history.data?.raids ?? []
+  const progress = stats.data
+  const staleAt = history.savedAt ?? stats.savedAt
+  const loading = history.status === 'loading'
 
   return (
     <section className="kb-card result-history">

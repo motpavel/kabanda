@@ -39,8 +39,7 @@ import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlac
 import { useKabandaMotion } from './useKabandaMotion'
 import { HomeDashboard } from '../home/HomeDashboard'
 import { ProductionRaidsHub } from '../raids/ProductionRaidsHub'
-import { getKabandaProgress } from '../results/api'
-import type { KabandaProgress } from '../results/types'
+import { useKabandaProgress } from '../raids/resources'
 import type {
   KabandaMember,
   KabandaPoint,
@@ -365,7 +364,6 @@ function KabandaWorkspace({
   const workspaceRef = useRef<HTMLElement>(null)
   const [members, setMembers] = useState<KabandaMember[]>([])
   const [points, setPoints] = useState<KabandaPoint[]>([])
-  const [progress, setProgress] = useState<KabandaProgress | null>(null)
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [pointCategory, setPointCategory] = useState<MapPointCategory>('stores')
   const [requestedView, setRequestedView] = useState<PointPresentation>('map')
@@ -390,6 +388,7 @@ function KabandaWorkspace({
   useKabandaMotion(workspaceRef)
 
   const needsMembers = active && (section === 'home' || section === 'kabanda')
+  const { data: progress } = useKabandaProgress(user.id, kabanda.id, needsMembers)
   useEffect(() => {
     if (!needsMembers) return
     let subscribed = true
@@ -446,14 +445,6 @@ function KabandaWorkspace({
     return () => { subscribed = false }
   }, [kabanda.id, kabanda.pointsCollectionId, user.id, needsPoints])
 
-  useEffect(() => {
-    if (!needsMembers) return
-    let subscribed = true
-    void getKabandaProgress(kabanda.id)
-      .then((value) => { if (subscribed) setProgress(value) })
-      .catch(() => undefined)
-    return () => { subscribed = false }
-  }, [kabanda.id, needsMembers])
 
   const selectedPoint = visiblePoints.find(({ id }) => id === selectedPointId) ?? null
   const rename = async (event: FormEvent) => {

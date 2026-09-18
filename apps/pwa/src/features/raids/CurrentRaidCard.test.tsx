@@ -42,10 +42,12 @@ describe('shared current raid card', () => {
     expect(currentRaidPresentation({ ...raid, title: 'Вечерняя прогулка', startedAt: null }).date).toBeNull()
   })
 
-  it('keeps a stale projection behind the refresh action', () => {
+  it('allows safe cached viewing without claiming an active status or offering a command', () => {
     const html = renderToStaticMarkup(<CurrentRaidCard kabanda={kabanda} raid={raid} stale onRefresh={() => undefined} />)
-    expect(html).not.toContain('href="/app?raid=ride"')
-    expect(html).toContain('<button')
+    expect(html).toContain('href="/app?raid=ride"')
+    expect(html).toContain('Открыть сохранённый рейд')
+    expect(html).not.toContain('Идёт сейчас')
+    expect(html).not.toContain('Вернуться в рейд')
   })
 
   it('counts only confirmed participants and uses Russian plural forms', () => {

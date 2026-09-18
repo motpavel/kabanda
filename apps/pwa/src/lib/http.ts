@@ -1,8 +1,10 @@
+import { notifyConfirmedWrite } from './api-events'
 import { requestApi } from './api-transport'
 import { diagnosticRequestHeaders } from './diagnostics'
 import { ReadCache } from './read-cache'
 
 const reads = new ReadCache()
+export const evictApiReads = (matches: (path: string) => boolean) => reads.evict(key => matches(JSON.parse(key)[0]))
 export const invalidateApiReads = () => reads.invalidate()
 let identity: string | null | undefined
 if (typeof window !== 'undefined') {
@@ -11,7 +13,15 @@ if (typeof window !== 'undefined') {
     if (next !== identity) { identity = next; reads.invalidate(true) }
   })
   window.addEventListener('storage', (event) => {
-    if (event.key === null || event.key === 'kabanda:relay-session:v1') reads.invalidate(true)
+    if (event.key !== null && event.key !== 'kabanda:relay-session:v1') return
+    // Storage events are the cross-tab source of truth for the relay session.
+    // Fence confirmed-write events under the same identity the transport just adopted.
+    identity = undefined
+    try {
+      const saved = JSON.parse(event.newValue ?? 'null') as { identityId?: unknown } | null
+      if (saved && (saved.identityId === null || typeof saved.identityId === 'string')) identity = saved.identityId
+    } catch { /* A corrupt or cleared session has no usable identity. */ }
+    reads.invalidate(true)
   })
 }
 
@@ -31,7 +41,13 @@ export class ApiError extends Error {
 export function requestJson<T>(input: RequestInfo | URL, init?: RequestInit, options?: { maxAgeMs?: number }): Promise<T> {
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
   const operation = () => performJsonRequest<T>(input, init)
-  if (method !== 'GET' && method !== 'HEAD') return reads.mutate(operation)
+  if (method !== 'GET' && method !== 'HEAD') {
+    const requestIdentity = identity
+    return reads.mutate(operation).then(body => {
+      if (requestIdentity === identity) notifyConfirmedWrite({ identityId: requestIdentity, path: String(input), body })
+      return body
+    })
+  }
   // A caller-owned abort signal must not cancel another consumer's shared read.
   if (init?.signal || input instanceof Request) return operation()
   const key = JSON.stringify([String(input), method, [...new Headers(init?.headers).entries()].sort(), init?.credentials ?? 'same-origin'])

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import type { BrowserContext, Page } from '@playwright/test'
+import { createHash, randomUUID } from 'node:crypto'
+import { test, type BrowserContext, type Page } from '@playwright/test'
 
 export type FixtureIdentity = {
   runId: string
@@ -15,18 +15,25 @@ export type FixtureIdentity = {
 function requireRunId(): string {
   const runId = process.env.E2E_RUN_ID
   if (!runId) throw new Error('E2E_RUN_ID is required')
-  return runId
+  // Each test must start with its own user, even when tests share one worker and
+  // disposable database. Keep all fixture commands within the same test/retry
+  // on that identity; do not mutate the runner's environment or weaken DB guards.
+  const info = test.info()
+  const hex = createHash('sha256')
+    .update(JSON.stringify([runId, info.testId, info.retry, info.repeatEachIndex]))
+    .digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
 export function fixture<T>(
   command: 'prepare' | 'attach-point' | 'attach-catalogue' | 'inspect-raid',
   ...arguments_: string[]
 ): T {
-  requireRunId()
+  const runId = requireRunId()
   const output = execFileSync(
     'pnpm',
     ['--filter', '@kabanda/api', 'e2e:fixture', command, ...arguments_],
-    { cwd: process.cwd(), env: process.env, encoding: 'utf8' },
+    { cwd: process.cwd(), env: { ...process.env, E2E_RUN_ID: runId }, encoding: 'utf8' },
   )
   const line = output.trim().split(/\r?\n/).at(-1)
   if (!line) throw new Error(`Empty fixture response for ${command}`)
@@ -88,7 +95,8 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
         if (!this.element) return
         const markerClass = this.values.markerClass
         if (typeof markerClass === 'string') this.element.className = markerClass
-        const ariaLabel = this.values.ariaLabel
+        // Point layouts use ariaLabel; rider layouts interpolate properties.label.
+        const ariaLabel = this.values.ariaLabel ?? this.values.label
         if (typeof ariaLabel === 'string') this.element.setAttribute('aria-label', ariaLabel)
         const selected = this.values.selected
         if (typeof selected === 'string') this.element.setAttribute('aria-pressed', selected)
@@ -142,8 +150,10 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
           const markerClass = placemark.values.markerClass
           const iconLayout = placemark.settings.iconLayout
           const rider = typeof iconLayout === 'string' && iconLayout.includes('route-live-map__rider')
-          const element = document.createElement(typeof markerClass === 'string' ? 'button' : 'span')
+          const imageRole = typeof iconLayout === 'string' && iconLayout.includes('role="img"')
+          const element = document.createElement(typeof markerClass === 'string' && !imageRole ? 'button' : 'span')
           if (element instanceof HTMLButtonElement) element.type = 'button'
+          if (imageRole) element.setAttribute('role', 'img')
           if (typeof markerClass !== 'string') {
             element.className = rider ? 'route-live-map__rider' : 'kb-yandex-user-location'
             element.setAttribute('aria-label', rider ? 'Моё положение' : 'Моё местоположение')

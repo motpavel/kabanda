@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { navigateApp } from '../../app/transitions'
-import { useVisibleRead } from './read-refresh'
-import { ApiError } from '../../lib/http'
+import { useActionableRaids } from './resources'
 import { appPath } from '../../lib/paths'
 import { HomeIcon } from '../home/HomeIcon'
 import type { KabandaSummary } from '../kabandas/types'
-import { listActionableRaids } from './api'
 import { CurrentRaidCard } from './CurrentRaidCard'
-import {
-  readActionableRaidProjections,
-  saveRaidProjection,
-} from './cache'
-import { confirmedRaidParticipants, productionResourcePolicy, splitActionableRaids, type ProductionResourceState } from './production-model'
+import { confirmedRaidParticipants, productionResourcePolicy, splitActionableRaids } from './production-model'
 import { selectPrimaryAction } from './state'
 import type { RaidProjection } from './types'
 import './raids.css'
@@ -25,70 +19,15 @@ export function RaidHomeCard({
   kabanda: KabandaSummary
   active?: boolean
 }) {
-  const [actionable, setActionable] = useState<RaidProjection[]>([])
+  const resource = useActionableRaids(identityId, kabanda.id, kabanda.role, active)
+  const actionable = resource.data ?? []
+  const resourceState = resource.status
+  const resourceMessage = resource.message
+  const stale = resourceState !== 'ready'
+  const refresh = resource.refresh
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [stale, setStale] = useState(false)
-  const [resourceState, setResourceState] = useState<ProductionResourceState>('loading')
-  const [resourceMessage, setResourceMessage] = useState<string | null>(null)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
 
-  const canonicalSettled = useRef(false)
-  const load = useCallback(async () => {
-    try {
-      const canonicalActionable = await listActionableRaids(kabanda.id)
-      canonicalSettled.current = true
-      setActionable(canonicalActionable)
-      setStale(false)
-      setResourceState('ready')
-      setResourceMessage(null)
-      await Promise.all(
-        canonicalActionable.map((raid) => saveRaidProjection(identityId, raid)),
-      )
-    } catch (reason) {
-      canonicalSettled.current = true
-      if (reason instanceof ApiError && reason.status < 500) {
-        setActionable([])
-        setStale(false)
-        setResourceState(reason.status === 401 || reason.status === 403 || reason.status === 404 ? 'access-error' : 'error')
-        setResourceMessage(reason.message)
-        return
-      }
-      const cachedActionable = await readActionableRaidProjections(identityId, kabanda.id).catch(() => [])
-      if (cachedActionable.length > 0) {
-        setActionable(cachedActionable.map(({ raid }) => raid))
-        setStale(true)
-        setResourceState('stale')
-        setResourceMessage(null)
-      } else {
-        setActionable([])
-        setStale(false)
-        setResourceState('error')
-        setResourceMessage('Не удалось загрузить рейды, а сохранённой копии на этом устройстве нет.')
-      }
-    }
-  }, [identityId, kabanda.id])
-
-  useEffect(() => {
-    let subscribed = true
-    canonicalSettled.current = false
-    void readActionableRaidProjections(identityId, kabanda.id).then((cached) => {
-      if (!subscribed || canonicalSettled.current) return
-      if (!cached.length) {
-        if (!navigator.onLine) { setResourceState('error'); setResourceMessage('Нет сети и сохранённых рейдов на этом устройстве.') }
-        return
-      }
-      setActionable(cached.map(({ raid }) => raid))
-      setStale(true)
-      setResourceState('stale')
-    }).catch(() => {
-      if (subscribed && !canonicalSettled.current && !navigator.onLine) {
-        setResourceState('error'); setResourceMessage('Не удалось прочитать сохранённые рейды.')
-      }
-    })
-    return () => { subscribed = false }
-  }, [identityId, kabanda.id])
-
-  const refresh = useVisibleRead(load, `${identityId}:${kabanda.id}`, active, 10_000)
   useEffect(() => {
     const updateConnection = () => setOnline(navigator.onLine)
     window.addEventListener('online', updateConnection)
@@ -128,16 +67,18 @@ export function RaidHomeCard({
       {resourceState === 'loading' && <p className="kb-muted">Проверяем, что сейчас важно…</p>}
 
 
+      {resourceState === 'stale' && resourceMessage && <p role="status" className="kb-muted">{resourceMessage}</p>}
+
       {(resourceState === 'access-error' || resourceState === 'error') && (
         <div className={resourceState === 'access-error' ? 'kb-error' : 'kb-notice'} role={resourceState === 'access-error' ? 'alert' : 'status'}>
           <strong>{resourceState === 'access-error' ? 'Доступ к рейдам не подтверждён.' : 'Рейды пока не загрузились.'}</strong>
           <p>{resourceMessage}</p>
-          <button className="kb-link-button" type="button" onClick={() => { setResourceState('loading'); void refresh() }}>Повторить</button>
+          <button className="kb-link-button" type="button" onClick={() => { void refresh() }}>Повторить</button>
         </div>
       )}
 
       {invitations.length > 0 && <a className="kb-home-invitation" href={`${appPath('app')}?raid=${encodeURIComponent(invitations[0]!.id)}`}>
-        <HomeIcon name="calendar" /><span>Вас ждут в рейде<strong>{invitations[0]!.title}</strong></span><HomeIcon name="arrow" />
+        <HomeIcon name="calendar" /><span>{stale ? 'Сохранённое приглашение' : 'Вас ждут в рейде'}<strong>{invitations[0]!.title}</strong></span><HomeIcon name="arrow" />
       </a>}
 
       {!current && upcoming.length > 1 && (
@@ -159,7 +100,7 @@ export function RaidHomeCard({
 
       {selected && !current && (
         <div className="kb-home-raid-summary">
-          <span className="kb-home-raid-status">{stateLabel(selected.state)}</span>
+          <span className="kb-home-raid-status">{stale ? (online ? 'Проверяем состояние…' : 'Сохранённый рейд') : stateLabel(selected.state)}</span>
           <h3>{selected.title}</h3>
           <p>{scheduleLabel(selected.scheduledAt)} · {confirmedRaidParticipants(selected).length} участников</p>
           {selected.description && <p className="kb-home-raid-description">{selected.description}</p>}

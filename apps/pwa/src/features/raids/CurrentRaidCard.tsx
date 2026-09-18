@@ -30,7 +30,7 @@ export function currentRaidPresentation(raid: RaidProjection) {
 }
 
 /** The same current-ride card on Home and Raids, including its primary action. */
-export function CurrentRaidCard({ kabanda, raid, stale, onRefresh, online = typeof navigator === 'undefined' || navigator.onLine }: {
+export function CurrentRaidCard({ kabanda, raid, stale, online = typeof navigator === 'undefined' || navigator.onLine }: {
   kabanda: KabandaSummary
   raid: RaidProjection
   stale: boolean
@@ -45,7 +45,7 @@ export function CurrentRaidCard({ kabanda, raid, stale, onRefresh, online = type
 
   return <article className="kb-current-raid" data-testid="current-raid-card">
     <div className="kb-current-raid__top">
-      <span className="kb-current-raid__status"><i aria-hidden="true" />{stateLabels[raid.state]}</span>
+      <span className="kb-current-raid__status"><i aria-hidden="true" />{stale ? (online ? 'Проверяем состояние…' : 'Сохранённый рейд') : stateLabels[raid.state]}</span>
       <span className="kb-current-raid__team">{kabanda.name}</span>
     </div>
     <div className="kb-current-raid__intro">
@@ -62,13 +62,7 @@ export function CurrentRaidCard({ kabanda, raid, stale, onRefresh, online = type
       <Metric icon="route" label="точек трека" value={raid.routeStatus.acceptedSampleCount.toLocaleString('ru-RU')} />
       <Metric icon="flag" label="навигатор" value={raid.navigatorUserId ? 'Назначен' : 'Не выбран'} text />
     </dl>
-    {primary?.kind === 'refresh' ? (
-      <button className="kb-current-raid__cta" onClick={onRefresh} type="button"><Icon name="clock" />{label}</button>
-    ) : stale && !primary ? (
-      <button className="kb-current-raid__cta" disabled type="button"><Icon name="clock" />Открыть после обновления</button>
-    ) : (
-      <a className="kb-current-raid__cta" href={`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`}><Icon name="send" />{label}</a>
-    )}
+    <a className="kb-current-raid__cta" href={`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`}><Icon name="send" />{stale ? 'Открыть сохранённый рейд' : label}</a>
   </article>
 }
 
