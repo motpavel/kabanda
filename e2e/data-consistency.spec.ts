@@ -134,3 +134,46 @@ test('same-user session renewal does not strand retained Home and Raids in loadi
   await expect(page.getByText('Вас ждут в рейде')).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('renewed-session-home.png') })
 })
+
+test('accepting a direct-link raid updates a previously empty Home before list revalidation', async ({ page }, info) => {
+  const freshList = deferred()
+  let confirmed = false
+  const plannedInvitation = { ...invited, state: 'planned' }
+  const plannedAcceptance = { ...accepted, state: 'planned' }
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await mockApi(page, async () => {
+    if (!confirmed) return []
+    await freshList.promise
+    return [plannedAcceptance]
+  }, async () => { confirmed = true; return plannedAcceptance })
+  await page.route(`**/api/raids/${raidId}/live`, route =>
+    route.fulfill({ json: { raid: confirmed ? plannedAcceptance : plannedInvitation } }))
+
+  try {
+    await page.goto(`/app?kabanda=${teamId}`)
+    await expect(page.getByRole('heading', { name: 'Соберёмся на прогулку?' })).toBeVisible()
+    // Enter an exact raid link through the same SPA navigation contract; keep
+    // the already visited Home mounted with its confirmed empty list.
+    await page.evaluate(id => {
+      window.history.pushState(null, '', `/app?raid=${id}`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }, raidId)
+    await expect(page.getByRole('button', { name: 'Еду', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Еду', exact: true }).click()
+    await expect(page.getByText('Вы едете. Рейд запустит организатор.', { exact: true })).toBeVisible()
+    await recordVisibleText(page)
+    await page.getByRole('link', { name: 'Назад', exact: true }).click()
+    await expect(page.getByTestId('production-upcoming-raids')).toContainText(invited.title)
+    await page.getByRole('link', { name: 'Главная', exact: true }).click()
+    await expect(page.getByRole('heading', { name: invited.title })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Соберёмся на прогулку?' })).toHaveCount(0)
+    await expect(page.getByText('Вас ждут в рейде')).toHaveCount(0)
+    const frames = await page.evaluate(() => (window as unknown as { consistencyFrames: string[] }).consistencyFrames)
+    expect(frames.every(text => !text.includes('Соберёмся на прогулку?') && !text.includes('Вас ждут в рейде'))).toBe(true)
+    expect(pageErrors).toEqual([])
+    await page.screenshot({ path: info.outputPath('direct-link-confirmed-before-list.png') })
+  } finally {
+    freshList.resolve()
+  }
+})
