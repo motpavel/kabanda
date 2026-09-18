@@ -1,10 +1,12 @@
 import { useCallback, useMemo } from 'react'
 import { raidResource, useRaidResource } from './resources'
+import { useRecordingLeaveGuard } from './recording/leave-guard'
 import type { RaidProjection } from './types'
 
 export function useRaidProjection(identityId: string, raidId: string, staleOnly = false) {
   const entry = useMemo(() => raidResource(identityId, raidId), [identityId, raidId])
   const resource = useRaidResource(entry, !staleOnly, 5_000)
+  useRecordingLeaveGuard(identityId, resource.data)
   const applyRaid = useCallback(async (raid: RaidProjection) => {
     // Command responses have already been published by the API before resolving.
     // Ignore a callback belonging to an old identity or an unmounted raid.

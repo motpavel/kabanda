@@ -12,6 +12,7 @@ import { PortraitMode } from './PortraitMode'
 import { RetainedScreen } from './RetainedScreen'
 import { appPath } from '../lib/paths'
 import { isInternalAppLink, navigateApp } from './transitions'
+import { readAppSearch, subscribeAppLocation } from './navigation-history'
 
 const CapabilityLabPage = lazy(() => import('../features/capability-lab/App').then(module => ({ default: module.CapabilityLabPage })))
 const GpsExperimentPage = lazy(() => import('../features/capability-lab/GpsExperimentPage').then(module => ({ default: module.GpsExperimentPage })))
@@ -31,7 +32,7 @@ export function App() {
 }
 
 function AppRoute() {
-  const search = useSyncExternalStore(subscribeRoute, () => window.location.search, () => '')
+  const search = useSyncExternalStore(subscribeAppLocation, readAppSearch, () => '')
   useEffect(() => {
     const followLink = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -50,11 +51,6 @@ function AppRoute() {
     <RetainedScreen active={raidRoute.kind === 'home'}><KabandasPage active={raidRoute.kind === 'home'} /></RetainedScreen>
     {raidRoute.kind !== 'home' && <RaidApp route={raidRoute} />}
   </>
-}
-
-function subscribeRoute(listener: () => void) {
-  window.addEventListener('popstate', listener)
-  return () => window.removeEventListener('popstate', listener)
 }
 
 /** Optional tools can fail to load without taking the production/recording tree down. */

@@ -1,4 +1,5 @@
 import { flushSync } from 'react-dom'
+import { approveAppNavigation, pushApprovedAppLocation } from './navigation-history'
 
 // Keep browser back/forward and real URLs. Screen retention is identity-scoped;
 // recording and permissions always follow their own live lifecycle.
@@ -12,15 +13,13 @@ export function transitionScreen(update: () => void, direction: 'forward' | 'bac
   const transition = document.startViewTransition(commit)
   void transition.finished.catch(() => undefined)
 }
-
-export function navigateApp(href: string) {
+export function navigateApp(href: string, direction: 'forward' | 'back' = 'forward') {
+  if (!approveAppNavigation(href)) return
   transitionScreen(() => {
-    window.history.pushState(null, '', href)
-    window.dispatchEvent(new PopStateEvent('popstate'))
+    pushApprovedAppLocation(href)
     window.scrollTo({ top: 0, behavior: 'instant' })
-  })
+  }, direction)
 }
-
 export function isInternalAppLink(url: URL, origin: string, appPathname: string): boolean {
   return url.origin === origin && url.pathname === appPathname && !url.hash
 }
