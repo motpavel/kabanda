@@ -210,7 +210,7 @@
 .kb-identity div { display: grid; min-width: 0; }
 .kb-identity small { max-width: 230px; overflow: hidden; color: var(--kb-muted); text-overflow: ellipsis; }
 
-.kb-shell--tabs { padding-bottom: calc(94px + env(safe-area-inset-bottom)); }
+.kb-shell--tabs { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
 
 .kb-shell--map {
   width: 100%;
@@ -223,46 +223,84 @@
 .kb-shell--map > .kb-topbar,
 .kb-shell--map > .kb-heading-row { display: none; }
 
+/* Shared geometry keeps the pill and all four touch targets aligned. */
 .kb-app-tabbar {
   position: fixed;
   z-index: 80;
   right: 0;
-  bottom: max(10px, env(safe-area-inset-bottom));
+  bottom: calc(16px + env(safe-area-inset-bottom));
   left: 0;
   display: grid;
-  width: min(calc(100% - 24px), 620px);
+  width: min(calc(100% - 32px), 620px);
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
   margin: 0 auto;
-  border: 1px solid rgb(73 78 72 / 14%);
-  border-radius: 15px;
-  padding: 4px;
-  background: rgb(255 253 248 / 94%);
-  box-shadow: 0 10px 28px rgb(32 41 35 / 16%);
-  backdrop-filter: blur(14px);
+  border: 1px solid rgb(255 255 255 / 85%);
+  border-radius: 32px;
+  padding: 5px;
+  isolation: isolate;
+  background: rgb(255 253 250 / 78%);
+  box-shadow: 0 8px 28px rgb(32 41 35 / 14%), 0 2px 6px rgb(32 41 35 / 5%), inset 0 1px 0 #fff;
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  view-transition-name: kb-tabbar;
+}
+
+.kb-app-tabbar__bubble {
+  position: absolute;
+  z-index: -1;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 10px) / 4);
+  border: 1px solid rgb(255 255 255 / 90%);
+  border-radius: 26px;
+  background: rgb(255 255 255 / 85%);
+  box-shadow: 0 2px 7px rgb(52 39 32 / 9%), inset 0 0 0 1px rgb(230 220 214 / 14%);
+  pointer-events: none;
+  transform: translateX(calc(var(--active-tab, 0) * 100%));
+  transition: transform 380ms cubic-bezier(.22, 1, .36, 1);
 }
 
 .kb-app-tabbar a {
   display: flex;
   min-width: 0;
-  min-height: 48px;
-  gap: 6px;
+  min-height: 54px;
+  flex-direction: column;
+  gap: 1px;
   align-items: center;
   justify-content: center;
-  border-radius: 11px;
-  color: var(--kb-muted);
-  font-size: .74rem;
+  border-radius: 26px;
+  color: #626861;
+  font-size: .65rem;
+  line-height: 1.2;
   font-weight: 650;
   text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+  transition: color 160ms ease, transform 160ms ease;
 }
 
-.kb-app-tabbar a:active { transform: scale(.98); }
-.kb-app-tabbar a:focus-visible { outline: 3px solid #245fc4; outline-offset: 1px; }
-.kb-app-tabbar a[aria-current="page"] { color: var(--kb-ink); background: var(--kb-surface-subtle); }
-.kb-app-tabbar a[aria-current="page"] svg { color: var(--kb-brand); }
-.kb-app-tabbar svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.kb-app-tabbar a:active { transform: scale(.94); transition-duration: 80ms; }
+.kb-app-tabbar a:focus-visible { outline: 3px solid #245fc4; outline-offset: -2px; }
+.kb-app-tabbar a[aria-current="page"] { color: #ce2925; }
+.kb-app-tabbar .kb-nav-icon { width: 32px; height: 30px; }
+
+/* The floating bar stays in place while the page behind it transitions. */
+::view-transition-group(kb-tabbar),
+::view-transition-new(kb-tabbar) { animation: none; }
+::view-transition-old(kb-tabbar) { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-app-tabbar__bubble, .kb-app-tabbar a { transition: none; }
+  .kb-app-tabbar a:active { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .kb-app-tabbar { background: #fffdf9; border-color: #b5b9b3; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .kb-app-tabbar__bubble { background: #f0e8e4; border-color: #cbc2bd; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .kb-app-tabbar { background: #fffdf9; }
+}
 
 .kb-nav-icon { display: block; width: 34px; height: 34px; flex: 0 0 auto; background: currentColor; mask-size: 200% 200%; mask-repeat: no-repeat; -webkit-mask-size: 200% 200%; -webkit-mask-repeat: no-repeat; }
 .kb-nav-icon--home { mask-position: 0 0; -webkit-mask-position: 0 0; }
@@ -600,7 +638,7 @@
   position: absolute;
   z-index: 50;
   inset: 0;
-  padding: max(76px, calc(env(safe-area-inset-top) + 70px)) 14px calc(92px + env(safe-area-inset-bottom));
+  padding: max(76px, calc(env(safe-area-inset-top) + 70px)) 14px calc(112px + env(safe-area-inset-bottom));
   overflow-y: auto;
   background: var(--kb-bg);
 }
@@ -613,7 +651,7 @@
   position: fixed;
   z-index: 70;
   right: 12px;
-  bottom: calc(74px + env(safe-area-inset-bottom));
+  bottom: calc(98px + env(safe-area-inset-bottom));
   left: 12px;
   width: min(calc(100% - 24px), 520px);
   min-height: 76px;
@@ -940,7 +978,6 @@
 .kb-shell .kb-switch-account svg { width: 21px; height: 21px; color: var(--kb-muted); }
 .kb-shell .kb-leave-team { display: inline-flex; width: fit-content; min-height: 42px; gap: 8px; align-items: center; margin-top: 2px; border: 0; border-top: 1px solid var(--kb-line); border-radius: 0; padding: 14px 0 0; color: var(--kb-brand-hover); background: transparent; box-shadow: none; }
 .kb-shell .kb-leave-team svg { width: 21px; height: 21px; }
-.kb-shell--team .kb-app-tabbar a[aria-current="page"] { background: #fff0ed; }
 .kb-shell--team .kb-topbar { position: relative; top: auto; }
 
 .kb-invite-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 24px 0; }
@@ -965,19 +1002,6 @@
 
 @media (max-width: 860px) {
   .kb-shell { padding-inline: 16px; }
-  .kb-app-tabbar {
-    bottom: 0;
-    width: 100%;
-    border-width: 1px 0 0;
-    border-radius: 0;
-    padding: 0 7px env(safe-area-inset-bottom);
-    box-shadow: 0 -4px 16px rgb(32 41 35 / 5%);
-    background: #fff;
-  }
-  .kb-app-tabbar a { min-height: 48px; flex-direction: column; gap: 0; font-size: .64rem; font-weight: 550; border-radius: 0; }
-  .kb-app-tabbar a[aria-current="page"], .kb-shell--team .kb-app-tabbar a[aria-current="page"] { background: transparent; color: #d62824; }
-  .kb-app-tabbar .kb-nav-icon { width: 32px; height: 30px; }
-  .kb-shell--tabs { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
   .kb-auth-layout { min-height: auto; grid-template-columns: 1fr; }
   .kb-login-visual { min-height: 520px; height: min(68svh, 720px); }
   .kb-login-visual::after { border-right: 0; border-bottom: 1px solid rgb(32 41 35 / 16%); }
@@ -1013,7 +1037,7 @@
   .kb-install-guidance { grid-template-columns: 1fr; }
   .kb-install-guidance > button { width: 100%; }
   .kb-invite-meta { grid-template-columns: 1fr; }
-  .kb-shell--team { padding: max(10px, env(safe-area-inset-top)) 12px calc(82px + env(safe-area-inset-bottom)); }
+  .kb-shell--team { padding: max(10px, env(safe-area-inset-top)) 12px calc(112px + env(safe-area-inset-bottom)); }
   .kb-shell--team .kb-topbar { top: auto; margin-bottom: 14px; border-radius: 17px; padding: 7px 8px 7px 10px; }
   .kb-shell--team .kb-brand { font-size: .96rem; }
   .kb-shell--team .kb-brand img { width: 36px; height: 36px; }
@@ -1049,7 +1073,7 @@
   .kb-team-account-row { align-items: stretch; flex-direction: column; }
   .kb-shell .kb-switch-account { width: 100%; justify-content: center; }
   .kb-shell .kb-leave-team { width: 100%; }
-  .kb-team-dialog-backdrop { align-items: end; padding: 10px 10px calc(76px + env(safe-area-inset-bottom)); }
+  .kb-team-dialog-backdrop { align-items: end; padding: 10px 10px calc(98px + env(safe-area-inset-bottom)); }
   .kb-team-dialog { width: 100%; max-height: 70svh; border-radius: 18px; padding: 19px; }
 }
 

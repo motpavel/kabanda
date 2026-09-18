@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { appPath } from '../lib/paths'
 import { appSectionSearch, type AppSection } from './navigation'
 
@@ -18,7 +19,9 @@ export function AppTabBar({
   onSelect: (section: AppSection) => void
 }) {
   return (
-    <nav className="kb-app-tabbar" aria-label="Основные разделы">
+    <nav className="kb-app-tabbar" aria-label="Основные разделы"
+      style={{ '--active-tab': sections.findIndex(({ id }) => id === active) } as CSSProperties}>
+      <span className="kb-app-tabbar__bubble" aria-hidden="true" />
       {sections.map(({ id, label }) => (
         <a
           key={id}
