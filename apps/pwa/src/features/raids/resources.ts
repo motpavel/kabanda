@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { pointProgressSchema } from '@kabanda/contracts/exploration'
 import { ReadCache } from '../../lib/read-cache'
 import { ApiError, evictApiReads } from '../../lib/http'
 import { subscribeConfirmedWrites } from '../../lib/api-events'
@@ -6,6 +7,7 @@ import { clearPrivateImageCache } from '../../lib/CachedImage'
 import { offlineDb } from '../offline/db'
 import { listRaidHistory, getKabandaProgress } from '../results/api'
 import { readRaidHistory, readKabandaProgress, newestFirst } from '../results/cache'
+import { isHistoryWindow } from '../results/history-pagination'
 import type { RaidHistoryPage, KabandaProgress } from '../results/types'
 import { getRaid, listActionableRaids } from './api'
 import { actionableStates, isRaidProjection, raidReadDb, raidReadKey, readSnapshot, readRaidProjection, saveRaidProjection, writeSnapshot } from './cache'
@@ -14,7 +16,7 @@ import type { RaidProjection } from './types'
 import type { ProductionResourceState } from './production-model'
 
 type State<T> = { data: T | null; status: ProductionResourceState; message: string | null; savedAt: string | null }
-type Kind = 'actionable' | 'raid' | 'history' | 'progress'
+type Kind = 'actionable' | 'raid' | 'history' | 'progress' | 'point-progress'
 type KabandaRole = 'owner' | 'member'
 const entries = new Map<string, RaidResource<unknown>>()
 const deniedTeams = new Set<string>()
@@ -49,10 +51,20 @@ export class RaidResource<T> {
   registerKabandaRole(role?: KabandaRole) { if (role) this.kabandaRole = role }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   snapshot = () => this.state
+  /** Multi-page readers stop requesting subsequent pages after identity,
+   * permission or generation changes, not just after their final response. */
+  readFence() {
+    const current = this.reads.fence()
+    return () => !this.retired && current()
+  }
   retainActiveReader = () => {
     this.activeReaders += 1
     let released = false
     return () => { if (!released) { released = true; this.activeReaders -= 1 } }
+  }
+  refreshIfObserved() {
+    if (!this.retired && this.activeReaders > 0 && online() &&
+      (typeof document === 'undefined' || document.visibilityState === 'visible')) void this.refresh()
   }
   revalidateSession() {
     if (this.retired) return
@@ -61,8 +73,7 @@ export class RaidResource<T> {
     // Retiring these objects would strand useMemo/useSyncExternalStore consumers
     // on a permanently loading entry until a full document reload.
     this.invalidate(false)
-    if (this.activeReaders > 0 && online() &&
-      (typeof document === 'undefined' || document.visibilityState === 'visible')) void this.refresh()
+    this.refreshIfObserved()
   }
   private set(state: State<T>) { this.state = state; for (const listener of this.listeners) listener() }
   private persist(value: T, current: () => boolean) {
@@ -186,6 +197,7 @@ export class RaidResource<T> {
       if (!current()) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
         if (this.kind === 'raid') { this.deny(); clearPrivateImageCache(); await removeFromLists(this.identityId, this.id) }
+        else if (this.kind === 'point-progress' && reason.code === 'POINT_COLLECTION_UNAVAILABLE') this.deny()
         else await revokeTeam(this.identityId, this.kabandaId)
         return
       }
@@ -203,8 +215,10 @@ export class RaidResource<T> {
 function validSnapshot(kind: Kind, value: unknown): boolean {
   if (kind === 'raid') return isRaidProjection(value)
   if (kind === 'actionable') return Array.isArray(value) && value.every(isRaidProjection)
+  if (kind === 'point-progress') return pointProgressSchema.safeParse(value).success
   if (!value || typeof value !== 'object') return false
   if (kind === 'history') {
+    if ('schemaVersion' in value && value.schemaVersion === 2) return isHistoryWindow(value)
     const page = value as RaidHistoryPage
     return Array.isArray(page.raids) && newestFirst(page).raids.length === page.raids.length
   }
@@ -214,7 +228,9 @@ function validSnapshot(kind: Kind, value: unknown): boolean {
       Number.isFinite(metrics[field as keyof typeof metrics]) && metrics[field as keyof typeof metrics] >= 0))
 }
 
-function resource<T>(identityId: string, kabandaId: string, kind: Kind, id: string, params: unknown, load: () => Promise<T>) {
+/** Feature read models use the same lifecycle, identity, revocation and disk
+ * fences. They must not create a parallel permission/cache store. */
+export function resource<T>(identityId: string, kabandaId: string, kind: Kind, id: string, params: unknown, load: () => Promise<T>) {
   const key = raidReadKey(identityId, kind === 'raid' ? id : kabandaId, kind, params)
   let entry = entries.get(key)
   if (!entry) {
@@ -250,6 +266,14 @@ async function removeFromLists(identityId: string, raidId: string) {
     }
   }).catch(() => undefined)
 }
+function invalidatePointProgress(identityId: string, kabandaId?: string) {
+  for (const entry of entries.values()) {
+    if (entry.identityId !== identityId || entry.kind !== 'point-progress' || (kabandaId && entry.kabandaId !== kabandaId)) continue
+    evictApiReads(path => path.startsWith(`/api/kabandas/${entry.kabandaId}/points/progress`))
+    entry.invalidate()
+    entry.refreshIfObserved()
+  }
+}
 function publishRaid(identityId: string, raid: RaidProjection, source?: RaidResource<unknown>, updateLists = true, prior?: RaidProjection | null) {
   if (deniedTeams.has(teamKey(identityId, raid.kabandaId))) return
   const detail = raidResource(identityId, raid.id)
@@ -261,6 +285,7 @@ function publishRaid(identityId: string, raid: RaidProjection, source?: RaidReso
   const changed = !source || !previous || JSON.stringify([previous.state, previous.version, previous.allowedActions, previous.participants, previous.navigatorReady, previous.navigatorUserId]) !==
     JSON.stringify([raid.state, raid.version, raid.allowedActions, raid.participants, raid.navigatorReady, raid.navigatorUserId])
   if (updateLists && changed) evictApiReads(path => path.startsWith(`/api/kabandas/${raid.kabandaId}/raids`) || path === `/api/kabandas/${raid.kabandaId}/progress` || path.startsWith(`/api/raids/${raid.id}/`))
+  if (updateLists && changed && (previous?.state !== raid.state || JSON.stringify(previous?.participants) !== JSON.stringify(raid.participants))) invalidatePointProgress(identityId, raid.kabandaId)
   if (updateLists && changed && raid.state === 'completed' && previous?.state !== 'completed') {
     historyResource(identityId, raid.kabandaId)
     progressResource(identityId, raid.kabandaId)
@@ -324,6 +349,12 @@ subscribeConfirmedWrites(event => {
       if (online()) void entry.refresh()
     }
   }
+  const leadership = /^\/api\/kabandas\/([^/]+)\/leadership$/.exec(event.path)
+  if (leadership) invalidatePointProgress(event.identityId, leadership[1])
+  // Only successful check-in/claim/fallback commands request fresh counters.
+  // Do not interpret queued operations or a GPS sample as a confirmed visit.
+  const visit = /^\/api\/raids\/([^/]+)\/(?:check-ins(?:\/|$)|check-in-claims\/[^/]+\/confirm$|check-in-fallbacks(?:\/|$))/.exec(event.path)
+  if (visit) invalidatePointProgress(event.identityId, raidResource(event.identityId, visit[1]!).kabandaId || undefined)
   if (!event.body || typeof event.body !== 'object') return
   const raid = (event.body as { raid?: unknown }).raid
   // Presence samples and route batches intentionally do not trigger list/history reloads.

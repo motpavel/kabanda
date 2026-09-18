@@ -47,6 +47,7 @@ const app = await buildApp({
   raids,
   raidTemplates,
   geocoding,
+  database,
   config,
   readiness: () => assertDatabaseReady(database, config.EXPECTED_MIGRATION),
 })
