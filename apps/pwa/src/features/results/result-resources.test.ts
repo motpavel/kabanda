@@ -25,11 +25,12 @@ function deferred<T>() {
 }
 beforeEach(async () => {
   resetRaidResources(); vi.clearAllMocks()
+  vi.stubGlobal('navigator', { onLine: true })
   await offlineDb.delete(); await offlineDb.open()
   await raidReadDb.delete(); await raidReadDb.open()
   await activateIdentity(identity)
 })
-afterEach(() => resetRaidResources())
+afterEach(() => { resetRaidResources(); vi.unstubAllGlobals() })
 
 describe('completed result shares the common read lifecycle', () => {
   it('coalesces reads and keeps results for different raids isolated', async () => {
@@ -45,14 +46,17 @@ describe('completed result shares the common read lifecycle', () => {
     expect((await raidReadDb.snapshots.get(entry.key))?.value).toEqual(result)
   })
 
-  it('retains a cached result with an explicit retryable error, then confirms it without clearing the view', async () => {
+  it.each([true, false])('retains a cached result after failure with online=%s, then confirms it on retry', async online => {
+    vi.stubGlobal('navigator', { onLine: online })
     await saveRaidResult(identity, result)
     const entry = resultResource(identity, team, raid)
     await entry.hydrate()
     expect(entry.state).toMatchObject({ status: 'stale', data: result })
-    vi.mocked(requestJson).mockRejectedValue(new TypeError('offline'))
+    vi.mocked(requestJson).mockRejectedValue(new TypeError('connection failed'))
     await entry.refresh()
-    expect(entry.state).toMatchObject({ status: 'stale', data: result, message: 'Не удалось обновить данные.' })
+    expect(entry.state).toMatchObject({ status: 'stale', data: result,
+      message: online ? 'Не удалось обновить данные.' : 'Нет соединения. Показана сохранённая копия.' })
+    vi.stubGlobal('navigator', { onLine: true })
     vi.mocked(requestJson).mockResolvedValue({ result })
     await entry.refresh(); await entry.settled()
     expect(entry.state).toMatchObject({ status: 'ready', data: result, message: null })
