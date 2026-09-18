@@ -15,8 +15,10 @@ import {
 import type { AlphaDiagnosticSignal } from '@kabanda/contracts'
 import Fastify, { LogController, type FastifyInstance } from 'fastify'
 import { z, ZodError } from 'zod'
+import type { Pool } from 'pg'
 import type { AuthService } from './auth.js'
 import type { ApiConfig } from './config.js'
+import { registerExplorationRoutes } from './exploration-routes.js'
 import { registerGeocodingRoutes } from './geocoding-routes.js'
 import { GeocodingError, type GeocodingService } from './geocoding.js'
 import { registerKabandaRoutes } from './kabanda-routes.js'
@@ -32,6 +34,7 @@ export interface AppDependencies {
   raids?: RaidService
   raidTemplates?: RaidTemplateService
   geocoding?: GeocodingService
+  database?: Pick<Pool, 'query'>
   config: ApiConfig
   readiness: () => Promise<void>
   onDiagnosticSignal?: (signal: AlphaDiagnosticSignal) => void
@@ -264,7 +267,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       const signal = alphaDiagnosticSignalSchema.parse(request.body)
       const headerSession = boundedHeader(request.headers['x-kabanda-diagnostic-session'], z.uuid())
       const headerBuild = boundedHeader(request.headers['x-kabanda-client-build'], buildIdentifierSchema)
-      if (headerSession !== signal.diagnosticSessionId || headerBuild !== signal.clientBuild) {
+      if (headerSession !== signal.diagnosticSessionId || headerBuild !== signalHeaderSession(headerSession) || headerBuild !== signal.clientBuild) {
         return reply.status(400).send({
           error: { code: 'DIAGNOSTIC_CONTEXT_MISMATCH', message: 'Диагностический контекст не совпадает' },
         })
@@ -353,6 +356,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   await registerKabandaRoutes(app, dependencies)
   if (dependencies.raids) await registerRaidRoutes(app, { ...dependencies, raids: dependencies.raids })
+  if (dependencies.database) await registerExplorationRoutes(app, { ...dependencies, database: dependencies.database })
   if (dependencies.raidTemplates) {
     await registerRaidTemplateRoutes(app, {
       ...dependencies,
