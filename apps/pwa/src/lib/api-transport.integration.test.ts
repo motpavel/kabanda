@@ -9,7 +9,7 @@ async function serverModule(name: string) {
 }
 
 describe('frontend with the actual encrypted API bridge', () => {
-  it('keeps production auth, binary media and logout working across the full protocol', async () => {
+  it.each(['storage', 'direct', 'lost-response'])('keeps auth, media and logout working over %s', async (mode) => {
     const [{ buildApp }, { loadConfig }, { buildRelayBridge }] = await Promise.all([
       serverModule('app'), serverModule('config'), serverModule('relay-bridge'),
     ])
@@ -81,7 +81,7 @@ describe('frontend with the actual encrypted API bridge', () => {
       },
     })
     const values = new Map<string, string>()
-    const transport = createApiTransport({ bootstrapUrl: 'https://storage.yandexcloud.net/kabanda/transport/v1/apps/kabanda/bootstrap.json', publicKey, storageBucket: bucket }, {
+    const transport = createApiTransport({ bootstrapUrl: 'https://storage.yandexcloud.net/kabanda/transport/v1/apps/kabanda/bootstrap.json', publicKey, storageBucket: bucket, directUrl: mode === 'storage' ? undefined : 'https://direct.example/relay/v1' }, {
       origin, timeoutMs: 2000, storage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value) }, removeItem: key => { values.delete(key) } },
       relayFetch: async (_input, init) => {
         const result = await bridge.inject({ method: 'POST', url: '/relay/v1/request', headers: { 'content-type': 'application/json' }, payload: init?.body })
@@ -90,6 +90,14 @@ describe('frontend with the actual encrypted API bridge', () => {
       },
       fetchImpl: async (input, init) => {
         const url = String(input)
+        if (url.startsWith('https://direct.example/relay/v1/')) {
+          const result = await bridge.inject({ method: init?.method ?? 'GET', url: new URL(url).pathname,
+            headers: { origin, ...(init?.method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+            ...(init?.body ? { payload: init.body } : {}),
+          })
+          if (mode === 'lost-response' && init?.method === 'POST') throw new TypeError('Lost direct response')
+          return new Response(result.rawPayload, { status: result.statusCode, headers: { 'content-type': 'application/json' } })
+        }
         expect(url.startsWith(base)).toBe(true)
         if (init?.method === 'PUT') {
           const encrypted = new Uint8Array(await new Response(init.body).arrayBuffer())

@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import {
@@ -51,6 +51,7 @@ const opaqueSessionSchema = z.string().max(16_384).optional()
 const requestSchema = z.strictObject({
   operation: z.literal('request'),
   session: opaqueSessionSchema,
+  delivery: z.strictObject({ instanceId: z.uuid(), expiresAt: z.number().int() }).optional(),
   method: z.enum(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']),
   path: z.string().min(5).max(8192),
   headers: z.record(z.string().max(128), z.string().max(8192)).refine((headers) => Object.keys(headers).length <= 16),
@@ -62,6 +63,7 @@ const requestSchema = z.strictObject({
 const uploadSchema = z.strictObject({
   operation: z.literal('upload'),
   session: opaqueSessionSchema,
+  delivery: z.strictObject({ instanceId: z.uuid(), expiresAt: z.number().int() }).optional(),
   targetId: z.uuid(),
   byteLength: z.number().int().min(1).max(maxBodyBytes + 1024),
 })
@@ -136,6 +138,7 @@ export async function buildRelayBridge(dependencies: RelayBridgeDependencies): P
   const origin = new URL(dependencies.publicOrigin)
   if (origin.origin !== dependencies.publicOrigin || origin.protocol !== 'https:') throw new Error('Relay requires a canonical HTTPS app origin')
   const now = dependencies.now ?? Date.now
+  const instanceId = randomUUID()
   const cookieNames = new Set([dependencies.cookieName, dependencies.pendingInviteCookieName])
   if (cookieNames.size !== 2) throw new Error('Relay cookie names must be distinct')
   const jarKey = createHash('sha256').update('kabanda-relay-cookie-jar-v1\0').update(dependencies.sessionSecret).digest()
@@ -257,6 +260,12 @@ export async function buildRelayBridge(dependencies: RelayBridgeDependencies): P
       response = errorResponse(400, 'INVALID_RELAY_REQUEST')
     } else {
       const payload = parsed.data
+      // A retry may arrive through either channel after a restart or cache expiry.
+      // Never execute an old direct envelope in a different process or after its lease.
+      if (payload.delivery && (payload.delivery.instanceId !== instanceId ||
+        payload.delivery.expiresAt <= now() || payload.delivery.expiresAt > now() + 100_000)) {
+        return sealRelayResponse(key, wire.id, errorResponse(503, 'RELAY_DELIVERY_UNCERTAIN'))
+      }
       let jar: CookieJar
       try { jar = openJar(payload.session) } catch { return sealRelayResponse(key, wire.id, errorResponse(401, 'AUTH_REQUIRED', null)) }
       const cached = replay.get(wire.id)
@@ -311,7 +320,20 @@ export async function buildRelayBridge(dependencies: RelayBridgeDependencies): P
     return { version: 1, objectUrl: await dependencies.blobs.publishResponse({ id: wire.id, body: bytes }) }
   }
 
-  relay.get('/relay/v1/health', async () => ({ status: 'ok' }))
+  relay.addHook('onRequest', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const requestOrigin = request.headers.origin
+    if (requestOrigin && requestOrigin !== origin.origin) return reply.status(403).send({ error: 'ORIGIN_FORBIDDEN' })
+    if (requestOrigin === origin.origin) {
+      reply.header('Access-Control-Allow-Origin', origin.origin)
+      reply.header('Vary', 'Origin')
+    }
+  })
+  relay.options('/relay/v1/request', async (_request, reply) => reply
+    .header('Access-Control-Allow-Methods', 'POST')
+    .header('Access-Control-Allow-Headers', 'Content-Type')
+    .header('Access-Control-Max-Age', '600').status(204).send())
+  relay.get('/relay/v1/health', async () => ({ status: 'ok', directVersion: 1, instanceId, serverTime: now() }))
   relay.post('/relay/v1/request', async (request, reply) => {
     reply.header('Cache-Control', 'no-store')
     const parsed = wireSchema.safeParse(request.body)

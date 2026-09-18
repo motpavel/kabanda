@@ -270,3 +270,71 @@ describe('encrypted API transport', () => {
     transport.dispose()
   })
 })
+
+describe('adaptive encrypted delivery', () => {
+  const directUrl = 'https://direct.example/kabanda/relay/v1'
+  const instanceId = '34c37c1b-d00a-4b88-8ac7-dd0a9794880b'
+  const health = () => Response.json({ status: 'ok', directVersion: 1, instanceId, serverTime: Date.now() })
+  it('uses direct for login and authenticated requests, including application errors', async () => {
+    const received: RelayRequestPayload[] = []
+    const direct = fakeRelay(payload => {
+      received.push(payload)
+      return received.length === 1 ? reply(200, { user: { id: 'member-one' } }, 'session') : reply(409, { error: { code: 'CONFLICT' } })
+    })
+    const fetcher = vi.fn(async (url, init) => String(url).endsWith('/health') ? health() : direct(url, init)) as typeof fetch
+    const relayFetch = vi.fn()
+    const transport = createApiTransport({ ...config(), directUrl }, { fetchImpl: fetcher, relayFetch, storage: memoryStorage(), origin })
+    expect((await transport.request('/api/auth/login', { method: 'POST', body: '{}' })).status).toBe(200)
+    expect((await transport.request('/api/me')).status).toBe(409)
+    expect(received[1]).toMatchObject({ session: 'session', delivery: { instanceId } })
+    expect(relayFetch).not.toHaveBeenCalled()
+    transport.dispose()
+  })
+  it('reuses the exact encrypted envelope when direct executed but its response was lost', async () => {
+    let directBody: string | undefined
+    let saved: Response | undefined
+    let executed = 0
+    const server = fakeRelay(() => { executed++; return reply(200, { ok: true }) })
+    const fetcher = vi.fn(async (url, init) => {
+      if (String(url).endsWith('/health')) return health()
+      directBody = String(init?.body)
+      saved = await server(url, init)
+      throw new TypeError('Response lost')
+    }) as typeof fetch
+    const relayFetch = vi.fn(async (_url, init) => {
+      expect(String(init?.body)).toBe(directBody)
+      return saved!.clone()
+    })
+    const transport = createApiTransport({ ...config(), directUrl }, { fetchImpl: fetcher, relayFetch, storage: memoryStorage(), origin })
+    expect(await (await transport.request('/api/raids', { method: 'POST', body: '{}' })).json()).toEqual({ ok: true })
+    expect(executed).toBe(1)
+    expect(relayFetch).toHaveBeenCalledOnce()
+    transport.dispose()
+  })
+  it('falls back for invalid direct ciphertext without changing the envelope', async () => {
+    let directBody: unknown
+    const fetcher = vi.fn(async (url, init) => {
+      if (String(url).endsWith('/health')) return health()
+      directBody = init?.body
+      return Response.json({ unexpected: true })
+    }) as typeof fetch
+    const server = fakeRelay(() => reply(200, { ok: true }))
+    const relayFetch = vi.fn(async (url, init) => { expect(init?.body).toBe(directBody); return server(url, init) })
+    const transport = createApiTransport({ ...config(), directUrl }, { fetchImpl: fetcher, relayFetch, storage: memoryStorage(), origin })
+    expect((await transport.request('/api/me')).status).toBe(200)
+    transport.dispose()
+  })
+  it('does not fall back after caller cancellation during direct delivery', async () => {
+    const abort = new AbortController()
+    const fetcher = vi.fn(async (url) => {
+      if (String(url).endsWith('/health')) return health()
+      abort.abort()
+      throw abort.signal.reason
+    }) as typeof fetch
+    const relayFetch = vi.fn()
+    const transport = createApiTransport({ ...config(), directUrl }, { fetchImpl: fetcher, relayFetch, storage: memoryStorage(), origin })
+    await expect(transport.request('/api/me', { signal: abort.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(relayFetch).not.toHaveBeenCalled()
+    transport.dispose()
+  })
+})

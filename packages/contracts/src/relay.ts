@@ -11,6 +11,7 @@ export const relayRequestPayloadSchema = z.discriminatedUnion('operation', [
   z.object({
     operation: z.literal('request'),
     session: sessionSchema,
+    delivery: z.object({ instanceId: z.uuid(), expiresAt: z.number().int() }).strict().optional(),
     method: z.enum(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']),
     path: z.string().min(5).max(8_192),
     headers: z.record(z.string().max(128), z.string().max(8_192)),
@@ -22,6 +23,7 @@ export const relayRequestPayloadSchema = z.discriminatedUnion('operation', [
   z.object({
     operation: z.literal('upload'),
     session: sessionSchema,
+    delivery: z.object({ instanceId: z.uuid(), expiresAt: z.number().int() }).strict().optional(),
     targetId: idSchema,
     byteLength: z.number().int().min(28).max(RELAY_MAX_BODY_BYTES + 28),
   }).strict(),

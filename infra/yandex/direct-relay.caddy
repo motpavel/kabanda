@@ -1,0 +1,6 @@
+# Import inside the existing HTTPS host. Expose only the encrypted facade.
+@kabanda_direct path /kabanda/relay/v1/health /kabanda/relay/v1/request
+handle @kabanda_direct {
+    uri strip_prefix /kabanda
+    reverse_proxy 127.0.0.1:3099
+}

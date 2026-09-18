@@ -391,3 +391,60 @@ describe('private encrypted storage relay bridge', () => {
     }
   })
 })
+
+describe('direct delivery safeguards', () => {
+  it('allows only the application origin and supports direct preflight', async () => {
+    const f = await fixture()
+    const health = await f.bridge.inject({ url: '/relay/v1/health', headers: { origin } })
+    expect(health.json()).toMatchObject({ status: 'ok', directVersion: 1 })
+    expect(health.headers['access-control-allow-origin']).toBe(origin)
+    expect(health.headers['cache-control']).toBe('no-store')
+    const preflight = await f.bridge.inject({ method: 'OPTIONS', url: '/relay/v1/request', headers: { origin } })
+    expect(preflight.statusCode).toBe(204)
+    expect(preflight.headers['access-control-allow-methods']).toBe('POST')
+    expect(preflight.headers['access-control-allow-credentials']).toBeUndefined()
+    expect((await f.bridge.inject({ url: '/relay/v1/health', headers: { origin: 'https://evil.example' } })).statusCode).toBe(403)
+  })
+  it('executes one mutation when the exact envelope is delivered through both channels', async () => {
+    const f = await fixture()
+    const health = (await f.bridge.inject({ url: '/relay/v1/health' })).json()
+    const sealed = await sealRelayRequest(keys.publicKey, randomUUID(), {
+      ...login(), delivery: { instanceId: health.instanceId, expiresAt: health.serverTime + 90_000 },
+    })
+    const [direct, storage] = await Promise.all([
+      f.bridge.inject({ method: 'POST', url: '/relay/v1/request', headers: { origin }, payload: sealed.envelope }),
+      f.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: sealed.envelope }),
+    ])
+    expect(direct.statusCode).toBe(200)
+    expect(storage.body).toBe(direct.body)
+    expect(f.auth.loginWithPassword).toHaveBeenCalledOnce()
+  })
+  it('refuses to re-execute a lost direct response in a replacement server process', async () => {
+    const first = await fixture()
+    const health = (await first.bridge.inject({ url: '/relay/v1/health' })).json()
+    const sealed = await sealRelayRequest(keys.publicKey, randomUUID(), {
+      ...login(), delivery: { instanceId: health.instanceId, expiresAt: health.serverTime + 90_000 },
+    })
+    await first.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: sealed.envelope })
+    expect(first.auth.loginWithPassword).toHaveBeenCalledOnce()
+    const replacement = await fixture()
+    const retry = await replacement.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: sealed.envelope })
+    const result = apiResponse(await openRelayResponse(sealed.key, sealed.envelope.id, retry.json()))
+    expect(result.status).toBe(503)
+    expect(Buffer.from(result.bodyBase64, 'base64').toString()).toContain('RELAY_DELIVERY_UNCERTAIN')
+    expect(replacement.auth.loginWithPassword).not.toHaveBeenCalled()
+  })
+  it('refuses expired envelopes even after their replay entry has been evicted', async () => {
+    let now = Date.now()
+    const f = await fixture({ now: () => now })
+    const health = (await f.bridge.inject({ url: '/relay/v1/health' })).json()
+    const sealed = await sealRelayRequest(keys.publicKey, randomUUID(), {
+      ...login(), delivery: { instanceId: health.instanceId, expiresAt: now + 90_000 },
+    })
+    await f.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: sealed.envelope })
+    now += 121_000
+    const retry = await f.bridge.inject({ method: 'POST', url: '/relay/v1/request', payload: sealed.envelope })
+    expect(apiResponse(await openRelayResponse(sealed.key, sealed.envelope.id, retry.json())).status).toBe(503)
+    expect(f.auth.loginWithPassword).toHaveBeenCalledOnce()
+  })
+})

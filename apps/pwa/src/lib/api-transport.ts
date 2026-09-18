@@ -1,3 +1,4 @@
+import { createDirectChannel } from './direct-channel'
 import { createStorageRelayFetch } from '@motpavel/storage-relay-web'
 import {
   createRelayKey,
@@ -22,7 +23,7 @@ const REQUEST_TIMEOUT_MS = 75_000
 const SESSION_ROUTES = new Set(['/api/auth/login', '/api/auth/verify', '/api/invites/preview', '/api/invites/accept'])
 
 type Session = { opaque: string; identityId: string | null }
-export type ApiTransportConfig = { bootstrapUrl: string; publicKey: string; storageBucket: string }
+export type ApiTransportConfig = { bootstrapUrl: string; publicKey: string; storageBucket: string; directUrl?: string }
 type RelayFetch = (input: RequestInfo | URL, init?: RequestInit & { idempotencyKey?: string; timeoutMs?: number }) => Promise<Response>
 type Options = {
   fetchImpl?: typeof fetch
@@ -100,6 +101,9 @@ export function createApiTransport(config: ApiTransportConfig, options: Options 
     fetchImpl,
     timeoutMs: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
   })
+  const direct = config.directUrl ? createDirectChannel(config.directUrl, fetchImpl) : undefined
+  const resetDirect = () => direct?.reset()
+  const visibleDirect = () => { if (document.visibilityState === 'visible') resetDirect() }
   const origin = options.origin ?? window.location.origin
   let storage = options.storage
   if (!storage) { try { storage = localStorage } catch { /* Private browser modes may deny storage. */ } }
@@ -142,6 +146,8 @@ export function createApiTransport(config: ApiTransportConfig, options: Options 
   if (typeof window !== 'undefined') {
     window.addEventListener('kabanda:identity-changed', identityChanged)
     window.addEventListener('storage', storageChanged)
+    window.addEventListener('online', resetDirect)
+    document.addEventListener('visibilitychange', visibleDirect)
   }
 
   const request = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -171,9 +177,35 @@ export function createApiTransport(config: ApiTransportConfig, options: Options 
     }
     const exchange = async (id: string, payload: RelayRequestPayload, key?: CryptoKey) => {
       assertCurrent()
-      const sealed = await sealRelayRequest(config.publicKey, id, payload, key)
+      const delivery = await direct?.prepare(abort.signal)
+      assertCurrent()
+      const sealed = await sealRelayRequest(config.publicKey, id, delivery ? { ...payload, delivery } : payload, key)
       assertCurrent()
       const body = JSON.stringify(sealed.envelope)
+      const decode = async (response: Response) => {
+        let wire = JSON.parse(new TextDecoder().decode(await readBoundedResponse(response, abort.signal)))
+        if (wire?.version === 1 && typeof wire.objectUrl === 'string') {
+          const url = approvedRelayObjectUrl(wire.objectUrl, config.storageBucket)
+          const object = await fetchImpl(url, { credentials: 'omit', mode: 'cors', redirect: 'error', cache: 'no-store', signal: abort.signal })
+          if (!object.ok) throw new TypeError('Relay response object is unavailable')
+          wire = JSON.parse(new TextDecoder().decode(await readBoundedResponse(object, abort.signal)))
+        }
+        const result = await openRelayResponse(sealed.key, id, wire)
+        assertCurrent()
+        return result
+      }
+      if (delivery && direct) {
+        try {
+          const result = await decode(await direct.send(body, abort.signal))
+          // A valid application error is not a transport failure and is never replayed.
+          if (result.operation === 'response' && result.status === 503) direct.reset()
+          return result
+        } catch {
+          assertCurrent()
+          direct.failed()
+          // Keep the exact envelope/key/id when the direct response may have been lost.
+        }
+      }
       let deliveryId = id
       let retries = 0
       let response: Response
@@ -203,16 +235,7 @@ export function createApiTransport(config: ApiTransportConfig, options: Options 
         // terminate an offline GPS or check-in queue.
         throw new TypeError('Relay transport could not deliver request')
       }
-      let wire = JSON.parse(new TextDecoder().decode(await readBoundedResponse(response, abort.signal)))
-      if (wire?.version === 1 && typeof wire.objectUrl === 'string') {
-        const url = approvedRelayObjectUrl(wire.objectUrl, config.storageBucket)
-        const object = await fetchImpl(url, { credentials: 'omit', mode: 'cors', redirect: 'error', cache: 'no-store', signal: abort.signal })
-        if (!object.ok) throw new TypeError('Relay response object is unavailable')
-        wire = JSON.parse(new TextDecoder().decode(await readBoundedResponse(object, abort.signal)))
-      }
-      const result = await openRelayResponse(sealed.key, id, wire)
-      assertCurrent()
-      return result
+      return decode(response)
     }
 
     const applicationResponse = (result: RelayResponsePayload): Response => {
@@ -286,6 +309,8 @@ export function createApiTransport(config: ApiTransportConfig, options: Options 
       if (typeof window !== 'undefined') {
         window.removeEventListener('kabanda:identity-changed', identityChanged)
         window.removeEventListener('storage', storageChanged)
+        window.removeEventListener('online', resetDirect)
+        document.removeEventListener('visibilitychange', visibleDirect)
       }
     },
   }
@@ -298,7 +323,7 @@ export function requestApi(input: RequestInfo | URL, init?: RequestInit): Promis
   if (!bootstrapUrl && !publicKey) return fetch(input, init)
   if (!bootstrapUrl || !publicKey) return Promise.reject(new TypeError('Relay deployment configuration is incomplete'))
   try {
-    transport ??= createApiTransport({ bootstrapUrl, publicKey, storageBucket: import.meta.env.VITE_RELAY_BLOB_BUCKET?.trim() ?? '' })
+    transport ??= createApiTransport({ bootstrapUrl, publicKey, storageBucket: import.meta.env.VITE_RELAY_BLOB_BUCKET?.trim() ?? '', directUrl: import.meta.env.VITE_DIRECT_RELAY_URL?.trim() || undefined })
     return transport.request(input, init)
   } catch (error) { return Promise.reject(error) }
 }
