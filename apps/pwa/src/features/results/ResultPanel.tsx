@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { RiderLoader } from '../../app/RiderLoader'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
 import type { RaidProjection } from '../raids/types'
@@ -88,7 +89,7 @@ export function ResultPanel({
     }
   }, [raid.id, result, staleOnly])
 
-  if (!result) return <section className="kb-card" aria-busy={!error}><h2>Загружаем итог рейда…</h2>{error && <p className="kb-error">{error}</p>}</section>
+  if (!result) return <section className="result-shell"><header className="result-completion-details"><h1>Итоги рейда</h1><h2>{raid.title}</h2></header><CompletedRaidRoute identityId={identityId} raid={raid} />{error ? <p className="kb-error" role="alert">{error}</p> : <RiderLoader label="Загружаем статистику" />}</section>
   const rows = metricRows(result.personal, result.team)
   const share = async () => {
     if (!card) return

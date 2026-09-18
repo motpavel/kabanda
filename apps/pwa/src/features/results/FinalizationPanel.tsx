@@ -1,131 +1,73 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError } from '../../lib/http'
-import { CheckInPanel } from '../checkins/CheckInPanel'
+import { useEffect, useRef, useState } from 'react'
+import { RiderLoader } from '../../app/RiderLoader'
 import type { RaidProjection } from '../raids/types'
-import { settleFinalization } from './api'
-import { saveRaidResult } from './cache'
+import { CompletedRaidRoute } from './CompletedRaidRoute'
+import { completeReadyRaid } from './complete'
 import { drainFinalizingServerTail } from './local'
-import {
-  readResultOperationAttempt,
-  resultOperationStorageKey,
-  saveResultOperationAttempt,
-  selectResultOperationAttempt,
-  type ResultOperationAttempt,
-} from './operation'
 
-export function FinalizationPanel({
-  identityId,
-  raid,
-  staleProjection,
-  onCanonicalRefresh,
-  onApplyRaid,
-}: {
+export function FinalizationPanel(props: {
   identityId: string
   raid: RaidProjection
   staleProjection: boolean
   onCanonicalRefresh: () => Promise<unknown>
   onApplyRaid: (raid: RaidProjection) => Promise<unknown>
 }) {
-  const [busy, setBusy] = useState(false)
+  const latest = useRef(props)
+  latest.current = props
+  const inFlight = useRef(false)
+  const retry = useRef<() => void>(() => undefined)
   const [message, setMessage] = useState<string | null>(null)
-  const attempt = useRef<ResultOperationAttempt<{ expectedVersion: number }> | null>(null)
-  const drainInFlight = useRef(false)
-  const drainTimer = useRef<number | null>(null)
-  const drainRef = useRef<() => void>(() => undefined)
-  const drainGeneration = useRef(0)
-  const storageKey = resultOperationStorageKey('settle', identityId, raid.id)
-  const finalization = raid.finalization
-  const deadlineAt = finalization?.deadlineAt ?? null
-
-  const drain = useCallback(async () => {
-    if (
-      drainInFlight.current ||
-      staleProjection ||
-      !navigator.onLine ||
-      document.visibilityState !== 'visible'
-    ) return
-    const generation = drainGeneration.current
-    drainInFlight.current = true
-    try {
-      const result = await drainFinalizingServerTail({ identityId, raidId: raid.id, online: true })
-      await onCanonicalRefresh()
-      const beforeDeadline = deadlineAt && Date.parse(deadlineAt) > Date.now()
-      if (result.mayHaveMore && beforeDeadline && drainGeneration.current === generation) {
-        if (drainTimer.current !== null) window.clearTimeout(drainTimer.current)
-        drainTimer.current = window.setTimeout(() => drainRef.current(), 500)
-      }
-    } finally {
-      drainInFlight.current = false
-    }
-  }, [deadlineAt, identityId, onCanonicalRefresh, raid.id, staleProjection])
+  const [online, setOnline] = useState(() => navigator.onLine)
 
   useEffect(() => {
-    drainGeneration.current += 1
-    attempt.current = readResultOperationAttempt(storageKey)
-    drainRef.current = () => void drain().catch(() => undefined)
-    drainRef.current()
-    const resume = () => drainRef.current()
+    let active = true
+    const update = async () => {
+      if (!active || inFlight.current || document.visibilityState !== 'visible') return
+      setOnline(navigator.onLine)
+      if (!navigator.onLine) return
+      inFlight.current = true
+      try {
+        const current = latest.current
+        if (current.staleProjection) { await current.onCanonicalRefresh(); return }
+        await drainFinalizingServerTail({ identityId: current.identityId, raidId: current.raid.id, online: true }).catch(() => undefined)
+        if (!active) return
+        const next = await completeReadyRaid(current.identityId, current.raid)
+        if (!active) return
+        if (next.state === 'completed') await current.onApplyRaid(next)
+        else await current.onCanonicalRefresh()
+        if (active) setMessage(null)
+      } catch {
+        if (active) {
+          setMessage('Не удалось обновить итог. Повторим автоматически, когда появится связь.')
+          await latest.current.onCanonicalRefresh().catch(() => undefined)
+        }
+      } finally { inFlight.current = false }
+    }
+    const resume = () => { setOnline(navigator.onLine); void update() }
+    retry.current = resume
+    resume()
+    const timer = window.setInterval(resume, 3000)
     window.addEventListener('online', resume)
+    window.addEventListener('offline', resume)
     window.addEventListener('focus', resume)
     document.addEventListener('visibilitychange', resume)
     return () => {
-      drainGeneration.current += 1
+      active = false
+      window.clearInterval(timer)
       window.removeEventListener('online', resume)
+      window.removeEventListener('offline', resume)
       window.removeEventListener('focus', resume)
       document.removeEventListener('visibilitychange', resume)
-      if (drainTimer.current !== null) window.clearTimeout(drainTimer.current)
     }
-  }, [drain, storageKey])
+  }, [props.identityId, props.raid.id])
 
-  const settle = async () => {
-    if (busy || staleProjection || !navigator.onLine || !raid.allowedActions.includes('settle-finalization')) return
-    setBusy(true)
-    setMessage(null)
-    const payload = { expectedVersion: raid.version }
-    const selected = selectResultOperationAttempt(attempt.current, JSON.stringify([raid.id, payload]), payload)
-    attempt.current = selected
-    saveResultOperationAttempt(storageKey, selected)
-    try {
-      const response = await settleFinalization(raid.id, selected.payload.expectedVersion, selected.key)
-      await saveRaidResult(identityId, response.result)
-      await onApplyRaid(response.raid)
-    } catch (error) {
-      setMessage(error instanceof ApiError ? error.message : 'Итог ещё не подтверждён. Повтор использует тот же ключ.')
-      await onCanonicalRefresh()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <>
-      <section className="kb-card result-finalizing">
-        <p className="kb-kicker">Каноническая финализация</p>
-        <h2>Сервер собирает итог</h2>
-        <p className="kb-muted">Новый маршрут, check-in и media intent уже не создаются. Принимаются только известные серверу хвосты.</p>
-        {finalization ? (
-          <>
-            <dl className="result-inventory">
-              <div><dt>Claims</dt><dd>{finalization.pendingCounts.claims}</dd></div>
-              <div><dt>Fallbacks</dt><dd>{finalization.pendingCounts.fallbacks}</dd></div>
-              <div><dt>Media</dt><dd>{finalization.pendingCounts.media}</dd></div>
-            </dl>
-            <p className="kb-muted">Deadline: {new Date(finalization.deadlineAt).toLocaleString('ru-RU')}{finalization.partial ? ' · итог будет partial' : ''}</p>
-          </>
-        ) : <p className="kb-muted">Обновляем finalization projection…</p>}
-        {message && <p className="kb-notice" role="status">{message}</p>}
-        {raid.allowedActions.includes('settle-finalization') && !staleProjection && (
-          <button className="kb-primary raid-primary" type="button" disabled={busy || !navigator.onLine} onClick={settle}>{busy ? 'Фиксируем…' : 'Зафиксировать итог'}</button>
-        )}
-        {!raid.allowedActions.includes('settle-finalization') && <button className="kb-link-button" type="button" disabled={staleProjection || !navigator.onLine} onClick={() => drainRef.current()}>Проверить статус</button>}
-      </section>
-      <CheckInPanel
-        identityId={identityId}
-        raid={raid}
-        staleProjection={staleProjection}
-        onCanonicalRefresh={onCanonicalRefresh}
-        serverTailOnly
-      />
-    </>
-  )
+  return <section className="result-shell">
+    <header className="result-completion-details"><h1>Итоги рейда</h1><h2>{props.raid.title}</h2></header>
+    <CompletedRaidRoute identityId={props.identityId} raid={props.raid} />
+    <section className="kb-card result-saving" aria-label="Сохранение результатов">
+      <RiderLoader label="Сохраняем результаты" />
+      <p role="status">{!online ? 'Нет связи. Итоги появятся после подключения к интернету.' : message ?? 'Сохраняем результаты. Карта и статистика обновятся автоматически.'}</p>
+      {message && online && <button type="button" onClick={() => retry.current()}>Повторить</button>}
+    </section>
+  </section>
 }

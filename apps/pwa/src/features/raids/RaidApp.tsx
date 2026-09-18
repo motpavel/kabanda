@@ -563,6 +563,10 @@ function RaidDetailPage({
     </RaidShell>
   }
 
+  if (raid.state === 'finalizing') return <RaidShell backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
+    <FinalizationPanel identityId={user.id} raid={raid} staleProjection={resource.stale} onCanonicalRefresh={resource.refresh} onApplyRaid={resource.applyRaid} />
+  </RaidShell>
+
   if (raid.state === 'completed') return <RaidShell backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
     <ResultPanel identityId={user.id} raid={raid} staleOnly={resource.stale} />
   </RaidShell>
@@ -622,15 +626,7 @@ function RaidDetailPage({
         </section>
       )}
 
-      {raid.state === 'finalizing' && (
-        <FinalizationPanel
-          identityId={user.id}
-          raid={raid}
-          staleProjection={resource.stale}
-          onCanonicalRefresh={resource.refresh}
-          onApplyRaid={resource.applyRaid}
-        />
-      )}
+
 
       {allowed.has('handoff-navigator') && !resource.stale && handoffCandidates.length > 0 && (
         <section className="kb-card raid-handoff">
@@ -663,7 +659,7 @@ function RaidDetailPage({
         </section>
       )}
 
-      {primary && raid.state !== 'finalizing' && (
+      {primary && (
         <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && (!navigator.onLine || !presenceReady))} onClick={handlePrimary}>{operation === 'readiness' ? 'Получаем свежую геопозицию…' : operation ? 'Подтверждаем…' : primary.kind === 'command' && primary.command === 'start' ? presenceReady ? 'Все здесь — начать рейд' : 'Ждём всю стаю' : primary.label}</button>
       )}
       {allowed.has('cancel') && !resource.stale && <button className="raid-cancel" type="button" disabled={operation === 'cancel'} onClick={() => window.confirm('Отменить рейд для всей команды?') && applyCommand('cancel')}>Отменить рейд</button>}

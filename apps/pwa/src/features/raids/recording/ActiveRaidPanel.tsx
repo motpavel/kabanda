@@ -216,7 +216,7 @@ export function ActiveRaidPanel({
         </header>
         {finishOpen ? <>
           <FinishRaidPanel presentation="sheet" identityId={identityId} raid={raid} flushRoute={recorder.flush} onApplyRaid={onApplyRaid} onCanonicalRefresh={onCanonicalRefresh} />
-          <button className="raid-action-sheet__cancel" type="button" onClick={() => setFinishOpen(false)}>Вернуться к действиям</button>
+          <button className="raid-action-sheet__cancel" type="button" onClick={() => { setFinishOpen(false); setActionsOpen(false) }}>Нет, продолжить рейд</button>
         </> : <div className="raid-action-sheet__list">
           {serverActionAvailable && serverPrimary && <button className="raid-action-sheet__item" type="button" disabled={operationPending} onClick={onServerPrimary}><RaidControlIcon name={raid.state === 'paused' ? 'play' : 'pause'} /><span>{operationPending ? 'Подтверждаем…' : serverPrimary.label}</span></button>}
           {raid.allowedActions.includes('finish') && <button className="raid-action-sheet__item raid-action-sheet__item--finish" type="button" onClick={() => setFinishOpen(true)}><RaidControlIcon name="finish" /><span>Завершить рейд</span></button>}
