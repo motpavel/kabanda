@@ -10,16 +10,18 @@ import { selectPrimaryAction } from './state'
 import type { RaidProjection } from './types'
 import './raids.css'
 
-export function RaidHomeCard({
-  identityId,
-  kabanda,
-  active = true,
-}: {
-  identityId: string
-  kabanda: KabandaSummary
-  active?: boolean
+export function RaidHomeCard({ identityId, kabanda, active = true }: {
+  identityId: string; kabanda: KabandaSummary; active?: boolean
 }) {
   const resource = useActionableRaids(identityId, kabanda.id, kabanda.role, active)
+  return <RaidHomeContent identityId={identityId} kabanda={kabanda} resource={resource} />
+}
+
+/** The dashboard owns the one active read so it can place an ongoing ride
+ * before the decorative banner without mounting duplicate cards or pollers. */
+export function RaidHomeContent({ identityId, kabanda, resource }: {
+  identityId: string; kabanda: KabandaSummary; resource: ReturnType<typeof useActionableRaids>
+}) {
   const actionable = resource.data ?? []
   const resourceState = resource.status
   const resourceMessage = resource.message
@@ -40,17 +42,8 @@ export function RaidHomeCard({
 
   const { current, upcoming, invitations } = splitActionableRaids(actionable, identityId)
   const resourcePolicy = productionResourcePolicy(resourceState, online)
-  const selected =
-    current ??
-    upcoming.find(({ id }) => id === selectedId) ??
-    upcoming[0] ?? null
-  const primary = selected
-    ? selectPrimaryAction(selected, {
-        surface: 'home',
-        online,
-        stale,
-      })
-    : null
+  const selected = current ?? upcoming.find(({ id }) => id === selectedId) ?? upcoming[0] ?? null
+  const primary = selected ? selectPrimaryAction(selected, { surface: 'home', online, stale }) : null
 
   const openRaid = () => {
     if (!selected) return
@@ -63,12 +56,8 @@ export function RaidHomeCard({
         <h2>{current ? 'Сейчас' : 'Ближайшие рейды'}</h2>
         <a href={`${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=raids`}>Все <HomeIcon name="arrow" /></a>
       </div>
-
       {resourceState === 'loading' && <p className="kb-muted">Проверяем, что сейчас важно…</p>}
-
-
       {resourceState === 'stale' && resourceMessage && <p role="status" className="kb-muted">{resourceMessage}</p>}
-
       {(resourceState === 'access-error' || resourceState === 'error') && (
         <div className={resourceState === 'access-error' ? 'kb-error' : 'kb-notice'} role={resourceState === 'access-error' ? 'alert' : 'status'}>
           <strong>{resourceState === 'access-error' ? 'Доступ к рейдам не подтверждён.' : 'Рейды пока не загрузились.'}</strong>
@@ -76,28 +65,19 @@ export function RaidHomeCard({
           <button className="kb-link-button" type="button" onClick={() => { void refresh() }}>Повторить</button>
         </div>
       )}
-
       {invitations.length > 0 && <a className="kb-home-invitation" href={`${appPath('app')}?raid=${encodeURIComponent(invitations[0]!.id)}`}>
         <HomeIcon name="calendar" /><span>{stale ? 'Сохранённое приглашение' : 'Вас ждут в рейде'}<strong>{invitations[0]!.title}</strong></span><HomeIcon name="arrow" />
       </a>}
-
       {!current && upcoming.length > 1 && (
         <div className="kb-home-raid-options" aria-label="Ближайшие рейды">
           {upcoming.slice(0, 3).map((raid) => (
-            <button
-              key={raid.id}
-              type="button"
-              aria-pressed={selected?.id === raid.id}
-              onClick={() => setSelectedId(raid.id)}
-            >
+            <button key={raid.id} type="button" aria-pressed={selected?.id === raid.id} onClick={() => setSelectedId(raid.id)}>
               <HomeIcon name="calendar" /><span><strong>{raid.title}</strong><small>{scheduleLabel(raid.scheduledAt)}</small></span>
             </button>
           ))}
         </div>
       )}
-
       {current && <CurrentRaidCard kabanda={kabanda} raid={current} stale={stale} online={online} onRefresh={() => void refresh()} />}
-
       {selected && !current && (
         <div className="kb-home-raid-summary">
           <span className="kb-home-raid-status">{stale ? (online ? 'Проверяем состояние…' : 'Сохранённый рейд') : stateLabel(selected.state)}</span>
@@ -107,14 +87,13 @@ export function RaidHomeCard({
           {selected.kabandaId !== kabanda.id && <small>Активный рейд другой Кабанды</small>}
         </div>
       )}
-
       {resourcePolicy.renderContent && !selected && <div className="kb-home-no-raid">
         <HomeIcon name="bike" /><h3>Соберёмся на прогулку?</h3>
-        <p>{invitations.length ? 'Ответьте на приглашение или запланируйте свою поездку.' : 'Ближайших поездок пока нет. Выберите время — и позовите своих.'}</p>
+        <p>{invitations.length ? 'Ответьте на приглашение или соберите свою поездку.' : 'Ближайших поездок пока нет. Можно отправиться сейчас или выбрать время встречи.'}</p>
         <RaidHomeCreatePrompt enabled={resourcePolicy.canMutate} kabanda={kabanda} />
-        {!resourcePolicy.canMutate && <p>Создание рейда доступно после подключения к сети и обновления.</p>}
+        <a className="kb-home-route-choice" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=raids`}>Выбрать готовый маршрут <HomeIcon name="arrow" /></a>
+        {!resourcePolicy.canMutate && <p>Для создания поездки подключитесь к сети и обновите данные.</p>}
       </div>}
-
       {primary && selected && !current && (
         <button className="kb-primary raid-primary" type="button" onClick={primary.kind === 'refresh' ? () => void refresh() : openRaid}>
           {primary.label}
@@ -124,35 +103,15 @@ export function RaidHomeCard({
   )
 }
 
-export function RaidHomeCreatePrompt({
-  enabled,
-  kabanda,
-}: {
-  enabled: boolean
-  kabanda: KabandaSummary
-}) {
+export function RaidHomeCreatePrompt({ enabled, kabanda }: { enabled: boolean; kabanda: KabandaSummary }) {
   if (!enabled) return null
-  return <>
-    <a
-      className="kb-link-button kb-primary raid-primary"
-      href={`${appPath('app')}?createRaid=${encodeURIComponent(kabanda.id)}`}
-    >
-      <HomeIcon name="plus" /> Создать рейд
-    </a>
-  </>
+  return <a className="kb-link-button kb-primary raid-primary" href={`${appPath('app')}?createRaid=${encodeURIComponent(kabanda.id)}`}>
+    <HomeIcon name="plus" /> Создать рейд
+  </a>
 }
 
 function stateLabel(state: RaidProjection['state']): string {
-  return {
-    draft: 'Черновик',
-    planned: 'Запланирован',
-    lobby: 'Сбор команды',
-    active: 'В пути',
-    paused: 'Пауза',
-    finalizing: 'Собираем итог',
-    completed: 'Завершён',
-    cancelled: 'Отменён',
-  }[state]
+  return { draft: 'Черновик', planned: 'Запланирован', lobby: 'Сбор команды', active: 'В пути', paused: 'Пауза', finalizing: 'Сохраняем результат', completed: 'Завершён', cancelled: 'Отменён' }[state]
 }
 
 function scheduleLabel(value: string | null): string {
