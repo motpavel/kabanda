@@ -8,6 +8,8 @@ import {
 } from './support.js'
 import { installRecorderGpsProbe } from './recorder-gps-probe.js'
 
+test.use({ actionTimeout: 15_000 })
+
 test('owner completes one canonical raid and opens the next raid form', async ({ context, page }, testInfo) => {
   test.setTimeout(150_000)
   const identity = fixture<FixtureIdentity>('prepare')
@@ -112,7 +114,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
       return 999999
     }
   })
-  await page.getByRole('button', { name: 'Собрать Кабанду' }).click()
+  await page.getByRole('button', { name: 'К подготовке', exact: true }).click()
   await page.waitForURL(/\/app\?raid=[0-9a-f-]+$/)
   const raidId = new URL(page.url()).searchParams.get('raid')
   expect(raidId).toBeTruthy()
@@ -139,7 +141,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   const triggerBox = await actionsTrigger.boundingBox()
   const iconBox = await actionsTrigger.locator('svg').boundingBox()
   expect(Math.abs((triggerBox!.x + triggerBox!.width / 2) - (iconBox!.x + iconBox!.width / 2))).toBeLessThan(1)
-  expect(Math.abs((triggerBox!.y + triggerBox!.height / 2) - (iconBox!.y + iconBox!.width / 2))).toBeLessThan(1)
+  expect(Math.abs((triggerBox!.y + triggerBox!.height / 2) - (iconBox!.y + iconBox!.height / 2))).toBeLessThan(1)
   await actionsTrigger.click()
   const actionsDialog = page.getByRole('dialog')
   await expect(actionsDialog.getByRole('button')).toHaveText(['', 'Поставить на паузу', 'Завершить рейд'])
