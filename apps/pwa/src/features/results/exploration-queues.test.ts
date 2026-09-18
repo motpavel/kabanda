@@ -90,6 +90,9 @@ describe('exploration reads never mutate operational queues', () => {
     const history = pagedHistoryResource(identity, team, 'all')
     const before = await queuedData()
     const pending = history.refresh()
+    // ReadCache schedules the fetch in a microtask. Observe the request first,
+    // otherwise this would only test cancellation before a request was sent.
+    await vi.waitFor(() => expect(requestJson).toHaveBeenCalledTimes(1))
     resetRaidResources('other-identity')
     await activateIdentity('other-identity')
     resolve(historyPage)
