@@ -1,0 +1,7 @@
+/* Keep geometry while permissions/data are checked. No new transitions or
+   hidden active map are needed for screen continuity. */
+.prd-raids__create-actions [aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.prd-history-loading { min-block-size: 10rem; display: grid; align-content: start; gap: 1rem; }
+.prd-history-loading__card { height: 7rem; border-radius: 1rem; background: var(--kb-surface, #f1f0ed); }
+.kb-team-metric strong { font-variant-numeric: tabular-nums; min-inline-size: 2ch; display: inline-block; }
+.kb-map-list-panel .kb-points-pending { padding: 1.5rem; min-block-size: 8rem; }

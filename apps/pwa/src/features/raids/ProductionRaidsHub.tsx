@@ -118,7 +118,7 @@ export function ProductionRaidsHub({
     <section className="prd-raids" data-testid="production-raids-hub" aria-busy={resourceState === 'loading'} aria-label="Рейды Кабанды">
       <header className="rdp-heading prd-raids__heading">
         <h1>Рейды</h1>
-        <ProductionCreateActions enabled={canMutate} kabandaId={kabanda.id} />
+        <ProductionCreateActions enabled={canMutate} kabandaId={kabanda.id} reason={!online ? 'Для создания понадобится интернет.' : resourceState === 'loading' || resourceState === 'stale' ? 'Проверяем доступ к созданию.' : 'Доступ не подтверждён. Обновите данные.'} />
       </header>
 
       {resourceState === 'stale' && resourceMessage && <p role="status">{resourceMessage}</p>}
@@ -178,28 +178,35 @@ export function ProductionRaidsHub({
       )}
       {resourceState !== 'access-error' && <RaidTemplateCatalog identityId={identityId} kabandaId={kabanda.id} active={active} />}
       {resourceState !== 'access-error' && (historyState === 'loading'
-        ? <p className="kb-muted" aria-busy="true">Загружаем историю…</p>
-        : historyState === 'error'
-          ? <div role="status"><p>История пока не загрузилась.</p><button type="button" onClick={() => void refreshHistory()}>Повторить</button></div>
+        ? <section className="rdp-section prd-history-loading" aria-busy="true" aria-label="Загружаем историю"><h2>История</h2><p className="kb-muted">Загружаем историю…</p><div className="prd-history-loading__card" aria-hidden="true" /></section>
+        : historyState === 'error' || historyState === 'access-error'
+          ? <div role="status"><p>{historyState === 'access-error' ? 'Доступ к истории не подтверждён.' : 'История пока не загрузилась.'}</p><button type="button" onClick={() => void refreshHistory()}>Повторить</button></div>
           : <ProductionHistory coverImage={coverImage} history={history} />)}
     </section>
   )
 }
 
-export function ProductionCreateActions({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
-  if (!enabled) return null
+export function ProductionCreateActions({ enabled, kabandaId, reason = 'Доступ не подтверждён. Обновите данные.' }: { enabled: boolean; kabandaId: string; reason?: string }) {
   return <nav aria-label="Создание рейда и маршрута" className="prd-raids__create-actions">
     <a
       className="rdp-new prd-raids__new"
       data-testid="production-new-raid"
-      href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
+      role="link"
+      aria-disabled={!enabled || undefined}
+      tabIndex={enabled ? undefined : 0}
+      title={enabled ? undefined : reason}
+      href={enabled ? `${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}` : undefined}
     >
       Выйти в рейд
     </a>
     <a
       className="rdp-new prd-raids__new prd-raids__new--template"
       data-testid="production-new-template"
-      href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}
+      role="link"
+      aria-disabled={!enabled || undefined}
+      tabIndex={enabled ? undefined : 0}
+      title={enabled ? undefined : reason}
+      href={enabled ? `${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}` : undefined}
     >
       <Icon name="route" size={18} /> Новый маршрут
     </a>
@@ -350,7 +357,7 @@ function RaidEmptyState({
   title: string
 }) {
   return <article className="prd-empty-story">
-    <img alt="" decoding="async" loading="lazy" src={image} />
+    <img alt="" decoding="async" loading="lazy" width="1792" height="896" src={image} />
     <div className="prd-empty-story__shade" />
     <div className="prd-empty-story__content">
       <span className="prd-empty-story__eyebrow"><Icon name={icon} size={18} />{eyebrow}</span>
@@ -370,7 +377,7 @@ function ProductionHistoryCard({ coverImage, raid }: { coverImage: string; raid:
     href={`${appPath('app')}?raid=${encodeURIComponent(raid.raidId)}`}
   >
     <span className="rdp-history-card__hero prd-history-card__hero">
-      <img alt="" decoding="async" loading="lazy" src={coverImage} />
+      <img alt="" decoding="async" loading="lazy" width="1792" height="896" src={coverImage} />
       <span className={`rdp-history-achievement rdp-history-achievement--${achievement.tone}`}><Icon name={achievement.tone === 'record' ? 'trophy' : achievement.tone === 'personal' ? 'flag' : 'pin'} size={18} />{achievement.label}</span>
     </span>
     <span className="rdp-history-card__body">

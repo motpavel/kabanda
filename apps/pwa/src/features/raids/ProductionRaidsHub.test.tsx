@@ -16,7 +16,7 @@ const kabanda: KabandaSummary = {
 }
 
 describe('ProductionRaidsHub shell', () => {
-  it('starts in an explicit loading state without exposing create mutations', () => {
+  it('starts with stable disabled actions without exposing create mutations', () => {
     const markup = renderToStaticMarkup(<ProductionRaidsHub identityId="owner-id" kabanda={kabanda} />)
 
     expect(markup).toContain('data-testid="production-raids-hub"')
@@ -25,8 +25,11 @@ describe('ProductionRaidsHub shell', () => {
     // for the slowest response before mounting another loader.
     expect(markup).toContain('data-testid="production-route-catalog"')
     expect(markup).toContain('Загружаем историю…')
-    expect(markup).not.toContain('data-testid="production-new-raid"')
-    expect(markup).not.toContain('data-testid="production-new-template"')
+    expect(markup).toContain('data-testid="production-new-raid"')
+    expect(markup).toContain('data-testid="production-new-template"')
+    expect(markup).not.toContain('href="/app?createRaid=')
+    expect(markup).not.toContain('href="/app?createRaidTemplate=')
+    expect(markup).toContain('aria-disabled="true"')
     expect(markup).not.toContain('Северное кольцо')
     expect(markup).not.toContain('Центр на закате')
   })
@@ -44,8 +47,12 @@ describe('ProductionRaidsHub shell', () => {
     expect(markup).toContain('Новый маршрут')
   })
 
-  it('hides both create mutations from a read-only resource state', () => {
-    expect(renderToStaticMarkup(<ProductionCreateActions enabled={false} kabandaId={kabanda.id} />)).toBe('')
+  it('keeps both action positions but removes navigation until access is verified', () => {
+    const markup = renderToStaticMarkup(<ProductionCreateActions enabled={false} kabandaId={kabanda.id} />)
+    expect(markup).toContain('data-testid="production-new-raid"')
+    expect(markup).toContain('data-testid="production-new-template"')
+    expect(markup.match(/aria-disabled="true"/g)).toHaveLength(2)
+    expect(markup).not.toContain('href=')
   })
 
   it('keeps both create actions alongside a nonempty raid history', () => {

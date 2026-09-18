@@ -3,6 +3,7 @@ type Snapshot = { href: string; position: Position; state: Record<string, unknow
 type Guard = { shouldBlock: (destination: URL) => boolean; message: string }
 const POSITION = 'kabanda.navigation.v1'
 const listeners = new Set<() => void>()
+const beforeListeners = new Set<() => void>()
 const guards = new Map<symbol, Guard>()
 let committed: Snapshot | null = null
 let restoring = false
@@ -23,6 +24,7 @@ function capture(): Snapshot {
   return { href: window.location.href, position, state }
 }
 function publish() { for (const listener of listeners) listener() }
+function beforeNavigation() { for (const listener of beforeListeners) listener() }
 function allows(destination: string): boolean {
   if (restoring) return false
   const url = new URL(destination, window.location.href)
@@ -65,12 +67,15 @@ function onPopState(event: PopStateEvent) {
     restoreFrom(destination)
     return
   }
+  beforeNavigation()
   committed = capture()
   publish()
 }
 function ensure() {
   if (committed || typeof window === 'undefined') return
   committed = capture()
+  // Browser restoration must not race the identity-scoped screen restoration.
+  window.history.scrollRestoration = 'manual'
   // Capture phase precedes route subscribers: a refused Back never unmounts
   // the active map while the browser restores the approved history entry.
   window.addEventListener('popstate', onPopState, true)
@@ -84,6 +89,11 @@ export function subscribeAppLocation(listener: () => void) {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
+export function subscribeBeforeAppNavigation(listener: () => void) {
+  ensure()
+  beforeListeners.add(listener)
+  return () => { beforeListeners.delete(listener) }
+}
 export function approveAppNavigation(href: string): boolean {
   ensure()
   return allows(href)
@@ -92,6 +102,7 @@ export function approveAppNavigation(href: string): boolean {
 export function pushApprovedAppLocation(href: string) {
   ensure()
   if (!committed || restoring) return
+  beforeNavigation()
   const position = { ...committed.position, index: committed.position.index + 1 }
   window.history.pushState(stateWithPosition(null, position), '', href)
   committed = capture()
@@ -100,6 +111,7 @@ export function pushApprovedAppLocation(href: string) {
 }
 export function replaceAppLocation(href: string): boolean {
   if (!approveAppNavigation(href) || !committed) return false
+  beforeNavigation()
   window.history.replaceState(stateWithPosition(window.history.state, committed.position), '', href)
   committed = capture()
   publish()
