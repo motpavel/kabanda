@@ -1,0 +1,5 @@
+.prd-history-pagination, .prd-history-page-error { display: grid; justify-items: center; gap: 8px; margin-top: 16px; }
+.prd-history-pagination button, .prd-history-page-error button { min-height: 44px; min-width: 150px; padding: 10px 18px; border: 1px solid var(--rdp-line, #e4e4e7); border-radius: 12px; background: #fff; color: var(--rdp-ink, #17181b); font: inherit; }
+.prd-history-pagination button:disabled, .prd-history-page-error button:disabled { opacity: .65; cursor: default; }
+.prd-history-page-error p { margin: 0; text-align: center; }
+.prd-history-pagination small { color: var(--rdp-muted, #696b72); }

@@ -11,6 +11,7 @@ import { SmtpMagicLinkMailer } from './mailer.js'
 import { DatabaseKabandaService } from './kabandas.js'
 import { DatabaseRaidService } from './raids.js'
 import { DatabaseRaidTemplateService } from './raid-templates.js'
+import { registerExplorationRoutes } from './exploration-routes.js'
 import { buildRelayBridge } from './relay-bridge.js'
 import { S3RelayBlobStore } from './relay-blob-store.js'
 
@@ -50,6 +51,7 @@ const app = await buildApp({
   config,
   readiness: () => assertDatabaseReady(database, config.EXPECTED_MIGRATION),
 })
+await registerExplorationRoutes(app, { auth, config, database })
 
 const relay = config.RELAY_ENABLED ? await buildRelayBridge({
   app,
