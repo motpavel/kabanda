@@ -5,10 +5,10 @@ import { ApiError, evictApiReads } from '../../lib/http'
 import { subscribeConfirmedWrites } from '../../lib/api-events'
 import { clearPrivateImageCache } from '../../lib/CachedImage'
 import { offlineDb } from '../offline/db'
-import { listRaidHistory, getKabandaProgress } from '../results/api'
-import { readRaidHistory, readKabandaProgress, newestFirst } from '../results/cache'
+import { listRaidHistory, getKabandaProgress, getRaidResult } from '../results/api'
+import { readRaidHistory, readKabandaProgress, readRaidResult, validResult, newestFirst } from '../results/cache'
 import { isHistoryWindow } from '../results/history-pagination'
-import type { RaidHistoryPage, KabandaProgress } from '../results/types'
+import type { RaidHistoryPage, KabandaProgress, RaidResult } from '../results/types'
 import { getRaid, listActionableRaids } from './api'
 import { actionableStates, isRaidProjection, raidReadDb, raidReadKey, readSnapshot, readRaidProjection, saveRaidProjection, writeSnapshot } from './cache'
 import { useVisibleRead } from './read-refresh'
@@ -16,7 +16,7 @@ import type { RaidProjection } from './types'
 import type { ProductionResourceState } from './production-model'
 
 type State<T> = { data: T | null; status: ProductionResourceState; message: string | null; savedAt: string | null }
-type Kind = 'actionable' | 'raid' | 'history' | 'progress' | 'point-progress'
+type Kind = 'actionable' | 'raid' | 'history' | 'progress' | 'point-progress' | 'result'
 type KabandaRole = 'owner' | 'member'
 const entries = new Map<string, RaidResource<unknown>>()
 const deniedTeams = new Set<string>()
@@ -92,6 +92,7 @@ export class RaidResource<T> {
   }
   accept(value: T, persist = true, status: ProductionResourceState = 'ready') {
     if (this.retired) return
+    if (this.kind === 'result' && (!validResult(value) || value.raid.id !== this.id || value.raid.kabandaId !== this.kabandaId)) return
     const owner = this.kind === 'raid' && isRaidProjection(value) ? value.kabandaId : this.kabandaId
     if (owner && deniedTeams.has(teamKey(this.identityId, owner))) {
       this.kabandaId = owner
@@ -122,6 +123,7 @@ export class RaidResource<T> {
       const key = JSON.stringify([this.identityId, this.kabandaId])
       if (this.kind === 'history') await offlineDb.raidHistory.delete(key)
       if (this.kind === 'progress') await offlineDb.kabandaProgress.delete(key)
+      if (this.kind === 'result') await offlineDb.raidResults.delete(JSON.stringify([this.identityId, this.id]))
     }).catch(() => undefined)
   }
   deny() {
@@ -129,9 +131,14 @@ export class RaidResource<T> {
     this.pending = null
     this.hydrated = true
     this.set({ data: null, status: 'access-error', savedAt: null, message: 'Доступ отозван или ресурс недоступен.' })
+    // A detail denial must also fence its pending result and disk hydration.
+    // Do not leave a hidden result ready to reappear on the next visit.
+    if (this.kind === 'raid') for (const entry of entries.values()) {
+      if (entry.identityId === this.identityId && entry.kind === 'result' && entry.id === this.id) entry.deny()
+    }
     this.writes = this.writes.catch(() => undefined).then(async () => {
       await raidReadDb.snapshots.delete(this.key)
-      if (this.kind === 'raid') {
+      if (this.kind === 'raid' || this.kind === 'result') {
         const key = JSON.stringify([this.identityId, this.id])
         await Promise.all([offlineDb.raidProjections.delete(key), offlineDb.raidMapCache.delete(key), offlineDb.raidResults.delete(key)])
       }
@@ -149,6 +156,10 @@ export class RaidResource<T> {
         const legacy = await readRaidProjection(this.identityId, this.id)
         value = legacy?.raid; savedAt = legacy?.savedAt
       }
+      if (!cached && this.kind === 'result') {
+        const legacy = await readRaidResult(this.identityId, this.id)
+        value = legacy?.result; savedAt = legacy?.savedAt
+      }
       // The old history cache only had the first 12-result page. Do not apply
       // that page to another limit, cursor or filter.
       if (!cached && this.kind === 'history' && this.key === raidReadKey(this.identityId, this.kabandaId, 'history', { limit: 12, cursor: null })) {
@@ -162,7 +173,9 @@ export class RaidResource<T> {
       if (!current() || this.state.data !== null) return
       if (this.kind === 'raid' && isRaidProjection(value)) this.kabandaId = value.kabandaId
       if (deniedTeams.has(teamKey(this.identityId, this.kabandaId))) { this.deny(); return }
-      if (validSnapshot(this.kind, value) && savedAt) this.set({ data: value as T, status: 'stale',
+      const resultContextMatches = this.kind !== 'result' ||
+        (validResult(value) && value.raid.id === this.id && value.raid.kabandaId === this.kabandaId)
+      if (resultContextMatches && validSnapshot(this.kind, value) && savedAt) this.set({ data: value as T, status: 'stale',
         message: this.state.message ?? (online() ? null : 'Нет соединения. Показана сохранённая копия.'), savedAt })
       else if (!online()) this.set({ ...this.state, status: 'error', message: 'Нет соединения и сохранённой копии.' })
     } catch { if (current() && !online()) this.set({ ...this.state, status: 'error', message: 'Не удалось прочитать сохранённую копию.' }) }
@@ -197,6 +210,7 @@ export class RaidResource<T> {
       if (!current()) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
         if (this.kind === 'raid') { this.deny(); clearPrivateImageCache(); await removeFromLists(this.identityId, this.id) }
+        else if (this.kind === 'result') { this.deny(); clearPrivateImageCache() }
         else if (this.kind === 'point-progress' && reason.code === 'POINT_COLLECTION_UNAVAILABLE') this.deny()
         else await revokeTeam(this.identityId, this.kabandaId)
         return
@@ -214,6 +228,7 @@ export class RaidResource<T> {
 
 function validSnapshot(kind: Kind, value: unknown): boolean {
   if (kind === 'raid') return isRaidProjection(value)
+  if (kind === 'result') return validResult(value)
   if (kind === 'actionable') return Array.isArray(value) && value.every(isRaidProjection)
   if (kind === 'point-progress') return pointProgressSchema.safeParse(value).success
   if (!value || typeof value !== 'object') return false
@@ -231,12 +246,13 @@ function validSnapshot(kind: Kind, value: unknown): boolean {
 /** Feature read models use the same lifecycle, identity, revocation and disk
  * fences. They must not create a parallel permission/cache store. */
 export function resource<T>(identityId: string, kabandaId: string, kind: Kind, id: string, params: unknown, load: () => Promise<T>) {
-  const key = raidReadKey(identityId, kind === 'raid' ? id : kabandaId, kind, params)
+  const key = raidReadKey(identityId, kind === 'raid' || kind === 'result' ? id : kabandaId, kind, params)
   let entry = entries.get(key)
   if (!entry) {
     entry = new RaidResource(identityId, kabandaId, kind, id, key, load)
     entries.set(key, entry)
-    if (deniedTeams.has(teamKey(identityId, kabandaId))) entry.deny()
+    if (deniedTeams.has(teamKey(identityId, kabandaId)) || (kind === 'result' &&
+      entries.get(raidReadKey(identityId, id, 'raid', null))?.state.status === 'access-error')) entry.deny()
   }
   return entry as RaidResource<T>
 }
@@ -251,6 +267,12 @@ export const historyResource = (identityId: string, kabandaId: string, limit = 1
   resource<RaidHistoryPage>(identityId, kabandaId, 'history', kabandaId, { limit, cursor: cursor ?? null }, () => listRaidHistory(kabandaId, limit, cursor))
 export const progressResource = (identityId: string, kabandaId: string) =>
   resource<KabandaProgress>(identityId, kabandaId, 'progress', kabandaId, null, () => getKabandaProgress(kabandaId))
+export const resultResource = (identityId: string, kabandaId: string, raidId: string) =>
+  resource<RaidResult>(identityId, kabandaId, 'result', raidId, { kabandaId }, async () => {
+    const result = await getRaidResult(raidId)
+    if (!validResult(result) || result.raid.id !== raidId || result.raid.kabandaId !== kabandaId) throw new TypeError('Result context mismatch')
+    return result
+  })
 
 async function removeFromLists(identityId: string, raidId: string) {
   for (const entry of entries.values()) if (entry.identityId === identityId && entry.kind === 'actionable' && Array.isArray(entry.state.data)) {

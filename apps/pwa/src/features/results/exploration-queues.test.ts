@@ -4,7 +4,7 @@ import { ApiError, requestJson } from '../../lib/http'
 import { offlineDb } from '../offline/db'
 import { activateIdentity, enqueueOperation } from '../offline/ledger'
 import { raidReadDb } from '../raids/cache'
-import { resetRaidResources } from '../raids/resources'
+import { resetRaidResources, resultResource } from '../raids/resources'
 import { pagedHistoryResource, pointProgressResource } from './exploration-resources'
 
 vi.mock('../../lib/http', async importOriginal => ({ ...await importOriginal<typeof import('../../lib/http')>(), requestJson: vi.fn() }))
@@ -80,6 +80,23 @@ describe('exploration reads never mutate operational queues', () => {
     expect(history.state).toMatchObject({ status: 'access-error', data: null })
     expect(progress.state).toMatchObject({ status: 'access-error', data: null })
     expect(await raidReadDb.snapshots.count()).toBe(0)
+    expect(await queuedData()).toEqual(before)
+  })
+
+  it('result permission denial leaves GPS, check-in attempts, fallback and actual photo bytes untouched', async () => {
+    const before = await queuedData()
+    vi.mocked(requestJson).mockResolvedValue({ result: {
+      schemaVersion: 1, raid: { id: raid, kabandaId: team, title: 'Итоги', startedAt: at, completedAt: at, partial: true },
+      personal: metrics, team: metrics, participants: [{ userId: identity, displayName: 'Участник', metrics }],
+    } })
+    const entry = resultResource(identity, team, raid)
+    await entry.refresh(); await entry.settled()
+    expect(entry.state.status).toBe('ready')
+    expect(await raidReadDb.snapshots.get(entry.key)).toBeDefined()
+    vi.mocked(requestJson).mockRejectedValue(new ApiError('FORBIDDEN', 'Access revoked', 403))
+    await entry.refresh(); await entry.settled()
+    expect(entry.state).toMatchObject({ data: null, status: 'access-error' })
+    expect(await raidReadDb.snapshots.get(entry.key)).toBeUndefined()
     expect(await queuedData()).toEqual(before)
   })
 

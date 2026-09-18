@@ -1,32 +1,36 @@
-import { useEffect, useState } from 'react'
-import { RiderLoader } from '../../app/RiderLoader'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
+import { resultResource, useRaidResource } from '../raids/resources'
 import type { RaidProjection } from '../raids/types'
-import { getRaidResult, getShareCard } from './api'
-import { readRaidResult, saveRaidResult } from './cache'
+import { getShareCard } from './api'
 import { clearResultOperationAttempt, resultOperationStorageKey } from './operation'
 import { shareResultCard } from './share'
 import { metricRows } from './state'
-import type { RaidResult } from './types'
 import { CompletedRaidRoute } from './CompletedRaidRoute'
 import { RaidCompletionHero } from './RaidCompletionHero'
 
-export function ResultPanel({
-  identityId,
-  raid,
-  staleOnly,
-}: {
-  identityId: string
-  raid: RaidProjection
-  staleOnly: boolean
-}) {
-  const [result, setResult] = useState<RaidResult | null>(null)
-  const [staleAt, setStaleAt] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+type ResultProps = { identityId: string; raid: RaidProjection; staleOnly: boolean }
+
+export function ResultPanel(props: ResultProps) {
+  return <ResultContent key={JSON.stringify([props.identityId, props.raid.kabandaId, props.raid.id])} {...props} />
+}
+
+function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
+  const entry = useMemo(() => resultResource(identityId, raid.kabandaId, raid.id), [identityId, raid.kabandaId, raid.id])
+  const state = useRaidResource(entry, !staleOnly && raid.state === 'completed', null)
+  const result = state.data
+  const denied = state.status === 'access-error'
+  const [retrying, setRetrying] = useState(false)
   const [card, setCard] = useState<{ blob: Blob; url: string } | null>(null)
+  const [cardError, setCardError] = useState(false)
+  const [cardRetry, setCardRetry] = useState(0)
   const [shareMessage, setShareMessage] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
+  const sharePending = useRef(false)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const loading = state.status === 'loading' || retrying
+  const canUseResult = Boolean(result) && state.status === 'ready' && !staleOnly && online && !denied
 
   useEffect(() => {
     const updateConnection = () => setOnline(navigator.onLine)
@@ -39,109 +43,96 @@ export function ResultPanel({
   }, [])
 
   useEffect(() => {
-    let active = true
-    const load = async () => {
-      if (!staleOnly) {
-        try {
-          const canonical = await getRaidResult(raid.id)
-          if (!active) return
-          setResult(canonical)
-          setStaleAt(null)
-          setError(null)
-          await saveRaidResult(identityId, canonical).catch(() => undefined)
-          const finishKey = resultOperationStorageKey('finish', identityId, raid.id)
-          const finishAttempt = readSessionKey(finishKey)
-          if (finishAttempt) clearResultOperationAttempt(finishKey, finishAttempt)
-          const settleKey = resultOperationStorageKey('settle', identityId, raid.id)
-          const settleAttempt = readSessionKey(settleKey)
-          if (settleAttempt) clearResultOperationAttempt(settleKey, settleAttempt)
-          return
-        } catch (reason) {
-          if (reason instanceof ApiError && reason.status < 500) {
-            if (active) setError(reason.message)
-            return
-          }
-        }
-      }
-      const cached = await readRaidResult(identityId, raid.id)
-      if (!active) return
-      if (cached) {
-        setResult(cached.result)
-        setStaleAt(cached.savedAt)
-      } else setError('Итог ещё не сохранён на этом устройстве. Подключитесь к интернету.')
+    if (!canUseResult) return
+    // Only a fresh confirmed result clears completion attempts. Cached metrics
+    // never authorize a write, change an outbox, or imply successful settlement.
+    for (const kind of ['finish', 'settle'] as const) {
+      const key = resultOperationStorageKey(kind, identityId, raid.id)
+      const attempt = readSessionKey(key)
+      if (attempt) clearResultOperationAttempt(key, attempt)
     }
-    void load()
-    return () => { active = false }
-  }, [identityId, raid.id, staleOnly])
+  }, [canUseResult, identityId, raid.id])
 
   useEffect(() => {
-    if (!result || staleOnly || !navigator.onLine) return
+    setCard(null)
+    setCardError(false)
+    setShareMessage(null)
+    if (!canUseResult) return
     let active = true
     let url: string | null = null
+    const current = entry.readFence()
     getShareCard(raid.id).then((blob) => {
-      if (!active) return
+      if (!active || !current()) return
       url = URL.createObjectURL(blob)
       setCard({ blob, url })
-    }).catch(() => undefined)
+    }).catch((reason: unknown) => {
+      if (!active || !current()) return
+      if (reason instanceof ApiError && [401, 403].includes(reason.status)) entry.deny()
+      else setCardError(true)
+    })
     return () => {
       active = false
       if (url) URL.revokeObjectURL(url)
     }
-  }, [raid.id, result, staleOnly])
+  }, [raid.id, result, canUseResult, entry, cardRetry])
 
-  if (!result) return <section className="result-shell"><header className="result-completion-details"><h1>Итоги рейда</h1><h2>{raid.title}</h2></header><CompletedRaidRoute identityId={identityId} raid={raid} />{error ? <p className="kb-error" role="alert">{error}</p> : <RiderLoader label="Загружаем статистику" />}</section>
-  const rows = metricRows(result.personal, result.team)
+  const retry = async () => {
+    if (retrying || !online || staleOnly) return
+    setRetrying(true)
+    try { await state.refresh() } finally { setRetrying(false) }
+  }
   const share = async () => {
-    if (!card) return
+    if (!card || !result || !canUseResult || sharePending.current) return
+    sharePending.current = true
+    setSharing(true)
+    const current = entry.readFence()
     try {
       const outcome = await shareResultCard(card.blob, result.raid.title, `kabanda-${result.raid.id}.png`)
-      setShareMessage(outcome === 'shared' ? 'Карточка передана системному меню.' : 'Карточка скачана на устройство.')
+      if (current()) setShareMessage(outcome === 'shared' ? 'Карточка передана системному меню.' : 'Карточка скачана на устройство.')
     } catch {
-      setShareMessage('Не удалось поделиться. Карточку можно скачать повторным нажатием.')
+      if (current()) setShareMessage('Не удалось поделиться. Попробуйте ещё раз.')
+    } finally {
+      sharePending.current = false
+      setSharing(false)
     }
   }
+  const rows = result ? metricRows(result.personal, result.team) : []
+  const error = denied ? 'Результат недоступен для просмотра. Проверьте доступ и повторите.'
+    : state.message ?? (state.status === 'error' ? 'Не удалось загрузить итог. Повторите попытку.' : null)
   return (
     <section className="result-shell">
-      <RaidCompletionHero result={result} />
-      <div className="result-completion-details">
-        <h2>{result.raid.title}</h2>
-        <p>{new Date(result.raid.completedAt).toLocaleString('ru-RU')}</p>
-        {result.raid.partial && <p className="kb-stale">Неполный итог · несинхронизированные данные не включены</p>}
+      {!denied && <RaidCompletionHero key="completion" result={result} />}
+      <div className="result-completion-details" key="details">
+        <h1 className="kb-visually-hidden">Итоги рейда</h1>
+        <h2>{raid.title}</h2>
+        {result && <p>{new Date(result.raid.completedAt).toLocaleString('ru-RU')}</p>}
+        {result?.raid.partial && <p className="kb-stale">Неполный итог · несинхронизированные данные не включены</p>}
       </div>
-      {staleAt && <p className="kb-stale">Сохранённая копия от {new Date(staleAt).toLocaleString('ru-RU')}.</p>}
-      <CompletedRaidRoute identityId={identityId} raid={raid} />
-      <div className="result-metrics" role="table" aria-label="Личные и командные метрики">
+      {state.savedAt && !denied && <p className="kb-stale" key="saved">Сохранённая копия от {new Date(state.savedAt).toLocaleString('ru-RU')}.</p>}
+      {!denied && <CompletedRaidRoute key="route" identityId={identityId} raid={raid} />}
+      {!result && loading && <p className="kb-muted" role="status" key="loading">Загружаем статистику…</p>}
+      {error && <div className="kb-error" role="alert" key="error"><p>{error}</p><button type="button" disabled={loading || !online || staleOnly} onClick={() => void retry()}>Повторить загрузку итогов</button></div>}
+      {result && <div className="result-metrics" role="table" aria-label="Личные и командные метрики" key="metrics">
         <div className="result-metrics__head" role="row"><span>Метрика</span><strong>Лично</strong><strong>Команда</strong></div>
         {rows.map((row) => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}
-      </div>
-      <section className="kb-card"><p className="kb-kicker">Участники</p><ul className="result-participants">{result.participants.map((participant) => <li key={participant.userId}><strong>{participant.displayName}</strong><span>{participant.metrics.uniquePoints} точек · {participant.metrics.photos} фото</span></li>)}</ul></section>
-      {card && <section className="kb-card result-share"><img src={card.url} alt="Карточка с итогами рейда" /><button className="result-share__button" type="button" onClick={share}>Поделиться карточкой</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
-      <ResultNextRaidAction enabled={!staleOnly && online} kabandaId={result.raid.kabandaId} />
-      <a className="result-history-link" href={`${appPath('app')}?kabanda=${encodeURIComponent(result.raid.kabandaId)}&tab=raids`}>К завершённым рейдам</a>
+      </div>}
+      {result && <section className="kb-card" key="participants"><p className="kb-kicker">Участники</p><ul className="result-participants">{result.participants.map((participant) => <li key={participant.userId}><strong>{participant.displayName}</strong><span>{participant.metrics.uniquePoints} точек · {participant.metrics.photos} фото</span></li>)}</ul></section>}
+      {card && canUseResult && <section className="kb-card result-share" key="share"><img src={card.url} width="1080" height="1350" alt="Карточка с итогами рейда" /><button className="result-share__button" type="button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Открываем меню…' : 'Поделиться карточкой'}</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
+      {cardError && canUseResult && <div className="kb-notice" role="status" key="share-error">Карточку для друзей не удалось подготовить. <button type="button" onClick={() => setCardRetry(value => value + 1)}>Повторить подготовку карточки</button></div>}
+      {result && <ResultNextRaidAction key="next" enabled={canUseResult} kabandaId={result.raid.kabandaId} />}
+      <a key="history" className="result-history-link" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>К завершённым рейдам</a>
     </section>
   )
 }
 
 export function ResultNextRaidAction({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
-  if (!enabled) return <a
-    className="kb-link-button result-next"
-    href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}
-  >
-    Вернуться к истории
-  </a>
-  return <a
-    className="kb-link-button kb-primary raid-primary result-next"
-    href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}
-  >
-    Запланировать следующий рейд
-  </a>
+  if (!enabled) return <a className="kb-link-button result-next" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>Вернуться к истории</a>
+  return <a className="kb-link-button kb-primary raid-primary result-next" href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}>Запланировать следующий рейд</a>
 }
 
 function readSessionKey(storageKey: string): string | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null') as { key?: unknown } | null
     return typeof value?.key === 'string' ? value.key : null
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
