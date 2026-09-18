@@ -8,17 +8,20 @@ import { PointInfoSheet } from '../checkins/PointInfoSheet'
 import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
-import { transitionScreen } from '../../app/transitions'
+import { navigateApp } from '../../app/transitions'
+import { replaceAppLocation } from '../../app/navigation-history'
 import { RetainedScreen } from '../../app/RetainedScreen'
 import { clearPrivateImageCache } from '../../lib/CachedImage'
-import { IDENTITY_CHANGED_EVENT } from '../offline/ledger'
+import { useHomeSession } from '../auth/useHomeSession'
+import { SessionUnavailable } from '../auth/SessionUnavailable'
+import { signInFailureMessage } from '../auth/session-policy'
 import {
   appSectionSearch,
   parseAppSection,
   resolveSelectedKabandaId,
   type AppSection,
 } from '../../app/navigation'
-import { getCurrentUser, loginWithPassword, logout } from '../auth/api'
+import { loginWithPassword, logout } from '../auth/api'
 import { InstallGuidance } from '../install/InstallGuidance'
 import { getIdentityLocalInventory, type IdentityLocalInventory } from '../offline/inventory'
 import {
@@ -49,8 +52,6 @@ import type {
 } from './types'
 import './kabandas.css'
 
-type Session = { state: 'loading' } | { state: 'anonymous' } | { state: 'ready'; user: User }
-
 type MapPointCategory = 'stores' | 'attractions'
 type MapPoint = KabandaPoint & {
   category: MapPointCategory
@@ -75,52 +76,33 @@ const STORE_MAP_POINTS: readonly MapPoint[] = IZHEVSK_KB_STORES.map((store) => (
 }))
 
 export function KabandasPage({ active = true }: { active?: boolean }) {
-  const [session, setSession] = useState<Session>({ state: 'loading' })
-
-  useEffect(() => {
-    if (!active) return
-    let subscribed = true
-    getCurrentUser()
-      .then((user) => subscribed && setSession({ state: 'ready', user }))
-      .catch((error) => {
-        if (!subscribed) return
-        setSession((current) => error instanceof ApiError && error.status < 500
-          ? { state: 'anonymous' }
-          : current.state === 'ready' ? current : { state: 'anonymous' })
-      })
-    return () => {
-      subscribed = false
-    }
-  }, [active])
-
-  useEffect(() => {
-    const changed = (event: Event) => {
-      const id = (event as CustomEvent<{ userId: string | null }>).detail.userId
-      setSession((current) => current.state === 'ready' && current.user.id !== id ? { state: 'anonymous' } : current)
-    }
-    window.addEventListener(IDENTITY_CHANGED_EVENT, changed)
-    return () => window.removeEventListener(IDENTITY_CHANGED_EVENT, changed)
-  }, [])
-
+  const { session, checking, refresh, signedIn, signedOut } = useHomeSession(active)
   if (session.state === 'loading') {
     return <main className="kb-shell kb-center"><RiderLoader label="Загружаем Кабанду" /></main>
   }
-  if (session.state === 'anonymous') return <SignInPanel onSignedIn={(user) => setSession({ state: 'ready', user })} />
-  return <AuthenticatedKabandas key={session.user.id} active={active} user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
+  if (session.state === 'unavailable') return <main className="kb-shell kb-center"><SessionUnavailable message={session.message} checking={checking} onRetry={() => void refresh()} /></main>
+  if (session.state === 'anonymous') return <SignInPanel onSignedIn={signedIn} />
+  return <>
+    {active && session.warning && <aside className="kb-notice" role="status">{session.warning} <button type="button" disabled={checking} onClick={() => void refresh()}>{checking ? 'Проверяем…' : 'Повторить проверку'}</button></aside>}
+    <AuthenticatedKabandas key={session.user.id} active={active} user={session.user} onLoggedOut={signedOut} />
+  </>
 }
 
 function SignInPanel({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [state, setState] = useState<'idle' | 'sending' | 'error'>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (state === 'sending') return
     setState('sending')
+    setErrorMessage(null)
     try {
       onSignedIn(await loginWithPassword(username, password))
-    } catch {
+    } catch (error) {
+      setErrorMessage(signInFailureMessage(error))
       setState('error')
     }
   }
@@ -153,7 +135,7 @@ function SignInPanel({ onSignedIn }: { onSignedIn: (user: User) => void }) {
               {state === 'sending' ? 'Входим…' : 'Войти'}
             </button>
           </form>
-          {state === 'error' && <p className="kb-error" role="alert">Не удалось войти. Проверьте данные и повторите.</p>}
+          {state === 'error' && <p className="kb-error" role="alert">{errorMessage}</p>}
         </div>
       </section>
     </main>
@@ -165,6 +147,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [listRetry, setListRetry] = useState(0)
   const [showCreate, setShowCreate] = useState(false)
   const [routeSearch, setRouteSearch] = useState(window.location.search)
   const [inventory, setInventory] = useState<IdentityLocalInventory | null>(null)
@@ -201,7 +184,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
     return () => {
       subscribed = false
     }
-  }, [requestedKabandaId, active])
+  }, [requestedKabandaId, active, listRetry])
 
   const selected = kabandas.find(({ id }) => id === selectedId) ?? null
   const addKabanda = (kabanda: KabandaSummary) => {
@@ -223,16 +206,12 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
   const selectSection = (section: AppSection) => {
     const search = appSectionSearch(window.location.search, section, selectedId)
     const order = ['home', 'map', 'raids', 'kabanda']
-    transitionScreen(() => {
-    window.history.pushState(null, '', `${appPath('app')}${search}`)
-    setRouteSearch(search)
-    window.scrollTo({ top: 0, behavior: 'instant' })
-    }, order.indexOf(section) < order.indexOf(activeSection) ? 'back' : 'forward')
+    navigateApp(`${appPath('app')}${search}`, order.indexOf(section) < order.indexOf(activeSection) ? 'back' : 'forward')
   }
   const selectKabanda = (kabandaId: string) => {
-    setSelectedId(kabandaId)
     const search = appSectionSearch(window.location.search, activeSection, kabandaId)
-    window.history.replaceState(null, '', `${appPath('app')}${search}`)
+    if (!replaceAppLocation(`${appPath('app')}${search}`)) return
+    setSelectedId(kabandaId)
     setRouteSearch(search)
   }
 
@@ -280,10 +259,10 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
 
 
       {activeSection === 'kabanda' && user.identityKind === 'verified' && showCreate && <CreateKabandaForm onCreated={addKabanda} onCancel={() => setShowCreate(false)} />}
-      {error && <p className="kb-error" role="alert">{error}</p>}
+      {error && <p className="kb-error" role="alert">{error} <button type="button" disabled={loading} onClick={() => { setLoading(true); setListRetry(value => value + 1) }}>Повторить</button></p>}
       {loading ? <p className="kb-muted" aria-busy="true">Загружаем команды…</p> : null}
 
-      {!loading && kabandas.length === 0 && !showCreate && (
+      {!loading && !error && kabandas.length === 0 && !showCreate && (
         <section className="kb-card kb-empty"><h2>Пока без Кабанды</h2><p>Создайте первую команду или откройте приглашение, которое вам прислали.</p>{user.identityKind === 'verified' ? <button className="kb-primary" type="button" onClick={() => { selectSection('kabanda'); setShowCreate(true) }}>Создать Кабанду</button> : null}</section>
       )}
 
