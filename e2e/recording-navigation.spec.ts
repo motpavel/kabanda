@@ -67,12 +67,15 @@ test('refusing link and browser Back keeps the recording map mounted; accepting 
     link.href = `/app?raid=${raidId}&routeTemplate=22222222-2222-4222-8222-222222222222&kabanda=${teamId}`
     link.textContent = 'Synthetic template navigation'
     link.dataset.testid = 'trust-template-link'
+    // This is a test-only link, not a production control. Keep it physically
+    // clickable above the fullscreen map instead of forcing or bypassing clicks.
+    link.style.cssText = 'position:fixed;top:80px;right:8px;z-index:2147483647;background:white;color:black;padding:8px'
     document.body.append(link)
   }, { raidId: raid.id, teamId: team.kabanda.id })
-  const templateDialog = page.waitForEvent('dialog', { timeout: 5_000 })
-  const templateClick = page.getByTestId('trust-template-link').click()
-  await (await templateDialog).dismiss()
-  await templateClick
+  await Promise.all([
+    page.waitForEvent('dialog', { timeout: 5_000 }).then(dialog => dialog.dismiss()),
+    page.getByTestId('trust-template-link').click({ timeout: 5_000 }),
+  ])
   await expect(page).not.toHaveURL(/routeTemplate=/)
   await expect(map).toBeVisible()
   await page.getByTestId('trust-template-link').evaluate(node => node.remove())
