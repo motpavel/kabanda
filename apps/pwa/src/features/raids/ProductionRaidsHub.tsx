@@ -45,8 +45,6 @@ export function ProductionRaidsHub({
 }) {
   const [actionable, setActionable] = useState<RaidProjection[]>([])
   const [history, setHistory] = useState<RaidHistoryItem[]>([])
-  const [actionableStaleAt, setActionableStaleAt] = useState<string | null>(null)
-  const [historyStaleAt, setHistoryStaleAt] = useState<string | null>(null)
   const [resourceState, setResourceState] = useState<ProductionResourceState>('loading')
   const [historyState, setHistoryState] = useState<ProductionResourceState>('loading')
   const canonicalSettled = useRef({ actionable: false, history: false })
@@ -67,8 +65,6 @@ export function ProductionRaidsHub({
     clearPrivateImageCache()
     setActionable([])
     setHistory([])
-    setActionableStaleAt(null)
-    setHistoryStaleAt(null)
     setInvitationNotice(null)
     setResourceState('access-error')
     setHistoryState('access-error')
@@ -90,7 +86,6 @@ export function ProductionRaidsHub({
       if (epoch !== permissionEpoch.current) return
       if (!refreshFence.current.canApplyRefresh(refreshToken)) { refreshRequested.current = true; return }
       setActionable(next)
-      setActionableStaleAt(null)
       setResourceState('ready')
       setResourceMessage(null)
       await Promise.allSettled(next.map(raid => saveRaidProjection(identityId, raid)))
@@ -104,7 +99,6 @@ export function ProductionRaidsHub({
       if (epoch !== permissionEpoch.current || !refreshFence.current.canApplyRefresh(refreshToken)) return
       if (cached.length) {
         setActionable(cached.map(({ raid }) => raid))
-        setActionableStaleAt(cached[0]?.savedAt ?? null)
         setResourceState('stale')
         setResourceMessage(null)
       } else {
@@ -130,7 +124,6 @@ export function ProductionRaidsHub({
       if (epoch !== permissionEpoch.current) return
       setHistory(page.raids)
       setHistoryState('ready')
-      setHistoryStaleAt(null)
       await saveRaidHistory(identityId, kabanda.id, page).catch(() => undefined)
     } catch (reason) {
       canonicalSettled.current.history = true
@@ -141,7 +134,6 @@ export function ProductionRaidsHub({
       if (epoch !== permissionEpoch.current) return
       setHistory(cached?.page.raids ?? [])
       setHistoryState(cached ? 'stale' : 'error')
-      setHistoryStaleAt(cached?.savedAt ?? null)
     }
   }, [denyAccess, identityId, kabanda.id])
 
@@ -155,7 +147,6 @@ export function ProductionRaidsHub({
         return
       }
       setActionable(cached.map(({ raid }) => raid))
-      setActionableStaleAt(cached[0]?.savedAt ?? null)
       setResourceState('stale')
     }).catch(() => {
       if (subscribed && !canonicalSettled.current.actionable && !navigator.onLine) setResourceState('error')
@@ -164,7 +155,6 @@ export function ProductionRaidsHub({
       if (!subscribed || canonicalSettled.current.history) return
       if (!cached) { if (!navigator.onLine) setHistoryState('error'); return }
       setHistory(cached.page.raids)
-      setHistoryStaleAt(cached.savedAt)
       setHistoryState('stale')
     }).catch(() => {
       if (subscribed && !canonicalSettled.current.history && !navigator.onLine) setHistoryState('error')
@@ -237,7 +227,6 @@ export function ProductionRaidsHub({
     () => splitActionableRaids(actionable, identityId),
     [actionable, identityId],
   )
-  const staleAt = newestDate(actionableStaleAt, historyStaleAt)
   const coverImage = kabanda.coverImage ?? appPath('brand/kabanda-team-cover.jpg')
   const resourcePolicy = productionResourcePolicy(resourceState, online)
   const canMutate = resourcePolicy.canMutate
@@ -249,12 +238,6 @@ export function ProductionRaidsHub({
         <ProductionCreateActions enabled={canMutate} kabandaId={kabanda.id} />
       </header>
 
-      {(resourceState === 'stale' || historyState === 'stale') && staleAt && (
-        <div className="rdp-stale" role="status" data-testid="production-raids-stale">
-          <Icon name="clock" />
-          <span><strong>Показана сохранённая версия</strong><small>Копия от {new Date(staleAt).toLocaleString('ru-RU')}. {online ? 'Проверяем актуальность…' : 'Обновим после восстановления связи.'}</small></span>
-        </div>
-      )}
       {invitationNotice && (
         <p className={`prd-raids__notice prd-raids__notice--${invitationNotice.tone}`} role={invitationNotice.tone === 'error' ? 'alert' : 'status'}>
           <Icon name={invitationNotice.tone === 'success' ? 'check' : 'clock'} size={19} />
@@ -534,12 +517,6 @@ function formatSchedule(value: string | null): string {
 
 function initial(value: string): string {
   return value.trim().slice(0, 1).toUpperCase() || '•'
-}
-
-function newestDate(left: string | null, right: string | null): string | null {
-  if (!left) return right
-  if (!right) return left
-  return Date.parse(left) >= Date.parse(right) ? left : right
 }
 
 function isAccessFailure(reason: unknown): boolean {

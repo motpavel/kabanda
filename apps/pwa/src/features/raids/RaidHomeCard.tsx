@@ -28,7 +28,6 @@ export function RaidHomeCard({
   const [actionable, setActionable] = useState<RaidProjection[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
-  const [savedAt, setSavedAt] = useState<string | null>(null)
   const [resourceState, setResourceState] = useState<ProductionResourceState>('loading')
   const [resourceMessage, setResourceMessage] = useState<string | null>(null)
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
@@ -40,7 +39,6 @@ export function RaidHomeCard({
       canonicalSettled.current = true
       setActionable(canonicalActionable)
       setStale(false)
-      setSavedAt(null)
       setResourceState('ready')
       setResourceMessage(null)
       await Promise.all(
@@ -51,7 +49,6 @@ export function RaidHomeCard({
       if (reason instanceof ApiError && reason.status < 500) {
         setActionable([])
         setStale(false)
-        setSavedAt(null)
         setResourceState(reason.status === 401 || reason.status === 403 || reason.status === 404 ? 'access-error' : 'error')
         setResourceMessage(reason.message)
         return
@@ -60,13 +57,11 @@ export function RaidHomeCard({
       if (cachedActionable.length > 0) {
         setActionable(cachedActionable.map(({ raid }) => raid))
         setStale(true)
-        setSavedAt(cachedActionable[0]?.savedAt ?? null)
         setResourceState('stale')
         setResourceMessage(null)
       } else {
         setActionable([])
         setStale(false)
-        setSavedAt(null)
         setResourceState('error')
         setResourceMessage('Не удалось загрузить рейды, а сохранённой копии на этом устройстве нет.')
       }
@@ -84,7 +79,6 @@ export function RaidHomeCard({
       }
       setActionable(cached.map(({ raid }) => raid))
       setStale(true)
-      setSavedAt(cached[0]?.savedAt ?? null)
       setResourceState('stale')
     }).catch(() => {
       if (subscribed && !canonicalSettled.current && !navigator.onLine) {
@@ -132,11 +126,7 @@ export function RaidHomeCard({
       </div>
 
       {resourceState === 'loading' && <p className="kb-muted">Проверяем, что сейчас важно…</p>}
-      {stale && (
-        <p className="kb-stale" role="status">
-          Сохранённая копия{savedAt ? ` от ${new Date(savedAt).toLocaleString('ru-RU')}` : ''}. Действия доступны после обновления.
-        </p>
-      )}
+
 
       {(resourceState === 'access-error' || resourceState === 'error') && (
         <div className={resourceState === 'access-error' ? 'kb-error' : 'kb-notice'} role={resourceState === 'access-error' ? 'alert' : 'status'}>
