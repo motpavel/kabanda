@@ -320,10 +320,15 @@ export function revalidateRaidSession(identityId: string) {
   for (const entry of entries.values()) if (entry.identityId === identityId) entry.revalidateSession()
 }
 
-export function resetRaidResources() {
-  for (const entry of entries.values()) entry.retire()
-  entries.clear()
-  deniedTeams.clear()
+/** Without an identity, retire everything. When the API confirms an identity,
+ * keep matching consumers created during an offline bootstrap refreshable.
+ * Other identities are retired immediately; no operational queue is touched. */
+export function resetRaidResources(confirmedIdentity?: string) {
+  for (const [key, entry] of entries) {
+    if (confirmedIdentity && entry.identityId === confirmedIdentity) entry.revalidateSession()
+    else { entry.retire(); entries.delete(key) }
+  }
+  for (const key of deniedTeams) if (JSON.parse(key)[0] !== confirmedIdentity) deniedTeams.delete(key)
 }
 
 if (typeof window !== 'undefined') {
@@ -343,7 +348,7 @@ if (typeof window !== 'undefined') {
     const next = (event as CustomEvent<{ userId: string | null }>).detail.userId
     if (next === identity) return
     identity = next
-    resetRaidResources()
+    resetRaidResources(next ?? undefined)
   })
 }
 
