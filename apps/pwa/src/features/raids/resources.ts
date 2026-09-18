@@ -33,6 +33,7 @@ const actionableMembership = (raid: RaidProjection, identityId: string, role?: K
 export class RaidResource<T> {
   state: State<T> = { data: null, status: 'loading', message: null, savedAt: null }
   private listeners = new Set<() => void>()
+  private activeReaders = 0
   private reads = new ReadCache()
   private pending: Promise<void> | null = null
   private hydrated = false
@@ -43,6 +44,21 @@ export class RaidResource<T> {
   registerKabandaRole(role?: KabandaRole) { if (role) this.kabandaRole = role }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   snapshot = () => this.state
+  retainActiveReader = () => {
+    this.activeReaders += 1
+    let released = false
+    return () => { if (!released) { released = true; this.activeReaders -= 1 } }
+  }
+  revalidateSession() {
+    if (this.retired) return
+    // A new session for the SAME identity may have different permissions. Keep
+    // subscribed resource objects, but fence old replies and mark data unverified.
+    // Retiring these objects would strand useMemo/useSyncExternalStore consumers
+    // on a permanently loading entry until a full document reload.
+    this.invalidate(false)
+    if (this.activeReaders > 0 && online() &&
+      (typeof document === 'undefined' || document.visibilityState === 'visible')) void this.refresh()
+  }
   private set(state: State<T>) { this.state = state; for (const listener of this.listeners) listener() }
   private persist(value: T, current: () => boolean) {
     this.writes = this.writes.catch(() => undefined).then(async () => {
@@ -298,6 +314,12 @@ subscribeConfirmedWrites(event => {
   }
 })
 
+/** Same-account session rotation is not an identity switch. Existing mounted
+ * consumers retain their entries; permissions are confirmed again by the API. */
+export function revalidateRaidSession(identityId: string) {
+  for (const entry of entries.values()) if (entry.identityId === identityId) entry.revalidateSession()
+}
+
 export function resetRaidResources() {
   for (const entry of entries.values()) entry.retire()
   entries.clear()
@@ -307,7 +329,15 @@ export function resetRaidResources() {
 if (typeof window !== 'undefined') {
   let identity: string | null | undefined
   window.addEventListener('storage', event => {
-    if (event.key === null || event.key === 'kabanda:relay-session:v1') resetRaidResources()
+    if (event.key !== null && event.key !== 'kabanda:relay-session:v1') return
+    let sameIdentity = false
+    try {
+      const saved = JSON.parse(event.newValue ?? 'null') as { opaque?: unknown; identityId?: unknown } | null
+      sameIdentity = typeof identity === 'string' && Boolean(saved &&
+        typeof saved.opaque === 'string' && saved.opaque.length <= 32_768 && saved.identityId === identity)
+    } catch { /* A cleared, corrupt or different session must drop the old identity's views. */ }
+    if (sameIdentity && identity) revalidateRaidSession(identity)
+    else resetRaidResources()
   })
   window.addEventListener('kabanda:identity-changed', event => {
     const next = (event as CustomEvent<{ userId: string | null }>).detail.userId
@@ -319,6 +349,7 @@ if (typeof window !== 'undefined') {
 
 export function useRaidResource<T>(entry: RaidResource<T>, active: boolean, interval: number | null) {
   const state = useSyncExternalStore(entry.subscribe, entry.snapshot, entry.snapshot)
+  useEffect(() => active ? entry.retainActiveReader() : undefined, [active, entry])
   useEffect(() => { void entry.hydrate() }, [entry])
   const refresh = useVisibleRead(entry.refresh, entry.key, active, interval)
   return { ...state, refresh }
