@@ -333,13 +333,12 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Завершить рейд?' })).toBeVisible()
   await expect(page.locator('.result-finish-review--sheet')).toHaveCSS('border-width', '0px')
-  await expect(page.getByRole('button', { name: /^(Отправить сохранённое|Завершить рейд)$/ })).toBeVisible()
-  const drainButton = page.getByRole('button', { name: 'Отправить сохранённое', exact: true })
-  if (await drainButton.isVisible()) await drainButton.click()
+  // The confirmed finish action drains pending work itself; separate manual
+  // upload/settle controls were removed by the already-integrated simplification.
+  await expect(actionsDialog.getByRole('button', { name: 'Да, завершить рейд', exact: true })).toBeEnabled()
+  await expect(actionsDialog.getByRole('button', { name: 'Нет, продолжить рейд', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('raid-finish-mobile.png') })
-  await page.getByRole('button', { name: 'Завершить рейд', exact: true }).click()
-  // Finalization is now automatic. Waiting for the actual canonical result
-  // preserves the assertion without requiring the removed manual settle button.
+  await actionsDialog.getByRole('button', { name: 'Да, завершить рейд', exact: true }).click()
   await expect(page.getByRole('article', { name: 'Рейд завершён. Отличная поездка!' })).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('.raid-completion__stats > div')).toHaveCount(4)
   await expect(page.locator('.raid-completion__art')).toBeVisible()
