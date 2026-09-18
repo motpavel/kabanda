@@ -17,7 +17,6 @@ export function navigateApp(href: string, direction: 'forward' | 'back' = 'forwa
   if (!approveAppNavigation(href)) return
   transitionScreen(() => {
     pushApprovedAppLocation(href)
-    window.scrollTo({ top: 0, behavior: 'instant' })
   }, direction)
 }
 export function isInternalAppLink(url: URL, origin: string, appPathname: string): boolean {

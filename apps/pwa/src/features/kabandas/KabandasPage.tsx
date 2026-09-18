@@ -10,6 +10,7 @@ import { appPath, appUrl } from '../../lib/paths'
 import { AppTabBar } from '../../app/AppTabBar'
 import { navigateApp } from '../../app/transitions'
 import { replaceAppLocation } from '../../app/navigation-history'
+import { useScreenScroll } from '../../app/screen-scroll'
 import { RetainedScreen } from '../../app/RetainedScreen'
 import { clearPrivateImageCache } from '../../lib/CachedImage'
 import { useHomeSession } from '../auth/useHomeSession'
@@ -37,6 +38,7 @@ import {
 } from './api'
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
+import { MapViewportMemory, type MapView } from './map-viewport'
 import { IZHEVSK_KB_STORES } from './izhevsk-kb-stores'
 import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
@@ -154,6 +156,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
   const [accountState, setAccountState] = useState<'idle' | 'loading' | 'leaving' | 'error'>('idle')
   const activeSection = parseAppSection(routeSearch)
   const requestedKabandaId = new URLSearchParams(routeSearch).get('kabanda')
+  useScreenScroll(JSON.stringify([user.id, selectedId, activeSection, showCreate]), active)
 
   useEffect(() => {
     const restoreRoute = () => setRouteSearch(window.location.search)
@@ -343,6 +346,8 @@ function KabandaWorkspace({
   const workspaceRef = useRef<HTMLElement>(null)
   const [members, setMembers] = useState<KabandaMember[]>([])
   const [points, setPoints] = useState<KabandaPoint[]>([])
+  const [loadedCollectionId, setLoadedCollectionId] = useState<string | null>(null)
+  const [mapViewport] = useState(() => new MapViewportMemory())
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [pointCategory, setPointCategory] = useState<MapPointCategory>('stores')
   const [requestedView, setRequestedView] = useState<PointPresentation>('map')
@@ -358,7 +363,8 @@ function KabandaWorkspace({
   const [teamAction, setTeamAction] = useState<'rename' | 'cover' | 'leadership' | null>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const webglAvailable = useMemo(detectWebgl, [])
-  const attractionPoints = useMemo<MapPoint[]>(() => points.map((point) => ({ ...point, category: 'attractions' })), [points])
+  const pointsKnown = loadedCollectionId !== null && loadedCollectionId === kabanda.pointsCollectionId
+  const attractionPoints = useMemo<MapPoint[]>(() => pointsKnown ? points.map((point) => ({ ...point, category: 'attractions' })) : [], [points, pointsKnown])
   const visiblePoints = pointCategory === 'stores' ? STORE_MAP_POINTS : attractionPoints
   const activeProviderState = pointCategory === 'attractions'
     ? attractionState === 'failed' ? 'failed' : attractionState === 'checking' ? 'checking' : providerState
@@ -384,6 +390,7 @@ function KabandaWorkspace({
     let receivedFresh = false
     const collectionId = kabanda.pointsCollectionId
     if (!collectionId) {
+      setLoadedCollectionId(null)
       setAttractionState('failed')
       setPointMessage('Вожак ещё не загрузил набор достопримечательностей.')
       return
@@ -391,6 +398,7 @@ function KabandaWorkspace({
     void readPointProjection(user.id, kabanda.id, collectionId).then((cached) => {
       if (!subscribed || receivedFresh || !cached) return
       setPoints(cached.points)
+      setLoadedCollectionId(collectionId)
       setAttractionState('ready')
       setStaleAt(cached.savedAt)
     }).catch(() => undefined)
@@ -399,16 +407,19 @@ function KabandaWorkspace({
         if (!subscribed) return
         receivedFresh = true
         setPoints(fresh)
+        setLoadedCollectionId(collectionId)
         setAttractionState('ready')
         setPointMessage(null)
         setStaleAt(null)
-        await savePointProjection(user.id, kabanda.id, collectionId, fresh)
+        // Local quota failure must not replace a successful response with old points.
+        await savePointProjection(user.id, kabanda.id, collectionId, fresh).catch(() => undefined)
       })
       .catch(async (reason) => {
         if (!subscribed) return
         if (reason instanceof ApiError && reason.status < 500) {
           receivedFresh = true
           setPoints([])
+          setLoadedCollectionId(null)
           setAttractionState('failed')
           setPointMessage('Доступ к достопримечательностям недоступен.')
           return
@@ -418,6 +429,7 @@ function KabandaWorkspace({
         setAttractionState(cached ? 'ready' : 'failed')
         if (cached) {
           setPoints(cached.points)
+          setLoadedCollectionId(collectionId)
           setStaleAt(cached.savedAt)
         } else setPointMessage('Достопримечательности недоступны без сети и ещё не сохранены на этом устройстве.')
       })
@@ -504,7 +516,7 @@ function KabandaWorkspace({
   }
 
   const notices = <>
-    {pointCategory === 'attractions' && staleAt && <p className="kb-stale" role="status">Офлайн-копия от {new Date(staleAt).toLocaleString('ru-RU')}. Она привязана к вашему аккаунту.</p>}
+    {section === 'map' && pointCategory === 'attractions' && staleAt && <p className="kb-stale" role="status">Сохранённые данные от {new Date(staleAt).toLocaleString('ru-RU')}.</p>}
     {section === 'map' && pointCategory === 'attractions' && pointMessage && <p className="kb-notice" role="status">{pointMessage}</p>}
     {message && <p className="kb-notice" role="status">{message}</p>}
   </>
@@ -534,16 +546,18 @@ function KabandaWorkspace({
           </div>
           <div className="kb-map-notices">{notices}</div>
           {pointCategory === 'attractions' && attractionState === 'checking' ? <p className="kb-map-loading" aria-busy="true">Получаем достопримечательности…</p> : null}
-          {presentation === 'map' && visiblePoints.length > 0 ? <PointsMap points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
+          {presentation === 'map' && visiblePoints.length > 0 ? <PointsMap memory={mapViewport} points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
           {(presentation === 'list' || visiblePoints.length === 0) && (
             <div className="kb-map-list-panel">
-              <PointList points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} />
+              {pointCategory === 'attractions' && !pointsKnown
+                ? <p className="kb-points-pending" role="status">{attractionState === 'checking' ? 'Получаем точки…' : 'Точки пока недоступны.'}</p>
+                : <PointList points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} />}
               {activeProviderState === 'failed' && visiblePoints.length > 0 && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком.</p>}
             </div>
           )}
           <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.category === 'stores' ? selectedPoint.address ?? selectedPoint.name : selectedPoint?.name ?? ''} kicker={selectedPoint?.category === 'stores' ? 'КРАСНОЕ&БЕЛОЕ' : 'ТОЧКА ГОРОДА'}>
             {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
-            {selectedPoint?.category === 'attractions' && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedPoint.id}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedPoint.id} onOpenRaid={() => setSelectedPointId(null)} />}
+            {selectedPoint?.category === 'attractions' && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedPoint.id}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedPoint.id} onOpenRaid={() => undefined} />}
           </PointInfoSheet>
         </div>
       </section>
@@ -558,9 +572,9 @@ function KabandaWorkspace({
       </section>
     )
 
-  const personalPoints = points.filter(({ visitedByMe }) => visitedByMe).length
-  const teamPoints = points.filter(({ visitedByTeam }) => visitedByTeam).length
-  const completedRaids = progress?.team.completedRaids ?? 0
+  const personalPoints = pointsKnown ? points.filter(({ visitedByMe }) => visitedByMe).length : null
+  const teamPoints = pointsKnown ? points.filter(({ visitedByTeam }) => visitedByTeam).length : null
+  const completedRaids = progress?.team.completedRaids ?? null
   const memberCount = members.length || kabanda.memberCount
   const roleLabel = kabanda.role === 'owner' ? 'Вы вожак' : 'Вы участник'
 
@@ -767,8 +781,8 @@ function pluralizeMembers(count: number) {
   return 'участников'
 }
 
-function TeamMetric({ icon, value, label }: { icon: 'point' | 'members' | 'bike'; value: number; label: string }) {
-  return <div className="kb-team-metric"><span><TeamScreenIcon name={icon} /></span><p><strong>{value}</strong><small>{label}</small></p></div>
+export function TeamMetric({ icon, value, label }: { icon: 'point' | 'members' | 'bike'; value: number | null; label: string }) {
+  return <div className="kb-team-metric"><span><TeamScreenIcon name={icon} /></span><p><strong aria-label={value === null ? 'Данные ещё не получены' : undefined}>{value ?? '…'}</strong><small>{label}</small></p></div>
 }
 
 function TeamScreenIcon({ name }: { name: 'point' | 'members' | 'bike' | 'invite' | 'logout' }) {
@@ -839,27 +853,21 @@ function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint
   return <ul className="kb-point-list">{points.map((point) => <li key={point.id}><button type="button" aria-current={selectedId === point.id ? 'true' : undefined} onClick={() => onSelect(point.id)}><span className={`kb-dot kb-dot--${point.category}${(point.visitedByMe || point.visitedByTeam) ? ' visited' : ''}`} aria-hidden="true" /><span><strong>{point.name}</strong><small>{point.category === 'stores' ? point.address : point.visitedByMe ? 'Вы были здесь' : point.visitedByTeam ? 'Команда уже была' : 'Ещё не посещали'}</small></span><b aria-hidden="true">›</b></button></li>)}</ul>
 }
 
-type MapView = {
-  center: readonly [number, number]
-  zoom: number
-}
-
-const INITIAL_MAP_VIEW: MapView = { center: [53.2045, 56.8528], zoom: 12 }
 const USER_LOCATION_MAP_ZOOM = 14
 const MIN_MAP_ZOOM = 10
 const MAX_MAP_ZOOM = 17
 
-function PointsMap({ points, selectedId, onSelect, setProviderState }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void }) {
+function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void; memory: MapViewportMemory }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<YandexMap | null>(null)
   const runtimeRef = useRef<YandexMapsRuntime | null>(null)
   const markersRef = useRef(new Map<string, { placemark: YandexPlacemark; point: MapPoint }>())
   const userMarkerRef = useRef<YandexPlacemark | null>(null)
-  const autoLocateStartedRef = useRef(false)
-  const viewRef = useRef<MapView>(INITIAL_MAP_VIEW)
+  const locationRequestRef = useRef(0)
+  const viewRef = useRef<MapView>(memory.read())
   const [mapReady, setMapReady] = useState(false)
   const [userLocated, setUserLocated] = useState(false)
-  const [zoom, setZoom] = useState(INITIAL_MAP_VIEW.zoom)
+  const [zoom, setZoom] = useState(() => memory.read().zoom)
   const [geolocationError, setGeolocationError] = useState<string | null>(() =>
     'geolocation' in navigator ? null : 'Геолокация недоступна на этом устройстве.',
   )
@@ -881,9 +889,11 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
 
     void loadYandexMaps(apiKey).then((runtime) => {
       if (!active) return
+      const view = memory.read()
+      viewRef.current = view
       const map = new runtime.Map(container, {
-        center: [INITIAL_MAP_VIEW.center[1], INITIAL_MAP_VIEW.center[0]],
-        zoom: INITIAL_MAP_VIEW.zoom,
+        center: [view.center[1], view.center[0]],
+        zoom: view.zoom,
         controls: [],
         behaviors: ['default', 'scrollZoom'],
         type: 'yandex#map',
@@ -893,6 +903,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
         const nextZoom = event.get('newZoom') as number | undefined
         if (!nextCenter || nextZoom === undefined) return
         viewRef.current = { center: [nextCenter[1], nextCenter[0]], zoom: nextZoom }
+        memory.remember(viewRef.current)
         setZoom((current) => current === nextZoom ? current : nextZoom)
       })
       runtimeRef.current = runtime
@@ -906,6 +917,12 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     return () => {
       resize.disconnect()
       active = false
+      locationRequestRef.current += 1
+      const map = mapRef.current
+      if (map) {
+        const center = map.getCenter()
+        memory.remember({ center: [center[1], center[0]], zoom: map.getZoom() })
+      }
       setMapReady(false)
       markersRef.current.clear()
       userMarkerRef.current = null
@@ -913,7 +930,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       mapRef.current?.destroy()
       mapRef.current = null
     }
-  }, [setProviderState])
+  }, [setProviderState, memory])
 
   useEffect(() => {
     const map = mapRef.current
@@ -983,17 +1000,20 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
     if (location.zoom !== undefined) map.setZoom(location.zoom, { duration })
   }, [])
 
-  const locateUser = useCallback((accuracy: 'fast' | 'precise' = 'precise') => {
+  const locateUser = useCallback((accuracy: 'fast' | 'precise' = 'precise', automatic = false) => {
     if (!('geolocation' in navigator)) {
       setGeolocationError('Геолокация недоступна на этом устройстве.')
       return
     }
+    const requestedMap = mapRef.current
+    if (!requestedMap) return
+    const request = ++locationRequestRef.current
     setGeolocationError(null)
     navigator.geolocation.getCurrentPosition((position) => {
       const location = [position.coords.longitude, position.coords.latitude] as const
       const map = mapRef.current
       const runtime = runtimeRef.current
-      if (!map || !runtime) return
+      if (!map || !runtime || map !== requestedMap || request !== locationRequestRef.current) return
       if (userMarkerRef.current) map.geoObjects.remove(userMarkerRef.current)
       const userLayout = runtime.templateLayoutFactory.createClass('<span class="kb-yandex-user-location" aria-label="Моё местоположение"></span>')
       userMarkerRef.current = new runtime.Placemark([location[1], location[0]], {}, {
@@ -1005,22 +1025,22 @@ function PointsMap({ points, selectedId, onSelect, setProviderState }: { points:
       })
       map.geoObjects.add(userMarkerRef.current)
       setUserLocated(true)
-      updateLocation({ center: location, zoom: USER_LOCATION_MAP_ZOOM }, 360)
+      if (!automatic || memory.canAutoCenter()) updateLocation({ center: location, zoom: USER_LOCATION_MAP_ZOOM }, 360)
     }, () => {
+      if (mapRef.current !== requestedMap || request !== locationRequestRef.current) return
       setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')
     }, accuracy === 'fast'
       ? { enableHighAccuracy: false, maximumAge: 300_000, timeout: 8_000 }
       : { enableHighAccuracy: true, maximumAge: 15_000, timeout: 12_000 })
-  }, [updateLocation])
+  }, [updateLocation, memory])
 
   useEffect(() => {
-    if (!mapReady || autoLocateStartedRef.current) return
-    autoLocateStartedRef.current = true
-    locateUser('fast')
-  }, [locateUser, mapReady])
+    if (!mapReady || !memory.beginAutoLocate()) return
+    locateUser('fast', true)
+  }, [locateUser, mapReady, memory])
 
   return <>
-    <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска">
+    <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" onPointerDownCapture={() => memory.userInteracted()} onWheelCapture={() => memory.userInteracted()} onKeyDownCapture={() => memory.userInteracted()}>
       <div ref={containerRef} className="kb-yandex-map-stage" />
       <div className="kb-yandex-zoom" aria-label="Масштаб карты">
         <button type="button" aria-label="Приблизить" disabled={!mapReady || zoom >= MAX_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.min(MAX_MAP_ZOOM, viewRef.current.zoom + 1) })}>+</button>

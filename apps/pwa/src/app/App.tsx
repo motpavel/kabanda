@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useSyncExternalStore, type ReactNode } from 'react'
+import { Component, lazy, Suspense, useEffect, useLayoutEffect, useSyncExternalStore, type ReactNode } from 'react'
 import { VerifyMagicLinkPage } from '../features/auth/VerifyMagicLinkPage'
 import { InvitePage } from '../features/kabandas/InvitePage'
 import { KabandasPage } from '../features/kabandas/KabandasPage'
@@ -13,6 +13,7 @@ import { RetainedScreen } from './RetainedScreen'
 import { appPath } from '../lib/paths'
 import { isInternalAppLink, navigateApp } from './transitions'
 import { readAppSearch, subscribeAppLocation } from './navigation-history'
+import './smooth-ui.css'
 
 const CapabilityLabPage = lazy(() => import('../features/capability-lab/App').then(module => ({ default: module.CapabilityLabPage })))
 const GpsExperimentPage = lazy(() => import('../features/capability-lab/GpsExperimentPage').then(module => ({ default: module.GpsExperimentPage })))
@@ -47,6 +48,11 @@ function AppRoute() {
     return () => document.removeEventListener('click', followLink)
   }, [])
   const raidRoute = parseRaidRoute(search)
+  useLayoutEffect(() => {
+    // Tab pages restore their own identity/team-scoped position. New detail
+    // and creation screens start at the top, including browser Back/Forward.
+    if (parseRaidRoute(search).kind !== 'home') window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+  }, [search])
   return <>
     <RetainedScreen active={raidRoute.kind === 'home'}><KabandasPage active={raidRoute.kind === 'home'} /></RetainedScreen>
     {raidRoute.kind !== 'home' && <RaidApp route={raidRoute} />}
