@@ -33,6 +33,11 @@ async function mockScreens(page: Page, gates: { actionable?: Promise<void>; prog
       await gates.points
       return route.fulfill({ json: { points: [point] } })
     }
+    // PointVisitHistory consumes a direct History DTO, not { visits: [] }.
+    // Match the actual endpoint before falling back to unrelated mocked reads.
+    if (/\/api\/kabandas\/[^/]+\/points\/[^/]+\/history$/.test(path)) {
+      return route.fulfill({ json: { visitors: [{ userId, displayName: user.displayName, count: 1 }], personalCount: 1, entries: [], nextOffset: null } })
+    }
     if (path.endsWith('/result')) return route.fulfill({ status: 503, json: { error: { code: 'TEST_RESULT_UNAVAILABLE', message: 'Synthetic' } } })
     if (/\/api\/raids\/[^/]+(?:\/live)?$/.test(path)) {
       const raidId = path.split('/')[3]
@@ -47,8 +52,7 @@ async function mockScreens(page: Page, gates: { actionable?: Promise<void>; prog
       : path === '/api/kabandas' ? { kabandas: [team, { ...team, id: otherTeam, name: 'Другая Кабанда' }] }
       : path.endsWith('/raids/history') ? { raids: history, nextCursor: null }
       : path.endsWith('/members') ? { members: [{ id: userId, displayName: user.displayName, role: 'member', avatarUrl: null }] }
-      : path.includes('templates') ? { templates: [], nextCursor: null }
-      : path.includes('/visits') ? { visits: [], nextCursor: null } : {}
+      : path.includes('templates') ? { templates: [], nextCursor: null } : {}
     return route.fulfill({ json: body })
   })
 }
@@ -152,6 +156,8 @@ async function deliverPosition(page: Page, index: number) {
 }
 
 test('map retains camera, category and selection without leaving a hidden map or repeating auto-location', async ({ page, context }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
   await installYandexMapsMock(context)
   await mockScreens(page)
   await page.goto(`/app?kabanda=${teamId}`)
@@ -176,6 +182,7 @@ test('map retains camera, category and selection without leaving a hidden map or
   const marker = page.getByRole('button', { name: /^Тестовая башня\./ })
   await expect(marker).toBeVisible()
   await marker.focus(); await marker.press('Enter')
+  await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeVisible()
   await expect(marker).toHaveAttribute('aria-pressed', 'true')
   await page.goBack()
   await expect(map).toHaveCount(0)
@@ -183,7 +190,9 @@ test('map retains camera, category and selection without leaving a hidden map or
   await expect(map).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Категория точек' })).toHaveValue('attractions')
   await expect(marker).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeVisible()
   expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
+  expect(errors).toEqual([])
 })
 
 test('late location from a destroyed map is ignored; the explicit locate button still works', async ({ page, context }) => {
