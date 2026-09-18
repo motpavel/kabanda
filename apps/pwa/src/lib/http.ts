@@ -1,8 +1,10 @@
+import { notifyConfirmedWrite } from './api-events'
 import { requestApi } from './api-transport'
 import { diagnosticRequestHeaders } from './diagnostics'
 import { ReadCache } from './read-cache'
 
 const reads = new ReadCache()
+export const evictApiReads = (matches: (path: string) => boolean) => reads.evict(key => matches(JSON.parse(key)[0]))
 export const invalidateApiReads = () => reads.invalidate()
 let identity: string | null | undefined
 if (typeof window !== 'undefined') {
@@ -31,7 +33,13 @@ export class ApiError extends Error {
 export function requestJson<T>(input: RequestInfo | URL, init?: RequestInit, options?: { maxAgeMs?: number }): Promise<T> {
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
   const operation = () => performJsonRequest<T>(input, init)
-  if (method !== 'GET' && method !== 'HEAD') return reads.mutate(operation)
+  if (method !== 'GET' && method !== 'HEAD') {
+    const requestIdentity = identity
+    return reads.mutate(operation).then(body => {
+      if (requestIdentity === identity) notifyConfirmedWrite({ identityId: requestIdentity, path: String(input), body })
+      return body
+    })
+  }
   // A caller-owned abort signal must not cancel another consumer's shared read.
   if (init?.signal || input instanceof Request) return operation()
   const key = JSON.stringify([String(input), method, [...new Headers(init?.headers).entries()].sort(), init?.credentials ?? 'same-origin'])

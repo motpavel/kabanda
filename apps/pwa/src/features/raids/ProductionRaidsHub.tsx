@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
-import { clearPrivateImageCache } from '../../lib/CachedImage'
-import { useVisibleRead } from './read-refresh'
+import { useActionableRaids, useRaidHistory } from './resources'
 import { CurrentRaidCard } from './CurrentRaidCard'
 import { RaidHubIcon as Icon, type IconName } from './RaidHubIcon'
 import type { KabandaSummary } from '../kabandas/types'
-import { listRaidHistory } from '../results/api'
-import { readRaidHistory, saveRaidHistory, newestFirst } from '../results/cache'
 import { formatDistance, formatDuration } from '../results/state'
 import type { RaidHistoryItem } from '../results/types'
-import { listActionableRaids, sendParticipantCommand } from './api'
-import { readActionableRaidProjections, saveRaidProjection } from './cache'
+import { sendParticipantCommand } from './api'
 import {
   confirmedRaidParticipants,
   filterProductionHistory,
@@ -19,10 +15,8 @@ import {
   participationLabel,
   ProductionRefreshFence,
   productionResourcePolicy,
-  shouldUseProductionCache,
   splitActionableRaids,
   type ProductionHistoryFilter,
-  type ProductionResourceState,
 } from './production-model'
 import { isStaleConflict } from './state'
 import type { RaidProjection } from './types'
@@ -43,128 +37,20 @@ export function ProductionRaidsHub({
   kabanda: KabandaSummary
   active?: boolean
 }) {
-  const [actionable, setActionable] = useState<RaidProjection[]>([])
-  const [history, setHistory] = useState<RaidHistoryItem[]>([])
-  const [resourceState, setResourceState] = useState<ProductionResourceState>('loading')
-  const [historyState, setHistoryState] = useState<ProductionResourceState>('loading')
-  const canonicalSettled = useRef({ actionable: false, history: false })
-  const permissionEpoch = useRef(0)
-  const [resourceMessage, setResourceMessage] = useState<string | null>(null)
+  const resource = useActionableRaids(identityId, kabanda.id, active)
+  const historyResource = useRaidHistory(identityId, kabanda.id, active)
+  const actionable = resource.data ?? []
+  const history = historyResource.data?.raids ?? []
+  const resourceState = resource.status
+  const historyState = historyResource.status
+  const resourceMessage = resource.message
+  const refresh = resource.refresh
+  const refreshHistory = historyResource.refresh
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [invitationOperation, setInvitationOperation] = useState<InvitationOperation | null>(null)
   const [invitationNotice, setInvitationNotice] = useState<InvitationNotice | null>(null)
-  const refreshInFlight = useRef(false)
-  const refreshRequested = useRef(false)
-  const refreshCallback = useRef<() => void>(() => undefined)
   const refreshFence = useRef(new ProductionRefreshFence())
   const invitationKeys = useRef(new Map<string, string>())
-
-  const denyAccess = useCallback((reason: unknown) => {
-    permissionEpoch.current += 1
-    canonicalSettled.current = { actionable: true, history: true }
-    clearPrivateImageCache()
-    setActionable([])
-    setHistory([])
-    setInvitationNotice(null)
-    setResourceState('access-error')
-    setHistoryState('access-error')
-    setResourceMessage(resourceFailureMessage(reason))
-  }, [])
-
-  const loadActionable = useCallback(async () => {
-    if (refreshInFlight.current || refreshFence.current.isMutating()) {
-      refreshRequested.current = true
-      return
-    }
-    const refreshToken = refreshFence.current.beginRefresh()
-    if (refreshToken === null) return
-    refreshInFlight.current = true
-    const epoch = permissionEpoch.current
-    try {
-      const next = await listActionableRaids(kabanda.id)
-      canonicalSettled.current.actionable = true
-      if (epoch !== permissionEpoch.current) return
-      if (!refreshFence.current.canApplyRefresh(refreshToken)) { refreshRequested.current = true; return }
-      setActionable(next)
-      setResourceState('ready')
-      setResourceMessage(null)
-      await Promise.allSettled(next.map(raid => saveRaidProjection(identityId, raid)))
-    } catch (reason) {
-      canonicalSettled.current.actionable = true
-      if (epoch !== permissionEpoch.current) return
-      if (isAccessFailure(reason)) { denyAccess(reason); return }
-      if (!refreshFence.current.canApplyRefresh(refreshToken)) { refreshRequested.current = true; return }
-      const cached = shouldUseProductionCache(reason)
-        ? await readActionableRaidProjections(identityId, kabanda.id).catch(() => []) : []
-      if (epoch !== permissionEpoch.current || !refreshFence.current.canApplyRefresh(refreshToken)) return
-      if (cached.length) {
-        setActionable(cached.map(({ raid }) => raid))
-        setResourceState('stale')
-        setResourceMessage(null)
-      } else {
-        setActionable([])
-        setResourceState('error')
-        setResourceMessage(resourceFailureMessage(reason))
-      }
-    } finally {
-      refreshInFlight.current = false
-      if (refreshRequested.current && !refreshFence.current.isMutating()) {
-        refreshRequested.current = false
-        // Let the coalesced read settle before a mutation-triggered refresh.
-        setTimeout(() => refreshCallback.current(), 0)
-      }
-    }
-  }, [denyAccess, identityId, kabanda.id])
-
-  const loadHistory = useCallback(async () => {
-    const epoch = permissionEpoch.current
-    try {
-      const page = newestFirst(await listRaidHistory(kabanda.id, 12))
-      canonicalSettled.current.history = true
-      if (epoch !== permissionEpoch.current) return
-      setHistory(page.raids)
-      setHistoryState('ready')
-      await saveRaidHistory(identityId, kabanda.id, page).catch(() => undefined)
-    } catch (reason) {
-      canonicalSettled.current.history = true
-      if (epoch !== permissionEpoch.current) return
-      if (isAccessFailure(reason)) { denyAccess(reason); return }
-      const cached = shouldUseProductionCache(reason)
-        ? await readRaidHistory(identityId, kabanda.id).catch(() => null) : null
-      if (epoch !== permissionEpoch.current) return
-      setHistory(cached?.page.raids ?? [])
-      setHistoryState(cached ? 'stale' : 'error')
-    }
-  }, [denyAccess, identityId, kabanda.id])
-
-  useEffect(() => {
-    let subscribed = true
-    canonicalSettled.current = { actionable: false, history: false }
-    void readActionableRaidProjections(identityId, kabanda.id).then(cached => {
-      if (!subscribed || canonicalSettled.current.actionable) return
-      if (!cached.length) {
-        if (!navigator.onLine) { setResourceState('error'); setResourceMessage('Нет сети и сохранённых рейдов на этом устройстве.') }
-        return
-      }
-      setActionable(cached.map(({ raid }) => raid))
-      setResourceState('stale')
-    }).catch(() => {
-      if (subscribed && !canonicalSettled.current.actionable && !navigator.onLine) setResourceState('error')
-    })
-    void readRaidHistory(identityId, kabanda.id).then(cached => {
-      if (!subscribed || canonicalSettled.current.history) return
-      if (!cached) { if (!navigator.onLine) setHistoryState('error'); return }
-      setHistory(cached.page.raids)
-      setHistoryState('stale')
-    }).catch(() => {
-      if (subscribed && !canonicalSettled.current.history && !navigator.onLine) setHistoryState('error')
-    })
-    return () => { subscribed = false }
-  }, [identityId, kabanda.id])
-
-  const refresh = useVisibleRead(loadActionable, `${identityId}:${kabanda.id}`, active, 10_000)
-  const refreshHistory = useVisibleRead(loadHistory, `${identityId}:${kabanda.id}`, active, 60_000)
-  refreshCallback.current = () => void refresh()
   useEffect(() => {
     const updateConnection = () => setOnline(navigator.onLine)
     window.addEventListener('online', updateConnection)
@@ -189,10 +75,8 @@ export function ProductionRaidsHub({
     let refreshAfterMutation = false
 
     try {
-      const next = await sendParticipantCommand(raid.id, command, raid.version, idempotencyKey)
+      await sendParticipantCommand(raid.id, command, raid.version, idempotencyKey)
       invitationKeys.current.delete(logical)
-      setActionable((current) => current.map((item) => item.id === raid.id ? next : item))
-      await saveRaidProjection(identityId, next).catch(() => undefined)
       setInvitationNotice({
         tone: 'success',
         text: command === 'accept'
@@ -216,8 +100,7 @@ export function ProductionRaidsHub({
     } finally {
       refreshFence.current.finishMutation()
       setInvitationOperation(null)
-      if (refreshAfterMutation || refreshRequested.current) {
-        refreshRequested.current = false
+      if (refreshAfterMutation) {
         await refresh()
       }
     }
@@ -238,6 +121,7 @@ export function ProductionRaidsHub({
         <ProductionCreateActions enabled={canMutate} kabandaId={kabanda.id} />
       </header>
 
+      {resourceState === 'stale' && resourceMessage && <p role="status">{resourceMessage}</p>}
       {invitationNotice && (
         <p className={`prd-raids__notice prd-raids__notice--${invitationNotice.tone}`} role={invitationNotice.tone === 'error' ? 'alert' : 'status'}>
           <Icon name={invitationNotice.tone === 'success' ? 'check' : 'clock'} size={19} />
@@ -249,7 +133,7 @@ export function ProductionRaidsHub({
         <ProductionResourceError
           accessDenied={resourceState === 'access-error'}
           message={resourceMessage ?? 'Не удалось загрузить рейды.'}
-          onRetry={() => { setResourceState('loading'); void refresh() }}
+          onRetry={() => { void refresh() }}
         />
       ) : (
         <>
@@ -285,7 +169,7 @@ export function ProductionRaidsHub({
             <section className="rdp-section" aria-labelledby="production-upcoming-heading" data-testid="production-upcoming-raids">
               <h2 id="production-upcoming-heading">Предстоящие</h2>
               <div className="rdp-list-card">
-                {upcoming.map((raid) => <UpcomingRaidRow identityId={identityId} key={raid.id} raid={raid} />)}
+                {upcoming.map((raid) => <UpcomingRaidRow identityId={identityId} key={raid.id} raid={raid} stale={resourceState !== 'ready'} />)}
               </div>
             </section>
           )}
@@ -396,7 +280,7 @@ function ProductionLoading() {
   return <div className="rdp-loading prd-raids__loading" aria-label="Загружаем рейды"><i /><i /><i /></div>
 }
 
-function UpcomingRaidRow({ identityId, raid }: { identityId: string; raid: RaidProjection }) {
+function UpcomingRaidRow({ identityId, raid, stale }: { identityId: string; raid: RaidProjection; stale: boolean }) {
   const participants = confirmedRaidParticipants(raid)
   const avatars = participants.slice(0, 3)
   return <a aria-label={`Открыть рейд: ${raid.title}`} className="rdp-row" href={`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`}>
@@ -405,7 +289,7 @@ function UpcomingRaidRow({ identityId, raid }: { identityId: string; raid: RaidP
       <strong>{raid.title}</strong>
       <small><span>{formatSchedule(raid.scheduledAt)}</span>{avatars.length > 0 && <span aria-label={`${participants.length} подтверждённых участников`} className="rdp-row__avatars">{avatars.map((participant) => <i aria-hidden="true" key={participant.id}>{initial(participant.displayName)}</i>)}</span>}</small>
     </span>
-    <span className="rdp-row__action"><span className="rdp-row__badge">{participationLabel(raid, identityId)}</span><Icon name="chevron" size={19} /></span>
+    <span className="rdp-row__action"><span className="rdp-row__badge">{stale ? 'Уточняем статус' : participationLabel(raid, identityId)}</span><Icon name="chevron" size={19} /></span>
   </a>
 }
 
@@ -517,13 +401,4 @@ function formatSchedule(value: string | null): string {
 
 function initial(value: string): string {
   return value.trim().slice(0, 1).toUpperCase() || '•'
-}
-
-function isAccessFailure(reason: unknown): boolean {
-  return reason instanceof ApiError && (reason.status === 401 || reason.status === 403 || reason.status === 404)
-}
-
-function resourceFailureMessage(reason: unknown): string {
-  if (reason instanceof ApiError) return reason.message
-  return 'Не удалось получить каноническое состояние рейдов.'
 }

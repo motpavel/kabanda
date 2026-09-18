@@ -48,7 +48,7 @@ export function ResultPanel({
           setResult(canonical)
           setStaleAt(null)
           setError(null)
-          await saveRaidResult(identityId, canonical)
+          await saveRaidResult(identityId, canonical).catch(() => undefined)
           const finishKey = resultOperationStorageKey('finish', identityId, raid.id)
           const finishAttempt = readSessionKey(finishKey)
           if (finishAttempt) clearResultOperationAttempt(finishKey, finishAttempt)
