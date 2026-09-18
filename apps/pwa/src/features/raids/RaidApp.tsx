@@ -71,6 +71,7 @@ import { RaidTemplateEditorRoute } from '../raid-plans/editor/RaidTemplateEditor
 import { listRaidTemplates } from '../raid-plans/api'
 import type { RaidTemplateSummary } from '../raid-plans/types'
 import './raids.css'
+import './raid-setup.css'
 
 type RaidIdentity = { id: string }
 type Session =
@@ -206,7 +207,6 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
   const [mode, setMode] = useState<DepartureMode | null>(() => new URLSearchParams(window.location.search).has('template') ? 'route' : null)
   const [pointCategory, setPointCategory] = useState<'stores' | 'attractions'>('stores')
   const [meetingPlace, setMeetingPlace] = useState('')
-  const [noteOpen, setNoteOpen] = useState(false)
   const [dateAnchor] = useState(() => new Date())
   const [restoredTitle, setRestoredTitle] = useState<string | null>(null)
   const [startMode, setStartMode] = useState<'now' | 'later'>('now')
@@ -228,7 +228,6 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
     setMode(restored.routeTemplateId ? 'route' : 'free')
     setPointCategory(restored.pointCategory ?? 'attractions')
     setMeetingPlace(restored.meetingPlace ?? '')
-    setNoteOpen(Boolean(restored.description))
     setDescription(restored.description)
     setStartMode(restored.startMode)
     setStartsAt(restored.startsAt)
@@ -305,7 +304,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
   }
 
   return (
-    <RaidShell>
+    <RaidShell prestart>
       <div className="raid-departure">
       {mode ? <button className="raid-departure-back" type="button" disabled={status === 'saving'} onClick={() => setMode(null)}>← Выбор режима</button> : <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Рейды</a>}
       <header className="raid-departure-heading"><h1>{mode === null ? 'Выйти в рейд' : mode === 'free' ? 'Свободная охота' : 'По маршруту'}</h1></header>
@@ -325,13 +324,14 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
             </select>
             {templatesUnavailable && <p role="alert">Каталог не загрузился. Обновите страницу, чтобы выбрать маршрут.</p>}
             {!templatesUnavailable && templates.length === 0 && <a href={`${appPath('app')}?createRaidTemplate=${encodeURIComponent(kabandaId)}`}>Создать первый маршрут</a>}</div>}
-            <fieldset className="raid-segmented"><legend>Стартуем</legend><button type="button" aria-pressed={startMode === 'now'} onClick={() => { setStartMode('now'); setRestoredTitle(null) }}>Сейчас</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => { setStartMode('later'); setRestoredTitle(null) }}>Запланировать</button></fieldset>
+            <fieldset className="raid-segmented"><legend>Когда едем</legend><div className="raid-start-options" data-scheduled={startMode === 'later'}><span aria-hidden="true" className="raid-start-options__selection" /><button type="button" aria-pressed={startMode === 'now'} onClick={() => { setStartMode('now'); setRestoredTitle(null) }}>Сейчас</button><button type="button" aria-pressed={startMode === 'later'} onClick={() => { setStartMode('later'); setRestoredTitle(null) }}>Запланировать</button></div></fieldset>
             {startMode === 'later' && <div className="raid-departure-field"><label htmlFor="raid-time">Дата и время</label><input id="raid-time" type="datetime-local" required value={startsAt} onChange={(event) => { setStartsAt(event.target.value); setRestoredTitle(null) }} /></div>}
-            <details className="raid-preparation__details"><summary>Место встречи и заметка</summary>
+            <details className="raid-preparation__details raid-meeting-details"><summary><span>Место встречи и заметка<small>Необязательно</small></span></summary><div className="raid-disclosure-content">
             <div className="raid-departure-field"><label htmlFor="raid-meeting">Место старта <span className="raid-optional">необязательно</span></label><input id="raid-meeting" maxLength={200} value={meetingPlace} onChange={(event) => setMeetingPlace(event.target.value)} placeholder="Например, у входа в парк" /></div>
             <div className="raid-departure-field">
-              <button className="raid-note-toggle" type="button" aria-expanded={noteOpen} aria-controls="raid-note-field" onClick={() => setNoteOpen((value) => !value)}>{noteOpen ? '−' : '+'} Короткая заметка</button>
-              {noteOpen && <textarea id="raid-note-field" aria-label="Короткая заметка" maxLength={500} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Что взять с собой или что важно знать" />}
+              <label htmlFor="raid-note-field">Короткая заметка</label>
+              <textarea id="raid-note-field" maxLength={500} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Что взять с собой или что важно знать" />
+            </div>
             </div>
             </details>
             <p className="raid-departure-hint">Поездка для всей Кабанды. Личное приглашение можно отправить ссылкой после создания.</p>

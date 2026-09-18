@@ -206,16 +206,17 @@ export function RaidPreparationPanel(props: Props) {
   const needsLocation = needsPermission && participating && raid.state === 'lobby'
 
   return <section className="raid-preparation" aria-label="Подготовка к рейду">
-    <div className="kb-card raid-preparation__summary">
-      <div><small>Запись маршрута</small><strong>{isNavigator ? 'Ваш телефон' : nav?.displayName ?? 'Выбираем навигатора…'}</strong></div>
-      {organizer && raid.state === 'lobby' && <details><summary>Изменить</summary>
-        <label htmlFor="preparation-navigator">Чей телефон записывает маршрут?</label>
-        <select id="preparation-navigator" value={navigatorId ?? ''} disabled={busy} onChange={e => void action('assign-navigator', e.target.value)}>
+    {organizer && raid.state === 'lobby' ? <details className="raid-preparation__details raid-navigator-details">
+      <summary><span><small>Запись маршрута</small><strong>{isNavigator ? 'Ваш телефон' : nav?.displayName ?? 'Выбираем навигатора…'}</strong></span><span className="raid-disclosure-action">Изменить</span></summary>
+      <div className="raid-disclosure-content">
+        <label htmlFor="preparation-navigator">Кто будет навигатором?</label>
+        <select id="preparation-navigator" value={navigatorId ?? ''} disabled={busy || stale || !online} onChange={e => void action('assign-navigator', e.target.value)}>
           {!navigatorId && <option value="">Выберите участника</option>}
           {raid.participants.filter(p => p.state === 'accepted' || p.state === 'ready').map(p => <option value={p.id} key={p.id}>{p.displayName}{p.id === identityId ? ' · вы' : ''}</option>)}
         </select>
-      </details>}
-    </div>
+        <p className="raid-field-hint">Этот телефон будет записывать общий маршрут.</p>
+      </div>
+    </details> : <div className="kb-card raid-preparation__summary"><div><small>Запись маршрута</small><strong>{isNavigator ? 'Ваш телефон' : nav?.displayName ?? 'Выбираем навигатора…'}</strong></div></div>}
     <div className="kb-card">
       <div className="kb-section-head"><h2>Кто едет</h2>{raid.state === 'lobby' && <button type="button" onClick={() => void props.onShare()}>Пригласить</button>}</div>
       <ul className="raid-presence-list">{raid.participants.filter(p => p.state !== 'declined' && p.state !== 'removed').map(p => {
@@ -227,7 +228,7 @@ export function RaidPreparationPanel(props: Props) {
         </li>
       })}</ul>
     </div>
-    {participating && raid.state === 'lobby' && <div className="raid-preparation__status" role="status" aria-live="polite">
+    {participating && raid.state === 'lobby' && <div className="raid-preparation__status" data-ready={canStart} role="status" aria-live="polite">
       <p>{myPresence === 'nearby' || myPresence === 'manual' ? '✓ Вы на месте' : checking ? 'Определяем геопозицию…' : 'Определяем место встречи'}</p>
       {isNavigator && <p>{raid.navigatorReady ? '✓ Телефон готов к записи' : facts && !facts.indexedDbWritable ? 'Не удаётся сохранить маршрут на телефоне' : 'Проверяем готовность телефона'}</p>}
       {!isNavigator && nav && <p>{raid.navigatorReady ? `✓ Телефон ${nav.displayName} готов` : `Ждём готовность телефона ${nav.displayName}`}</p>}
@@ -238,7 +239,7 @@ export function RaidPreparationPanel(props: Props) {
     {error && <p className="kb-error" role="alert">{error}</p>}
     {error && pendingAction.current && <button type="button" disabled={busy || stale || !online} onClick={() => { const pending = pendingAction.current; if (pending) void action(pending.name, pending.navigatorId) }}>Повторить действие</button>}
 
-    {facts && <details className="raid-preparation__details"><summary>Проверка телефона</summary><ul>{rows.map(row => <li key={row.id}><strong>{row.label}</strong><small>{row.detail}</small></li>)}</ul></details>}
+    {facts && <details className="raid-preparation__details"><summary><span>Проверка телефона<small>{checking ? 'Проверяем…' : rows.some(row => row.status === 'fail') ? 'Есть пункты, требующие внимания' : 'Геолокация, связь и запись маршрута'}</small></span></summary><ul className="raid-phone-checks">{rows.map(row => <li key={row.id}><span className={`raid-check-icon raid-check-icon--${row.status}`} aria-label={{ pass: 'Готово', warn: 'Обратите внимание', fail: 'Ошибка', unknown: 'Не проверено' }[row.status]}>{{ pass: '✓', warn: '!', fail: '!', unknown: '–' }[row.status]}</span><span><strong>{row.label}</strong><small>{row.detail}</small></span></li>)}</ul></details>}
     <p className="kb-muted">Во время записи держите Кабанду открытой на телефоне навигатора.</p>
     <div className="raid-preparation__action">
       {me?.state === 'invited' ? <><button className="kb-primary" disabled={busy || stale || !online} onClick={() => void action('accept')}>Еду</button><button type="button" disabled={busy || stale || !online} onClick={() => void action('decline')}>Не поеду</button></>

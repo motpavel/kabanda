@@ -1,0 +1,85 @@
+/* Shared creation and preparation surfaces. */
+.kb-shell.raid-shell--gather {
+  --kb-bg: #f5f5f7;
+  --kb-surface: #fff;
+  --kb-line: #e8e8ed;
+  --kb-muted: #6e7078;
+  --kb-ink: #202126;
+  background: var(--kb-bg);
+  padding-inline: 16px;
+}
+.raid-shell--gather .raid-topbar { background: #fff; box-shadow: 0 4px 20px #20212606; }
+.raid-shell--gather .raid-departure, .raid-shell--gather .raid-preparation, .raid-shell--gather .raid-preparation__heading { width: min(100%, 680px); margin-inline: auto; }
+.raid-shell--gather .raid-preparation__heading { padding: 12px 0 16px; }
+.raid-shell--gather .raid-preparation__heading h1 { letter-spacing: -.025em; }
+.raid-shell--gather .raid-departure-form { gap: 16px; }
+.raid-shell--gather .raid-departure-field { gap: 10px; }
+.raid-shell--gather .raid-departure-form > .raid-departure-field,
+.raid-shell--gather .raid-segmented,
+.raid-shell--gather .raid-preparation .kb-card,
+.raid-shell--gather .raid-preparation__details,
+.raid-shell--gather .raid-preparation__status {
+  margin: 0;
+  padding: 18px;
+  border: 0;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 2px 8px #20212603;
+}
+.raid-shell--gather .raid-segmented { display: block; position: relative; padding-top: 44px; }
+.raid-shell--gather .raid-segmented legend { position: absolute; top: 17px; left: 18px; width: auto; margin: 0; font-size: .85rem; font-weight: 600; }
+.raid-start-options { display: grid; position: relative; isolation: isolate; grid-template-columns: 1fr 1fr; border-radius: 13px; padding: 3px; background: #f0f0f3; }
+.raid-start-options__selection { position: absolute; z-index: -1; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2); border-radius: 10px; background: #fff; box-shadow: 0 2px 5px #20212616; transition: transform 300ms cubic-bezier(.22,1,.36,1); }
+.raid-start-options[data-scheduled="true"] .raid-start-options__selection { transform: translateX(100%); }
+.kb-shell .raid-start-options button,
+.kb-shell .raid-start-options button[aria-pressed="true"] { min-height: 44px; border: 0; background: transparent; box-shadow: none; color: #6e7078; padding: 8px 4px; border-radius: 10px; font-size: .85rem; }
+.kb-shell .raid-start-options button[aria-pressed="true"] { color: #202126; font-weight: 750; }
+.raid-shell--gather :is(.raid-departure-form, .raid-disclosure-content) :is(input, select, textarea) { width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: 12px; border: 1px solid #e8e8ed; border-radius: 12px; background: #f8f8fa; color: #202126; font: inherit; font-size: 16px; }
+.raid-shell--gather :is(input, select, textarea):focus-visible { outline: 2px solid #d82e2a; outline-offset: 2px; }
+.raid-shell--gather .raid-preparation__details { padding: 0; font-size: .9rem; }
+.raid-shell--gather .raid-preparation__details > summary { display: flex; align-items: center; gap: 12px; min-height: 66px; padding: 17px 18px; cursor: pointer; list-style: none; font-weight: 650; -webkit-tap-highlight-color: transparent; }
+.raid-shell--gather .raid-preparation__details > summary::-webkit-details-marker { display: none; }
+.raid-shell--gather .raid-preparation__details > summary::after { content: ''; flex: 0 0 auto; width: 7px; height: 7px; margin-left: auto; border-top: 1.8px solid #92949c; border-right: 1.8px solid #92949c; transform: rotate(45deg); transition: transform 200ms ease; }
+.raid-shell--gather .raid-preparation__details[open] > summary::after { transform: rotate(135deg); }
+.raid-shell--gather .raid-preparation__details > summary > span:first-child { flex: 1; min-width: 0; }
+.raid-shell--gather .raid-preparation__details summary small { display: block; margin: 4px 0 0; color: #6e7078; font-size: .78rem; font-weight: 450; line-height: 1.45; }
+.raid-shell--gather .raid-navigator-details summary small { margin: 0 0 4px; }
+.raid-navigator-details summary strong { display: block; overflow-wrap: anywhere; font-size: 1rem; }
+.raid-disclosure-action { color: #ce2925; font-size: .8rem; font-weight: 600; }
+.raid-shell--gather .raid-disclosure-content { display: grid; gap: 16px; margin: 0 18px; padding: 18px 0; border-top: 1px solid #ececf0; }
+.raid-disclosure-content label { font-size: .85rem; font-weight: 600; }
+.raid-shell--gather .raid-field-hint { margin: -6px 0 0; font-size: .78rem; line-height: 1.5; color: #6e7078; }
+.raid-shell--gather .raid-preparation { gap: 16px; }
+.raid-shell--gather .raid-preparation .kb-section-head { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 8px; }
+.raid-shell--gather .raid-preparation .kb-section-head h2 { margin: 0; font-size: 1.05rem; letter-spacing: -.015em; }
+.raid-shell--gather .raid-preparation .kb-section-head button { width: auto; margin-left: auto; padding: 8px 12px; border: 0; border-radius: 12px; background: #fff0ee; color: #ce2925; font-size: .8rem; }
+.raid-shell--gather .raid-presence-list { margin: 0; padding: 0; }
+.raid-shell--gather .raid-presence-list li { padding: 14px 0; border-color: #ececf0; }
+.raid-shell--gather .raid-presence-list li:last-child { padding-bottom: 0; }
+.raid-shell--gather .raid-presence-list strong { font-size: .9rem; }
+.raid-shell--gather .raid-presence-list small { margin-top: 4px; font-size: .78rem; color: #6e7078; }
+.raid-shell--gather .raid-avatar { background: #f0f0f3; color: #62646e; }
+.raid-shell--gather .raid-preparation__status { color: #50535c; font-size: .88rem; line-height: 1.5; }
+.raid-shell--gather .raid-preparation__status p { margin: 0; }
+.raid-shell--gather .raid-preparation__status p + p { margin-top: 8px; }
+.raid-shell--gather .raid-phone-checks { list-style: none; margin: 0 18px; padding: 0; }
+.raid-phone-checks li { display: flex; align-items: flex-start; gap: 12px; padding: 16px 0; border-top: 1px solid #ececf0; }
+.raid-phone-checks li > span:last-child { min-width: 0; }
+.raid-shell--gather .raid-phone-checks small { margin: 4px 0 0; line-height: 1.5; color: #6e7078; font-size: .78rem; }
+.raid-check-icon { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border-radius: 50%; background: #f0f0f3; color: #6e7078; font-size: .8rem; font-weight: 750; }
+.raid-check-icon--pass { background: #eaf5ee; color: #28704d; }
+.raid-check-icon--warn { background: #fff4de; color: #925e0a; }
+.raid-check-icon--fail { background: #fff0ee; color: #ce2925; }
+.raid-shell--gather .raid-departure-hint, .raid-preparation > .kb-muted { padding-inline: 4px; font-size: .8rem; line-height: 1.5; }
+.kb-shell.raid-shell--gather .raid-departure-action,
+.kb-shell.raid-shell--gather .raid-preparation__action { position: sticky; left: auto; bottom: 16px; transform: none; width: 100%; padding: 8px; border: 1px solid #ffffffcc; border-radius: 23px; background: #ffffffdb; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 6px 24px #20212612; }
+.kb-shell.raid-shell--gather .raid-departure-action { position: fixed; left: 50%; transform: translateX(-50%); width: min(680px, calc(100% - 32px)); }
+.kb-shell.raid-shell--gather :is(.raid-departure-action,.raid-preparation__action) .kb-primary { min-height: 52px; border: 0; border-radius: 16px; background: #ed302b; color: #fff; box-shadow: none; }
+.raid-shell--gather .raid-departure-form { padding-bottom: 100px; }
+.raid-shell--gather .raid-preparation__details > button { margin: 0 18px 18px; }
+.raid-shell--gather :is(button, summary):active { opacity: .7; }
+.raid-shell--gather summary:focus-visible { outline: 2px solid #245fc4; outline-offset: 2px; border-radius: 22px; }
+@media (prefers-reduced-motion: reduce) { .raid-start-options__selection, .raid-shell--gather summary::after { transition: none; } }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) { .kb-shell.raid-shell--gather :is(.raid-departure-action,.raid-preparation__action) { background: #fff; backdrop-filter: none; } }
+
+.raid-shell--gather .raid-preparation__status[data-ready="true"] { color: #28704d; }
