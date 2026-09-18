@@ -76,3 +76,48 @@ test('a team read failure is not an empty membership and retries without reload'
   await page.getByRole('button', { name: 'Повторить', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Соберёмся на прогулку?' })).toBeVisible()
 })
+
+async function renewSameAccount(page: Page) {
+  await page.evaluate(identityId => window.dispatchEvent(new StorageEvent('storage', {
+    key: 'kabanda:relay-session:v1',
+    oldValue: JSON.stringify({ opaque: 'synthetic-before', identityId }),
+    newValue: JSON.stringify({ opaque: 'synthetic-after', identityId }),
+  })), userId)
+}
+
+for (const status of [503, 429]) test(`an already open screen survives ${status} session revalidation without remount`, async ({ page }) => {
+  const state = { me: 200 }
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await mockHome(page, state)
+  await page.goto(`/app?kabanda=${teamId}&tab=raids`)
+  const hub = page.getByTestId('production-raids-hub')
+  await expect(hub).toBeVisible()
+  await page.evaluate(() => Object.assign(window, { trustHubNode: document.querySelector('[data-testid="production-raids-hub"]') }))
+  state.me = status
+  await renewSameAccount(page)
+  await expect(page.getByRole('button', { name: 'Повторить проверку', exact: true })).toBeVisible()
+  await expect(hub).toBeVisible()
+  await expect(page.getByLabel('Пароль', { exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { trustHubNode: Element }).trustHubNode === document.querySelector('[data-testid="production-raids-hub"]'))).toBe(true)
+  state.me = 200
+  await page.getByRole('button', { name: 'Повторить проверку', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Повторить проверку', exact: true })).toHaveCount(0)
+  await expect(hub).toBeVisible()
+  expect(pageErrors).toEqual([])
+})
+
+test('confirmed 401 removes a previously open private screen and permits a fresh login', async ({ page }) => {
+  const state = { me: 200, login: 'ok' as const }
+  await mockHome(page, state)
+  await page.goto(`/app?kabanda=${teamId}&tab=raids`)
+  await expect(page.getByTestId('production-raids-hub')).toBeVisible()
+  state.me = 401
+  await renewSameAccount(page)
+  await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('production-raids-hub')).toHaveCount(0)
+  await page.getByLabel('Логин', { exact: true }).fill('trust-rider')
+  await page.getByLabel('Пароль', { exact: true }).fill('synthetic-password')
+  await page.getByRole('button', { name: 'Войти', exact: true }).click()
+  await expect(page.getByTestId('production-raids-hub')).toBeVisible()
+})

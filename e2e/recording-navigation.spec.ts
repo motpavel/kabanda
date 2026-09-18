@@ -60,6 +60,23 @@ test('refusing link and browser Back keeps the recording map mounted; accepting 
   await expect(page).toHaveURL(new RegExp(`raid=${raid.id}`))
   await expect(map).toBeVisible()
 
+  // This compound URL is routed to a template, not the active raid. The guard
+  // must use the same parser as App rather than only looking for ?raid=.
+  await page.evaluate(({ raidId, teamId }) => {
+    const link = document.createElement('a')
+    link.href = `/app?raid=${raidId}&routeTemplate=22222222-2222-4222-8222-222222222222&kabanda=${teamId}`
+    link.textContent = 'Synthetic template navigation'
+    link.dataset.testid = 'trust-template-link'
+    document.body.append(link)
+  }, { raidId: raid.id, teamId: team.kabanda.id })
+  const templateDialog = page.waitForEvent('dialog', { timeout: 5_000 })
+  const templateClick = page.getByTestId('trust-template-link').click()
+  await (await templateDialog).dismiss()
+  await templateClick
+  await expect(page).not.toHaveURL(/routeTemplate=/)
+  await expect(map).toBeVisible()
+  await page.getByTestId('trust-template-link').evaluate(node => node.remove())
+
   const backDialog = page.waitForEvent('dialog')
   await page.evaluate(() => window.history.back())
   await (await backDialog).dismiss()
