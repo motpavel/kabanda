@@ -18,6 +18,11 @@ type Kind = 'actionable' | 'raid' | 'history' | 'progress'
 type KabandaRole = 'owner' | 'member'
 const entries = new Map<string, RaidResource<unknown>>()
 const deniedTeams = new Set<string>()
+// First-time detail reads do not know their team until the response arrives.
+// Keep the latest denial epoch even after a later read restores access, so an
+// older unbound response cannot undo that decision or repopulate private caches.
+let revocationEpoch = 0
+const teamRevocationEpochs = new Map<string, number>()
 const teamKey = (identityId: string, kabandaId: string) => JSON.stringify([identityId, kabandaId])
 const online = () => typeof navigator === 'undefined' || navigator.onLine
 const actionableMembership = (raid: RaidProjection, identityId: string, role?: KabandaRole): boolean | null => {
@@ -76,6 +81,12 @@ export class RaidResource<T> {
   }
   accept(value: T, persist = true, status: ProductionResourceState = 'ready') {
     if (this.retired) return
+    const owner = this.kind === 'raid' && isRaidProjection(value) ? value.kabandaId : this.kabandaId
+    if (owner && deniedTeams.has(teamKey(this.identityId, owner))) {
+      this.kabandaId = owner
+      this.deny()
+      return
+    }
     if (this.kind === 'raid' && isRaidProjection(value) && isRaidProjection(this.state.data) && this.state.data.version > value.version) return
     this.reads.invalidate()
     this.pending = null
@@ -149,9 +160,17 @@ export class RaidResource<T> {
     if (this.retired) return Promise.resolve()
     if (this.pending) return this.pending
     const current = this.reads.fence()
+    const startedRevocationEpoch = revocationEpoch
     const pending = this.reads.read(this.key, this.load).then(value => {
       if (!current()) return
-      if (this.kabandaId) deniedTeams.delete(teamKey(this.identityId, this.kabandaId))
+      const owner = this.kind === 'raid' && isRaidProjection(value) ? value.kabandaId : this.kabandaId
+      if (owner && (teamRevocationEpochs.get(teamKey(this.identityId, owner)) ?? 0) > startedRevocationEpoch) {
+        this.kabandaId = owner
+        this.deny()
+        return
+      }
+      // Only a read started after the last denial can confirm restored access.
+      if (owner) deniedTeams.delete(teamKey(this.identityId, owner))
       const previous = this.state.data
       this.accept(value)
       if (this.kind === 'raid' && isRaidProjection(value)) publishRaid(this.identityId, value, this, true, isRaidProjection(previous) ? previous : null)
@@ -232,6 +251,7 @@ async function removeFromLists(identityId: string, raidId: string) {
   }).catch(() => undefined)
 }
 function publishRaid(identityId: string, raid: RaidProjection, source?: RaidResource<unknown>, updateLists = true, prior?: RaidProjection | null) {
+  if (deniedTeams.has(teamKey(identityId, raid.kabandaId))) return
   const detail = raidResource(identityId, raid.id)
   if (updateLists) actionableResource(identityId, raid.kabandaId)
   const previous = prior === undefined ? detail.state.data : prior
@@ -257,7 +277,14 @@ function publishRaid(identityId: string, raid: RaidProjection, source?: RaidReso
           // Apply the confirmed card in memory, discard list membership on disk, revalidate.
           entry.accept(list.map(item => item.id === raid.id ? raid : item), false, entry.state.status)
           entry.invalidate()
-        } else entry.accept(list.flatMap(item => item.id !== raid.id ? [item] : membership ? [raid] : []), true, entry.state.status)
+        } else {
+          const next = list.flatMap(item => item.id !== raid.id ? [item] : membership ? [raid] : [])
+          // A confirmed command can establish new membership (e.g. accept via
+          // a direct link) before list revalidation finishes. Do not invent a
+          // full list when it is unknown, or reinsert absent cards from reads.
+          if (!source && membership && !next.some(item => item.id === raid.id)) next.push(raid)
+          entry.accept(next, true, entry.state.status)
+        }
       }
     }
     if ((entry.kind === 'history' || entry.kind === 'progress') &&
@@ -268,7 +295,9 @@ function publishRaid(identityId: string, raid: RaidProjection, source?: RaidReso
   }
 }
 async function revokeTeam(identityId: string, kabandaId: string) {
-  deniedTeams.add(teamKey(identityId, kabandaId))
+  const key = teamKey(identityId, kabandaId)
+  teamRevocationEpochs.set(key, ++revocationEpoch)
+  deniedTeams.add(key)
   for (const entry of entries.values()) if (entry.identityId === identityId && entry.kabandaId === kabandaId) entry.deny()
   clearPrivateImageCache()
   // Only read models and private images: never touch operational queues.
@@ -330,6 +359,7 @@ export function resetRaidResources(retainedIdentity?: string) {
     else { entry.retire(); entries.delete(key) }
   }
   for (const key of deniedTeams) if (JSON.parse(key)[0] !== retainedIdentity) deniedTeams.delete(key)
+  for (const key of teamRevocationEpochs.keys()) if (JSON.parse(key)[0] !== retainedIdentity) teamRevocationEpochs.delete(key)
 }
 
 if (typeof window !== 'undefined') {
