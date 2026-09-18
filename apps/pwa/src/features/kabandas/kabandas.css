@@ -210,7 +210,7 @@
 .kb-identity div { display: grid; min-width: 0; }
 .kb-identity small { max-width: 230px; overflow: hidden; color: var(--kb-muted); text-overflow: ellipsis; }
 
-.kb-shell--tabs { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+.kb-shell--tabs { padding-bottom: 112px; }
 
 .kb-shell--map {
   width: 100%;
@@ -228,7 +228,7 @@
   position: fixed;
   z-index: 80;
   right: 0;
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  bottom: 16px;
   left: 0;
   display: grid;
   width: min(calc(100% - 32px), 620px);
@@ -638,7 +638,7 @@
   position: absolute;
   z-index: 50;
   inset: 0;
-  padding: max(76px, calc(env(safe-area-inset-top) + 70px)) 14px calc(112px + env(safe-area-inset-bottom));
+  padding: max(76px, calc(env(safe-area-inset-top) + 70px)) 14px 112px;
   overflow-y: auto;
   background: var(--kb-bg);
 }
@@ -651,7 +651,7 @@
   position: fixed;
   z-index: 70;
   right: 12px;
-  bottom: calc(98px + env(safe-area-inset-bottom));
+  bottom: 98px;
   left: 12px;
   width: min(calc(100% - 24px), 520px);
   min-height: 76px;
@@ -1037,7 +1037,7 @@
   .kb-install-guidance { grid-template-columns: 1fr; }
   .kb-install-guidance > button { width: 100%; }
   .kb-invite-meta { grid-template-columns: 1fr; }
-  .kb-shell--team { padding: max(10px, env(safe-area-inset-top)) 12px calc(112px + env(safe-area-inset-bottom)); }
+  .kb-shell--team { padding: max(10px, env(safe-area-inset-top)) 12px 112px; }
   .kb-shell--team .kb-topbar { top: auto; margin-bottom: 14px; border-radius: 17px; padding: 7px 8px 7px 10px; }
   .kb-shell--team .kb-brand { font-size: .96rem; }
   .kb-shell--team .kb-brand img { width: 36px; height: 36px; }
@@ -1073,7 +1073,7 @@
   .kb-team-account-row { align-items: stretch; flex-direction: column; }
   .kb-shell .kb-switch-account { width: 100%; justify-content: center; }
   .kb-shell .kb-leave-team { width: 100%; }
-  .kb-team-dialog-backdrop { align-items: end; padding: 10px 10px calc(98px + env(safe-area-inset-bottom)); }
+  .kb-team-dialog-backdrop { align-items: end; padding: 10px 10px 98px; }
   .kb-team-dialog { width: 100%; max-height: 70svh; border-radius: 18px; padding: 19px; }
 }
 

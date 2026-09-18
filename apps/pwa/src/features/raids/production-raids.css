@@ -60,7 +60,7 @@
 .prd-raids [data-testid="production-new-raid"] {
   position: fixed;
   z-index: 45;
-  bottom: calc(98px + env(safe-area-inset-bottom));
+  bottom: 98px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
