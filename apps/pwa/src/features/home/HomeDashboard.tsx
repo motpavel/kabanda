@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react'
 import { appPath } from '../../lib/paths'
 import type { KabandaMember, KabandaSummary } from '../kabandas/types'
-import { RaidHomeCard } from '../raids/RaidHomeCard'
+import { RaidHomeContent } from '../raids/RaidHomeCard'
+import { useActionableRaids } from '../raids/resources'
+import { splitActionableRaids } from '../raids/production-model'
 import type { KabandaProgress } from '../results/types'
 import './home.css'
+import './home-priority.css'
 import { HomeIcon } from './HomeIcon'
 
 export function HomeDashboard({ identityId, kabanda, members, progress, notices, active = true }: {
@@ -14,15 +17,19 @@ export function HomeDashboard({ identityId, kabanda, members, progress, notices,
   notices?: ReactNode
   active?: boolean
 }) {
+  const resource = useActionableRaids(identityId, kabanda.id, kabanda.role, active)
+  const current = splitActionableRaids(resource.data ?? [], identityId).current
+  const nextRide = <div className="kb-home-next"><RaidHomeContent identityId={identityId} kabanda={kabanda} resource={resource} /></div>
   const destination = (tab: string) => `${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=${tab}`
   const count = members.length || kabanda.memberCount
   const countLabel = new Intl.PluralRules('ru').select(count)
   const memberLabel = countLabel === 'one' ? 'участник' : countLabel === 'few' ? 'участника' : 'участников'
   const km = progress ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(progress.personal.distanceMeters / 1000) : '—'
 
-  return <section className="kb-home" aria-label="Главная">
+  return <section className={`kb-home${current ? ' kb-home--in-raid' : ''}`} aria-label="Главная">
+    {current && nextRide}
     <article className="kb-home-hero">
-      <img src={appPath('brand/kabanda-home-ride-v2.jpg')} width="2048" height="768" alt="Кабаны на велосипедах над городом. Больше чем игра. Хорошие маршруты делают лучших людей." fetchPriority="high" decoding="async" />
+      <img src={appPath('brand/kabanda-home-ride-v2.jpg')} width="2048" height="768" alt="Кабаны на велосипедах над городом. Больше чем игра. Хорошие маршруты делают лучших людей." fetchPriority={current ? 'auto' : 'high'} decoding="async" />
       <div className="kb-home-hero-copy">
         <h1>Город — ваш<br />общий маршрут.</h1>
         <p>Знакомые лица. Новые места.<br />Ещё одна история вместе.</p>
@@ -31,8 +38,7 @@ export function HomeDashboard({ identityId, kabanda, members, progress, notices,
 
     {notices}
     <div className="kb-home-layout">
-      <div className="kb-home-next"><RaidHomeCard identityId={identityId} kabanda={kabanda} active={active} /></div>
-
+      {!current && nextRide}
       <section className="kb-home-team" aria-labelledby="home-team-heading">
         <div className="kb-home-section-heading"><h2 id="home-team-heading">Моя Кабанда</h2><a href={destination('kabanda')} aria-label="Открыть мою Кабанду"><HomeIcon name="arrow" /></a></div>
         <a className="kb-home-team-link" href={destination('kabanda')}>

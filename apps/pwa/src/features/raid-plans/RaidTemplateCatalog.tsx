@@ -6,9 +6,12 @@ import type { RaidTemplateSummary } from './types'
 import { CachedImage, clearPrivateImageCache, isPrivateCover } from '../../lib/CachedImage'
 import { useVisibleRead } from '../raids/read-refresh'
 import { ApiError } from '../../lib/http'
+import { ROUTE_CATALOG_PREVIEW_SIZE, selectCatalogRoutes } from './catalog-selection'
+import './catalog-selection.css'
 
 export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { kabandaId: string; identityId: string; active?: boolean }) {
   const requestVersion = useRef(0)
+  const [expanded, setExpanded] = useState(false)
   const [state, setState] = useState<
     | { status: 'loading' }
     | { status: 'ready'; templates: RaidTemplateSummary[]; stale?: boolean }
@@ -23,8 +26,7 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
       if (requestVersion.current === version) setState({ status: 'ready', templates })
     } catch (error) {
       if (requestVersion.current !== version) return
-      // Network failure may retain the current identity's picture; denial must not.
-      if (error instanceof ApiError && error.status < 500) {
+      if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
         clearPrivateImageCache()
         setState({ status: 'error' })
       } else setState(current => current.status === 'ready' ? { ...current, stale: true } : { status: 'error' })
@@ -38,12 +40,13 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
     return () => { requestVersion.current += 1; window.removeEventListener('offline', offline) }
   }, [identityId, kabandaId])
   const refresh = useVisibleRead(load, `${identityId}:${kabandaId}`, active, null)
+  const gridId = `route-catalog-${kabandaId}`
 
   return <section className="rdp-section prd-template-catalog" aria-labelledby="production-routes-heading" data-testid="production-route-catalog">
     <div className="prd-section-heading">
       <div>
         <h2 id="production-routes-heading">Доступные маршруты</h2>
-        <p>Созданные участниками маршруты для будущих рейдов.</p>
+        <p>Выберите готовый маршрут или создайте свой.</p>
       </div>
       {state.status === 'ready' && state.templates.length > 0 && <span>{state.templates.length}</span>}
     </div>
@@ -56,23 +59,24 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
       <strong>Маршрутов пока нет</strong>
       <span>Создайте первый: добавьте обложку и точки на карте.</span>
     </div>}
-    {state.status === 'ready' && state.stale && <p role="status">Сохранённые маршруты. Обновим после восстановления связи.</p>}
-    {state.status === 'ready' && state.templates.length > 0 && <RaidTemplateGrid identityId={identityId} kabandaId={kabandaId} templates={state.templates} disabled={state.stale} />}
+    {state.status === 'ready' && state.stale && <p role="status">Не удалось обновить маршруты. Показаны сохранённые данные. <button type="button" onClick={() => void refresh()}>Повторить</button></p>}
+    {state.status === 'ready' && state.templates.length > 0 && <>
+      <RaidTemplateGrid id={gridId} identityId={identityId} kabandaId={kabandaId} templates={selectCatalogRoutes(state.templates, expanded)} disabled={state.stale} />
+      {state.templates.length > ROUTE_CATALOG_PREVIEW_SIZE && <button className="prd-template-expand" type="button" aria-controls={gridId} aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+        {expanded ? 'Свернуть каталог' : `Показать все маршруты (${state.templates.length})`}
+      </button>}
+    </>}
   </section>
 }
 
-export function RaidTemplateGrid({ templates, kabandaId, identityId, disabled = false }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string; disabled?: boolean }) {
-  const chronological = [...templates].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
-  return <div className="prd-template-grid">
+export function RaidTemplateGrid({ templates, kabandaId, identityId, disabled = false, id }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string; disabled?: boolean; id?: string }) {
+  const chronological = selectCatalogRoutes(templates, true)
+  return <div id={id} className="prd-template-grid">
     {chronological.map((template) => <a className="prd-template-card" key={template.id} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} href={disabled ? undefined : `${appPath('app')}?routeTemplate=${encodeURIComponent(template.id)}&kabanda=${encodeURIComponent(kabandaId ?? template.kabandaId)}`}>
-      {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
+      {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" width="1792" height="896" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" width="1792" height="896" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
       <div>
         <h3>{template.title}</h3>
-        <p>
-          <span>{template.pointCount} {pointWord(template.pointCount)}</span>
-          <span aria-hidden="true">·</span>
-          <span>≈ {formatPlanDistance(template.estimate.distanceMeters)}</span>
-        </p>
+        <p><span>{template.pointCount} {pointWord(template.pointCount)}</span><span aria-hidden="true">·</span><span>≈ {formatPlanDistance(template.estimate.distanceMeters)}</span></p>
         <small>Расстояние по прямым отрезкам</small>
       </div>
     </a>)}
