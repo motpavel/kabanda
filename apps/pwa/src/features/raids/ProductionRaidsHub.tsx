@@ -294,7 +294,7 @@ function UpcomingRaidRow({ identityId, raid, stale }: { identityId: string; raid
     <span className="rdp-row__icon"><Icon name="calendar" /></span>
     <span className="rdp-row__copy">
       <strong>{raid.title}</strong>
-      <small><span>{formatSchedule(raid.scheduledAt)}</span>{avatars.length > 0 && <span aria-label={`${participants.length} подтверждённых участников`} className="rdp-row__avatars">{avatars.map((participant) => <i aria-hidden="true" key={participant.id}>{initial(participant.displayName)}</i>)}</span></small>
+      <small><span>{formatSchedule(raid.scheduledAt)}</span>{avatars.length > 0 && <span aria-label={`${participants.length} подтверждённых участников`} className="rdp-row__avatars">{avatars.map((participant) => <i aria-hidden="true" key={participant.id}>{initial(participant.displayName)}</i>)}</span>}</small>
     </span>
     <span className="rdp-row__action"><span className="rdp-row__badge">{stale ? 'Уточняем статус' : participationLabel(raid, identityId)}</span><Icon name="chevron" size={19} /></span>
   </a>
