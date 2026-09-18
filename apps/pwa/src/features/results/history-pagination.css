@@ -3,3 +3,4 @@
 .prd-history-pagination button:disabled, .prd-history-page-error button:disabled { opacity: .65; cursor: default; }
 .prd-history-page-error p { margin: 0; text-align: center; }
 .prd-history-pagination small { color: var(--rdp-muted, #696b72); }
+.prd-history-personal.prd-history-personal--absent { max-width: 8.5em; white-space: normal; overflow-wrap: anywhere; text-align: right; font-size: .72rem; color: var(--rdp-muted, #696b72); }
