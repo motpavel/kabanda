@@ -140,4 +140,14 @@ describe('shared raid resources and persisted membership', () => {
     expect(vi.mocked(listRaidHistory).mock.calls.length).toBe(calls + 1)
     expect(await readActionableRaidProjections('user', 'crew')).toEqual([])
   })
+
+  it('removes a confirmed decline from memory and the persisted actionable snapshot', async () => {
+    const list = actionableResource('user', 'crew')
+    await list.refresh(); await list.settled()
+    confirm({ ...raid, organizerUserId: 'organizer', participants: [{ ...raid.participants[0]!, state: 'declined' }], allowedActions: [] },
+      '/api/raids/ride/participants/me/decline')
+    await list.settled()
+    expect(list.state.data).toEqual([])
+    expect(await readActionableRaidProjections('user', 'crew')).toEqual([])
+  })
 })

@@ -19,6 +19,11 @@ const entries = new Map<string, RaidResource<unknown>>()
 const deniedTeams = new Set<string>()
 const teamKey = (identityId: string, kabandaId: string) => JSON.stringify([identityId, kabandaId])
 const online = () => typeof navigator === 'undefined' || navigator.onLine
+const isActionableFor = (raid: RaidProjection, identityId: string) => actionableStates.has(raid.state) && (
+  raid.organizerUserId === identityId ||
+  raid.participants.some(participant => participant.id === identityId &&
+    ['invited', 'accepted', 'ready', 'active'].includes(participant.state))
+)
 
 /** Session resource shared by mounted, hidden and returning screens. ReadCache's
  * generation fences network, hydration and queued disk writes, including equal versions. */
@@ -222,7 +227,7 @@ function publishRaid(identityId: string, raid: RaidProjection, source?: RaidReso
     if (entry.kind === 'actionable') {
       const list = entry.state.data as RaidProjection[] | null
       if (!list) entry.invalidate()
-      if (list) entry.accept(list.flatMap(item => item.id !== raid.id ? [item] : actionableStates.has(raid.state) ? [raid] : []), true, entry.state.status)
+      if (list) entry.accept(list.flatMap(item => item.id !== raid.id ? [item] : isActionableFor(raid, identityId) ? [raid] : []), true, entry.state.status)
     }
     if ((entry.kind === 'history' || entry.kind === 'progress') &&
       raid.state === 'completed' && previous?.state !== 'completed') {
@@ -267,7 +272,9 @@ subscribeConfirmedWrites(event => {
   if (/\/kabandas\/[^/]+\/raids$/.test(event.path)) {
     const list = actionableResource(event.identityId, raid.kabandaId)
     // The command proves this raid exists, not the membership of the rest of a list.
-    if (list.state.data && !list.state.data.some(item => item.id === raid.id)) list.accept([...list.state.data, raid], true, list.state.status)
+    if (isActionableFor(raid, event.identityId) && list.state.data && !list.state.data.some(item => item.id === raid.id)) {
+      list.accept([...list.state.data, raid], true, list.state.status)
+    }
   }
   if (/\/(?:commands|participants|finalization)\//.test(event.path) || /\/kabandas\/[^/]+\/raids$/.test(event.path)) {
     const list = actionableResource(event.identityId, raid.kabandaId)

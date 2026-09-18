@@ -13,7 +13,15 @@ if (typeof window !== 'undefined') {
     if (next !== identity) { identity = next; reads.invalidate(true) }
   })
   window.addEventListener('storage', (event) => {
-    if (event.key === null || event.key === 'kabanda:relay-session:v1') reads.invalidate(true)
+    if (event.key !== null && event.key !== 'kabanda:relay-session:v1') return
+    // Storage events are the cross-tab source of truth for the relay session.
+    // Fence confirmed-write events under the same identity the transport just adopted.
+    identity = undefined
+    try {
+      const saved = JSON.parse(event.newValue ?? 'null') as { identityId?: unknown } | null
+      if (saved && (saved.identityId === null || typeof saved.identityId === 'string')) identity = saved.identityId
+    } catch { /* A corrupt or cleared session has no usable identity. */ }
+    reads.invalidate(true)
   })
 }
 
