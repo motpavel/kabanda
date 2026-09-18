@@ -25,12 +25,15 @@ import { registerRaidRoutes } from './raid-routes.js'
 import { RaidError, type RaidService } from './raids.js'
 import { registerRaidTemplateRoutes } from './raid-template-routes.js'
 import { RaidTemplateError, type RaidTemplateService } from './raid-templates.js'
+import { registerProgressReadRoutes } from './progress-read-routes.js'
+import type { ProgressReadService } from './progress-reads.js'
 
 export interface AppDependencies {
   auth: AuthService
   kabandas: KabandaService
   raids?: RaidService
   raidTemplates?: RaidTemplateService
+  progressReads?: ProgressReadService
   geocoding?: GeocodingService
   config: ApiConfig
   readiness: () => Promise<void>
@@ -353,6 +356,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   await registerKabandaRoutes(app, dependencies)
   if (dependencies.raids) await registerRaidRoutes(app, { ...dependencies, raids: dependencies.raids })
+  if (dependencies.progressReads) await registerProgressReadRoutes(app, { ...dependencies, progressReads: dependencies.progressReads })
   if (dependencies.raidTemplates) {
     await registerRaidTemplateRoutes(app, {
       ...dependencies,

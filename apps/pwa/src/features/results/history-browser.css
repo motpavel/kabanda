@@ -1,0 +1,20 @@
+.history-browser__more {
+  display: block;
+  min-height: 44px;
+  width: 100%;
+  margin-top: 14px;
+  border: 1px solid #dedcdf;
+  border-radius: 12px;
+  padding: 10px 16px;
+  color: #34363b;
+  background: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.history-browser__notice { margin-block: 10px; }
+.history-browser__notice p { margin-block: 6px; }
+.history-browser__notice button { min-height: 44px; }
+.history-browser__item { min-width: 0; }
+.history-browser__item > a { display: block; }
+.history-browser__end { color: #696b72; text-align: center; font-size: .85rem; margin: 16px 0 0; }

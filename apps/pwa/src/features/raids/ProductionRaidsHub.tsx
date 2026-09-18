@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
 import { appPath } from '../../lib/paths'
-import { useActionableRaids, useRaidHistory } from './resources'
+import { useActionableRaids } from './resources'
+import { HistoryBrowser } from '../results/HistoryBrowser'
 import { CurrentRaidCard } from './CurrentRaidCard'
 import { RaidHubIcon as Icon, type IconName } from './RaidHubIcon'
 import type { KabandaSummary } from '../kabandas/types'
@@ -38,14 +39,10 @@ export function ProductionRaidsHub({
   active?: boolean
 }) {
   const resource = useActionableRaids(identityId, kabanda.id, kabanda.role, active)
-  const historyResource = useRaidHistory(identityId, kabanda.id, active)
   const actionable = resource.data ?? []
-  const history = historyResource.data?.raids ?? []
   const resourceState = resource.status
-  const historyState = historyResource.status
   const resourceMessage = resource.message
   const refresh = resource.refresh
-  const refreshHistory = historyResource.refresh
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
   const [invitationOperation, setInvitationOperation] = useState<InvitationOperation | null>(null)
   const [invitationNotice, setInvitationNotice] = useState<InvitationNotice | null>(null)
@@ -177,11 +174,16 @@ export function ProductionRaidsHub({
         </>
       )}
       {resourceState !== 'access-error' && <RaidTemplateCatalog identityId={identityId} kabandaId={kabanda.id} active={active} />}
-      {resourceState !== 'access-error' && (historyState === 'loading'
-        ? <section className="rdp-section prd-history-loading" aria-busy="true" aria-label="Загружаем историю"><h2>История</h2><p className="kb-muted">Загружаем историю…</p><div className="prd-history-loading__card" aria-hidden="true" /></section>
-        : historyState === 'error' || historyState === 'access-error'
-          ? <div role="status"><p>{historyState === 'access-error' ? 'Доступ к истории не подтверждён.' : 'История пока не загрузилась.'}</p><button type="button" onClick={() => void refreshHistory()}>Повторить</button></div>
-          : <ProductionHistory coverImage={coverImage} history={history} />)}
+      {resourceState !== 'access-error' && <HistoryBrowser
+        identityId={identityId} kabandaId={kabanda.id} active={active}
+        renderCard={raid => <ProductionHistoryCard coverImage={coverImage} raid={raid} />}
+        renderEmpty={filter => <RaidEmptyState
+          detail={filter === 'mine' ? 'Вы ещё не участвовали в завершённых рейдах этой Кабанды.' : 'После завершения здесь появятся только реальные километры, точки и фотографии команды.'}
+          eyebrow={filter === 'mine' ? 'Личная история' : 'Всё впереди'}
+          icon={filter === 'mine' ? 'bike' : 'flag'} image={coverImage}
+          title={filter === 'mine' ? 'Ваш первый результат ещё впереди' : 'Первый финиш ещё впереди'}
+        />}
+      />}
     </section>
   )
 }
@@ -300,6 +302,7 @@ function UpcomingRaidRow({ identityId, raid, stale }: { identityId: string; raid
   </a>
 }
 
+/** Static presenter retained for isolated previews; the authenticated hub uses HistoryBrowser. */
 export function ProductionHistory({ coverImage, history }: { coverImage: string; history: RaidHistoryItem[] }) {
   const [filter, setFilter] = useState<ProductionHistoryFilter>('all')
   const visibleHistory = filterProductionHistory(history, filter)

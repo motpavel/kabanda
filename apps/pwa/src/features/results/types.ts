@@ -26,11 +26,14 @@ export interface RaidResult {
   }>
 }
 
+export type RaidHistoryFilter = 'all' | 'mine'
 export interface RaidHistoryItem {
   raidId: string
   title: string
   completedAt: string
   partial: boolean
+  /** Present in the participation-aware API; old cached pages may not have it. */
+  participated?: boolean
   team: RaidMetrics
   personal: RaidMetrics
 }

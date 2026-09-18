@@ -101,7 +101,7 @@ export function filterProductionHistory(
   filter: ProductionHistoryFilter,
 ): RaidHistoryItem[] {
   if (filter === 'all') return raids
-  return raids.filter((raid) => hasActivity(raid.personal))
+  return raids.filter((raid) => participatedInHistory(raid))
 }
 
 export function confirmedRaidParticipants(
@@ -124,7 +124,7 @@ export function historyAchievement(raid: RaidHistoryItem): {
   tone: 'discovery' | 'personal' | 'record'
 } {
   if (raid.partial) return { label: 'Частичный итог', tone: 'personal' }
-  if (hasActivity(raid.personal)) return { label: 'Вы участвовали', tone: 'record' }
+  if (participatedInHistory(raid)) return { label: 'Вы участвовали', tone: 'record' }
   return { label: 'Итог Кабанды', tone: 'discovery' }
 }
 
@@ -138,6 +138,12 @@ function participantStateLabel(state: RaidParticipantState): string {
     left: 'Вы вышли',
     removed: 'Вы не участвуете',
   }[state]
+}
+
+function participatedInHistory(raid: RaidHistoryItem): boolean {
+  // Only legacy static previews/cached badges lack the flag. The live "Мои"
+  // list is filtered server-side and requires explicit participated=true.
+  return raid.participated ?? hasActivity(raid.personal)
 }
 
 function hasActivity(metrics: RaidMetrics): boolean {

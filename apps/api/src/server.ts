@@ -11,6 +11,7 @@ import { SmtpMagicLinkMailer } from './mailer.js'
 import { DatabaseKabandaService } from './kabandas.js'
 import { DatabaseRaidService } from './raids.js'
 import { DatabaseRaidTemplateService } from './raid-templates.js'
+import { DatabaseProgressReadService } from './progress-reads.js'
 import { buildRelayBridge } from './relay-bridge.js'
 import { S3RelayBlobStore } from './relay-blob-store.js'
 
@@ -36,6 +37,7 @@ const kabandas = new DatabaseKabandaService(database, {
 })
 const raids = new DatabaseRaidService(database, config.MEDIA_CAPABILITY_SECRET)
 const raidTemplates = new DatabaseRaidTemplateService(database)
+const progressReads = new DatabaseProgressReadService(database)
 const geocoding = new NominatimReverseGeocoder({
   baseUrl: config.NOMINATIM_BASE_URL,
   appOrigin: config.APP_ORIGIN,
@@ -46,6 +48,7 @@ const app = await buildApp({
   kabandas,
   raids,
   raidTemplates,
+  progressReads,
   geocoding,
   config,
   readiness: () => assertDatabaseReady(database, config.EXPECTED_MIGRATION),
