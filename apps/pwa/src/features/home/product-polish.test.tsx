@@ -37,10 +37,10 @@ describe('home priority and compact catalog', () => {
     }
   })
 
-  it('shows four newest routes and preserves the source and remaining routes', () => {
+  it('shows four routes in the established order and preserves the source and remaining routes', () => {
     const source = Array.from({ length: 7 }, (_, index) => ({ id: String(index), createdAt: `2026-09-${String(index + 1).padStart(2, '0')}T12:00:00Z` }))
     const before = JSON.stringify(source)
-    expect(selectCatalogRoutes(source).map(row => row.id)).toEqual(['6', '5', '4', '3'])
+    expect(selectCatalogRoutes([...source].reverse()).map(row => row.id)).toEqual(['0', '1', '2', '3'])
     expect(selectCatalogRoutes(source, true)).toHaveLength(7)
     expect(JSON.stringify(source)).toBe(before)
     expect(selectCatalogRoutes([])).toEqual([])

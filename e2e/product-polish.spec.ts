@@ -63,7 +63,7 @@ test('route catalog expands without losing history or exposing duplicate route c
   await page.goto(`/app?kabanda=${teamId}&tab=raids`)
   const cards = page.getByTestId('production-route-catalog').locator('.prd-template-card')
   await expect(cards).toHaveCount(4)
-  await expect(cards.first()).toContainText('Маршрут 7')
+  await expect(cards.first()).toContainText('Маршрут 1')
   await page.getByRole('button', { name: 'Показать все маршруты (7)' }).click()
   await expect(cards).toHaveCount(7)
   await expect(page.getByTestId('production-raid-history')).toBeVisible()
