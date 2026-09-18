@@ -12,7 +12,7 @@ const metrics = { durationSeconds: 1200, distanceMeters: 3000, uniquePoints: 1, 
 const history = Array.from({ length: 12 }, (_, index) => ({
   raidId: `44444444-4444-4444-8444-${String(index + 1).padStart(12, '0')}`,
   title: `Поездка ${index + 1}`, completedAt: new Date(Date.UTC(2026, 8, 17, 12 - index)).toISOString(),
-  partial: false, team: metrics, personal: metrics,
+  partial: false, participated: true, team: metrics, personal: metrics,
 }))
 const point = { id: '66666666-6666-4666-8666-666666666666', stableId: 'test-point', name: 'Тестовая башня', latitude: 56.89, longitude: 53.25,
   verificationStatus: 'field_verified', visitedByMe: true, visitedByTeam: true, visitedByMeCount: 1, visitedByTeamCount: 1 }
@@ -25,6 +25,7 @@ async function mockScreens(page: Page, gates: { actionable?: Promise<void>; prog
       await gates.actionable
       return route.fulfill({ json: { raids: [] } })
     }
+    if (path.endsWith('/points/progress')) return route.fulfill({ json: { category: 'stores', collectionId: null, complete: true, points: [] } })
     if (path.endsWith('/progress')) {
       await gates.progress
       return route.fulfill({ json: { progress: { team: metrics, personal: metrics } } })
@@ -33,8 +34,6 @@ async function mockScreens(page: Page, gates: { actionable?: Promise<void>; prog
       await gates.points
       return route.fulfill({ json: { points: [point] } })
     }
-    // PointVisitHistory consumes a direct History DTO, not { visits: [] }.
-    // Match the actual endpoint before falling back to unrelated mocked reads.
     if (/\/api\/kabandas\/[^/]+\/points\/[^/]+\/history$/.test(path)) {
       return route.fulfill({ json: { visitors: [{ userId, displayName: user.displayName, count: 1 }], personalCount: 1, entries: [], nextOffset: null } })
     }
@@ -50,6 +49,7 @@ async function mockScreens(page: Page, gates: { actionable?: Promise<void>; prog
     }
     const body = path === '/api/me' ? { user }
       : path === '/api/kabandas' ? { kabandas: [team, { ...team, id: otherTeam, name: 'Другая Кабанда' }] }
+      : path.endsWith('/raids/history/page') ? { schemaVersion: 2, scope: url.searchParams.get('scope') ?? 'all', raids: history, nextCursor: null }
       : path.endsWith('/raids/history') ? { raids: history, nextCursor: null }
       : path.endsWith('/members') ? { members: [{ id: userId, displayName: user.displayName, role: 'member', avatarUrl: null }] }
       : path.includes('templates') ? { templates: [], nextCursor: null } : {}
@@ -182,8 +182,8 @@ test('map retains camera, category and selection without leaving a hidden map or
   const marker = page.getByRole('button', { name: /^Тестовая башня\./ })
   await expect(marker).toBeVisible()
   await marker.focus(); await marker.press('Enter')
-  await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeVisible()
   await expect(marker).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeVisible()
   await page.goBack()
   await expect(map).toHaveCount(0)
   await page.goForward()
@@ -215,7 +215,6 @@ test('late location from a destroyed map is ignored; the explicit locate button 
   await deliverPosition(page, 1)
   expect(await camera(page)).toEqual({ center: [56.85, 53.2], zoom: 14 })
   await expect(page.locator('.kb-yandex-user-location')).toHaveCount(1)
-  // Another team is a new workspace, not a reuse of the previous team's camera.
   await page.evaluate(id => {
     window.history.pushState(null, '', `/app?kabanda=${id}&tab=map`)
     window.dispatchEvent(new PopStateEvent('popstate'))
