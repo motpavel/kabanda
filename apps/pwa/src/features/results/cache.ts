@@ -13,7 +13,7 @@ function validMetrics(value: unknown): value is RaidMetrics {
   })
 }
 
-function validResult(value: unknown): value is RaidResult {
+export function validResult(value: unknown): value is RaidResult {
   if (!value || typeof value !== 'object') return false
   const result = value as Partial<RaidResult>
   return result.schemaVersion === 1 && Boolean(result.raid) &&
