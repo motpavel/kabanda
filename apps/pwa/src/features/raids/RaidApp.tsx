@@ -5,6 +5,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
+import { RiderLoader } from '../../app/RiderLoader'
 import { ApiError } from '../../lib/http'
 import { appPath, appUrl } from '../../lib/paths'
 import { FreeHuntCover, RouteRaidCover, freeHuntCoverUrl, routeRaidCoverUrl } from './FreeHuntCover'
@@ -141,7 +142,7 @@ export function RaidApp({ route }: { route: Exclude<RaidRoute, { kind: 'home' }>
     }
   }, [session])
 
-  if (session.status === 'loading') return <RaidShell><p aria-busy="true">Загружаем рейд…</p></RaidShell>
+  if (session.status === 'loading') return <RaidShell><RiderLoader label="Загружаем рейд" /></RaidShell>
   if (session.status === 'anonymous') return <RaidSignIn />
   if (session.status === 'unavailable') return <RaidShell><EmptyState title="Не удалось проверить вход" detail="Соединение недоступно, а сохранённой identity на этом устройстве нет. Попробуйте ещё раз онлайн." /></RaidShell>
   if (route.kind === 'invalid') return <RaidShell><EmptyState title="Ссылка на рейд некорректна" detail="Откройте рейд с главной страницы КАБАНДЫ." /></RaidShell>
@@ -308,7 +309,7 @@ function CreateRaidPage({ identityId, kabandaId }: { identityId: string; kabanda
       <div className="raid-departure">
       {mode ? <button className="raid-departure-back" type="button" disabled={status === 'saving'} onClick={() => setMode(null)}>← Выбор режима</button> : <a className="raid-back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>← Рейды</a>}
       <header className="raid-departure-heading"><h1>{mode === null ? 'Выйти в рейд' : mode === 'free' ? 'Свободная охота' : 'По маршруту'}</h1></header>
-      {status === 'loading' && <p aria-busy="true">Загружаем Кабанду…</p>}
+      {status === 'loading' && <RiderLoader label="Загружаем Кабанду" />}
       {status === 'error' && <p className="kb-error" role="alert">Не удалось открыть форму или сохранить рейд. Проверьте будущее время, доступ и соединение.</p>}
       {kabanda && !mode && <RaidModePicker onSelect={(value) => { setMode(value); setRestoredTitle(null) }} />}
       {kabanda && mode && (
@@ -371,7 +372,7 @@ function RaidDetailPage({
     facts: LocalReadinessFacts
   } | null>(null)
 
-  if (resource.loading && !resource.raid) return <RaidShell><p aria-busy="true">Открываем поездку…</p></RaidShell>
+  if (resource.loading && !resource.raid) return <RaidShell><RiderLoader label="Открываем поездку" /></RaidShell>
   if (!resource.raid) return <RaidShell><EmptyState title="Рейд не открылся" detail={resource.error ?? 'Попробуйте вернуться на главную.'} /></RaidShell>
 
   const raid = resource.raid

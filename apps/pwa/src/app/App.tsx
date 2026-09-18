@@ -6,7 +6,7 @@ import { RaidApp } from '../features/raids/RaidApp'
 import { PwaUpdateGate } from '../features/raids/PwaUpdateGate'
 import { RecordingRuntimeProvider } from '../features/raids/recording/runtime'
 import { parseRaidRoute } from '../features/raids/routing'
-import { AlphaDiagnosticsConsent } from './AlphaDiagnosticsConsent'
+import { RiderLoader } from './RiderLoader'
 import { InstallProvider } from '../features/install/InstallGuidance'
 import { PortraitMode } from './PortraitMode'
 import { RetainedScreen } from './RetainedScreen'
@@ -27,7 +27,7 @@ export function App() {
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab/legacy')) return <OptionalScreen><CapabilityLabPage /></OptionalScreen>
   if (/\/lab(?:\/index\.html|\/)?$/.test(window.location.pathname)) return <OptionalScreen><GpsExperimentPage /></OptionalScreen>
-  return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PortraitMode /><PwaUpdateGate /><AlphaDiagnosticsConsent /></RecordingRuntimeProvider></InstallProvider>
+  return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PortraitMode /><PwaUpdateGate /></RecordingRuntimeProvider></InstallProvider>
 }
 
 function AppRoute() {
@@ -63,6 +63,6 @@ class OptionalScreen extends Component<{ children: ReactNode }, { failed: boolea
   static getDerivedStateFromError() { return { failed: true } }
   render() {
     if (this.state.failed) return <main className="kb-shell"><section className="kb-card" role="alert"><h1>Экран не загрузился</h1><p>Проверьте подключение и попробуйте ещё раз.</p><button type="button" onClick={() => window.location.reload()}>Повторить загрузку</button><p><a href={appPath('app')}>На главную</a></p></section></main>
-    return <Suspense fallback={<main className="kb-shell" aria-busy="true"><p role="status">Загружаем экран…</p></main>}>{this.props.children}</Suspense>
+    return <Suspense fallback={<main className="kb-shell"><RiderLoader label="Загружаем экран" /></main>}>{this.props.children}</Suspense>
   }
 }

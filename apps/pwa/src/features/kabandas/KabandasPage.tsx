@@ -1,4 +1,6 @@
 import '../../app/fonts.css'
+import { AlphaDiagnosticsConsent } from '../../app/AlphaDiagnosticsConsent'
+import { RiderLoader } from '../../app/RiderLoader'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
@@ -102,7 +104,7 @@ export function KabandasPage({ active = true }: { active?: boolean }) {
   }, [])
 
   if (session.state === 'loading') {
-    return <main className="kb-shell kb-center" aria-busy="true">Загружаем КАБАНДУ…</main>
+    return <main className="kb-shell kb-center"><RiderLoader label="Загружаем Кабанду" /></main>
   }
   if (session.state === 'anonymous') return <SignInPanel onSignedIn={(user) => setSession({ state: 'ready', user })} />
   return <AuthenticatedKabandas key={session.user.id} active={active} user={session.user} onLoggedOut={() => setSession({ state: 'anonymous' })} />
@@ -661,6 +663,7 @@ function KabandaWorkspace({
         <InviteCreator kabandaId={kabanda.id} canInvite={kabanda.role === 'owner'} />
 
         <section className="kb-team-panel kb-team-account" aria-label="Аккаунт">
+          <AlphaDiagnosticsConsent />
           <div className="kb-team-account-row">
             <div><h2>Аккаунт</h2><p>{user.username ? `@${user.username}` : user.email}</p></div>
             <button className="kb-switch-account" type="button" disabled={accountState === 'loading' || accountState === 'leaving' || (inventory?.activeRecordings ?? 0) > 0} onClick={onSwitchAccount}>

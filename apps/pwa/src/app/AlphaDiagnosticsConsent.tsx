@@ -32,9 +32,9 @@ export function AlphaDiagnosticsConsent() {
   if (typeof __ALPHA_DIAGNOSTICS__ === 'undefined' || !__ALPHA_DIAGNOSTICS__ || !identityId) return null
 
   return (
-    <aside className="alpha-diagnostics-consent" aria-label="Согласие на диагностику закрытой альфы">
+    <aside className="alpha-diagnostics-consent" aria-label="Диагностика приложения">
       <div>
-        <strong>Диагностика закрытой альфы</strong>
+        <strong>Помогать улучшать приложение</strong>
         <span>Только тип сбоя и короткие технические коды — без координат, фото и свободного текста.</span>
       </div>
       <label>
@@ -46,7 +46,7 @@ export function AlphaDiagnosticsConsent() {
             setConsented(granted)
           }}
         />
-        Разрешить отправку; галочку можно снять в любой момент
+        Отправлять диагностику ошибок
       </label>
     </aside>
   )
