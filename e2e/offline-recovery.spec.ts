@@ -5,6 +5,7 @@ import {
   type FixtureIdentity, waitForServiceWorkerControl,
 } from './support.js'
 import { installOfflineGps } from './recorder-gps-probe.js'
+import { observePhotoPreparation, attachOfflinePhotoEvidence } from './offline-photo-evidence.js'
 
 type RaidCounts = {
   routeSamples: number; routeReceipts: number; checkInAttempts: number; pointCredits: number
@@ -44,12 +45,13 @@ async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
 
 // Only the new capability read is synthetic. Every legacy write and receipt is
 // executed by the real API, and the production service worker remains enabled.
-test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page }) => {
+test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page }, info) => {
   test.setTimeout(120_000)
   const identity = fixture<FixtureIdentity>('prepare')
   await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
   await installOfflineGps(context, identity.point)
+  await observePhotoPreparation(context)
   // page.route cannot consistently intercept service-worker-owned requests.
   // Simulate the one absent capability before it reaches the worker, including
   // after an offline reload. Do not mock the old API, persistence or its writes.
@@ -103,7 +105,8 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
     { timeout: 30_000 }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
   await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
-  await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
+  try { await expect(page.getByText(/Фото сохранено локально/)).toBeVisible() }
+  finally { await attachOfflinePhotoEvidence(page, info) }
   await page.getByRole('button', { name: 'Пометить точку', exact: true }).click()
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
