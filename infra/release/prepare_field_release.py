@@ -92,6 +92,8 @@ def prepare(args):
     image = 'kabanda-api:field-' + args.sha
     need(not run(['docker', 'image', 'ls', '--quiet', '--no-trunc', image]), 'Candidate image tag already exists; do not overwrite')
     out = Path(args.output).absolute()
+    resolved = out.resolve()
+    need(resolved != repo and repo not in resolved.parents, 'Build outside the existing working repository')
     need(not out.exists() and not out.is_symlink() and out.parent.is_dir(), 'Use a NEW directory under an existing parent')
     out.mkdir(mode=0o700)
     home = out / 'build-home'; home.mkdir(mode=0o700)
@@ -99,11 +101,11 @@ def prepare(args):
     run(['git', 'clone', '--no-hardlinks', '--no-checkout', '--', str(repo), str(source)], timeout=180)
     run(['git', '-C', str(source), 'checkout', '--detach', args.sha])
     env = {'PATH': os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin'), 'HOME': str(home), 'CI': 'true',
-           'LANG': 'C.UTF-8', 'GITHUB_SHA': args.sha, 'VITE_APP_BASE': '/', **public}
+           'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1', 'GITHUB_SHA': args.sha, 'VITE_APP_BASE': '/', **public}
     print('Building isolated frontend and API image. No service/cloud changes.', flush=True)
     run(['pnpm', 'install', '--frozen-lockfile'], cwd=source, env=env, timeout=900)
     run(['pnpm', '--filter', '@kabanda/pwa', 'build'], cwd=source, env={**env, 'NODE_ENV': 'production'}, timeout=900)
-    run(['python3', 'infra/yandex/publish_static.py', '--directory', 'apps/pwa/dist', '--release-sha', args.sha], cwd=source)
+    run(['python3', 'infra/yandex/publish_static.py', '--directory', 'apps/pwa/dist', '--release-sha', args.sha], cwd=source, env=env)
     run(['docker', 'build', '--platform', 'linux/amd64', '--build-arg', 'NODE_IMAGE=' + args.node_image,
          '--label', 'org.opencontainers.image.revision=' + args.sha,
          '-f', 'infra/yandex/Dockerfile.api', '-t', image, '.'], cwd=source, timeout=1800)
