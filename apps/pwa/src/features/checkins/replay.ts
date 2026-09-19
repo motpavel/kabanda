@@ -7,6 +7,7 @@ import {
 } from '../../lib/diagnostics'
 import type { MediaDraftRecord } from '../offline/types'
 import { createMediaIntent, submitCheckIn, uploadMediaContent } from './api'
+import { materializeClaimedPhoto } from './claimed-photo'
 import {
   acquireCheckInSenderLease,
   claimNextCheckIn,
@@ -102,6 +103,7 @@ export async function replayOneCheckInOrMedia(input: {
   if (!media) return { kind: 'idle' }
   let stage: MediaFailureStage = 'intent'
   try {
+    const uploadBlob = await materializeClaimedPhoto(media)
     const intent = await createMediaIntent(media.raidId, media.operationId, {
       sourceSha256: media.sourceSha256,
       sizeBytes: media.sizeBytes,
@@ -117,7 +119,7 @@ export async function replayOneCheckInOrMedia(input: {
       intent.intentId,
       intent.uploadCapability,
       media.sourceSha256,
-      media.blob,
+      uploadBlob,
     )
     const settled = await settleMediaDraft(fence, media.operationId, response)
     return settled
@@ -151,6 +153,7 @@ export async function replayOneIssuedMedia(input: {
   if (!media) return { kind: 'idle' }
   let stage: MediaFailureStage = 'intent'
   try {
+    const uploadBlob = await materializeClaimedPhoto(media)
     const intent = await createMediaIntent(media.raidId, media.operationId, {
       sourceSha256: media.sourceSha256,
       sizeBytes: media.sizeBytes,
@@ -166,7 +169,7 @@ export async function replayOneIssuedMedia(input: {
       intent.intentId,
       intent.uploadCapability,
       media.sourceSha256,
-      media.blob,
+      uploadBlob,
     )
     const settled = await settleMediaDraft(fence, media.operationId, response)
     return settled
