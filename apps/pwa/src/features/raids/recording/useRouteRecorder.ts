@@ -5,6 +5,7 @@ import { requestRouteLease } from '../api'
 import type { RaidProjection, RouteStatusProjection } from '../types'
 import { replayRouteBatch } from './replay'
 import { deriveRecorderPhase, isPersistedSampleFresh } from './state'
+import { mayCaptureRouteLocally, mayResumeRecorderSession } from './local-permission'
 import {
   acquireWriterLease,
   completeRouteLeaseAttempt,
@@ -89,12 +90,10 @@ export function useRouteRecorder(input: {
   const contextKey = context
     ? `${context.identityId}:${context.raidId}:${context.navigatorLeaseId}:${context.leaseGeneration}`
     : 'none'
-  const eligible = Boolean(
-    context &&
-    raid.state === 'active' &&
-    raid.navigatorUserId === identityId &&
-    !staleProjection,
-  )
+  // A transient snapshot failure must not disable local evidence capture.
+  // Startup below additionally requires a persisted matching session; stale
+  // state cannot acquire a new server lease or manufacture its local session.
+  const eligible = Boolean(context && mayCaptureRouteLocally(identityId, raid))
 
   const canRequestServerLease = raid.state === 'active' && raid.navigatorUserId === identityId &&
     !staleProjection && navigator.onLine
@@ -330,10 +329,13 @@ export function useRouteRecorder(input: {
       safeSetPhase('recovering')
       try {
         const previousSession = await findRecorderSession(context.identityId, context.raidId)
-        const matchesServerLease = previousSession &&
-          previousSession.navigatorLeaseId === context.navigatorLeaseId &&
-          previousSession.leaseGeneration === context.leaseGeneration
-        if (!matchesServerLease) {
+        if (!mayResumeRecorderSession(context, previousSession, staleProjection)) {
+          if (staleProjection) {
+            // No matching issued session, or the user had stopped it. Keep the
+            // saved queue, but do not start a new recording from unverified data.
+            safeSetPhase('standby')
+            return
+          }
           await requestServerLease('acquire')
           return
         }
@@ -529,7 +531,7 @@ export function useRouteRecorder(input: {
       if (currentWake && !currentWake.released) void currentWake.release().catch(() => undefined)
       if (currentFence) void releaseWriterLease(currentFence)
     }
-  }, [contextKey, eligible, raid.state, recoverNonce, requestServerLease, tabId])
+  }, [contextKey, eligible, raid.state, staleProjection, recoverNonce, requestServerLease, tabId])
 
   const recover = useCallback(() => {
     if (!raid.navigatorLease) {
