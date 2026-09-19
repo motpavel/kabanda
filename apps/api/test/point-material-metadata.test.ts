@@ -18,7 +18,9 @@ const pool = {} as Pool
 function metadataQueries() {
   return fixture.query.mock.calls.map(call => String(call[0])).filter(sql => sql.includes('raid_point_materials'))
 }
-beforeEach(() => fixture.query.mockReset())
+// Returning mockReset() would register the mock itself as cleanup, causing a
+// spurious SQL call with no arguments after each otherwise successful test.
+beforeEach(() => { fixture.query.mockReset() })
 
 describe('point material metadata does not fetch photo contents', () => {
   it('lists 24 records and the exact cursor without selecting the binary column', async () => {
