@@ -38,7 +38,7 @@ async function mockScreens(page: Page, gates: { actionable?: Promise<void>; prog
       return route.fulfill({ json: { visitors: [{ userId, displayName: user.displayName, count: 1 }], personalCount: 1, entries: [], nextOffset: null } })
     }
     if (path.endsWith('/result')) return route.fulfill({ status: 503, json: { error: { code: 'TEST_RESULT_UNAVAILABLE', message: 'Synthetic' } } })
-    if (/\/api\/raids\/[^/]+(?:\/live)?$/.test(path)) {
+    if (/\/api\/raids\/[^/]+(?:\/(?:fast\/)?live)?$/.test(path)) {
       const raidId = path.split('/')[3]
       return route.fulfill({ json: { raid: {
         id: raidId, kabandaId: teamId, title: history.find(item => item.raidId === raidId)?.title ?? 'Поездка', state: 'completed', version: 10,
@@ -78,7 +78,6 @@ for (const width of [390, 1024]) test(`history/detail and tabs restore their own
   await page.getByRole('link', { name: 'Назад', exact: true }).click()
   await expect(page.getByTestId('production-raids-hub')).toBeVisible()
   await expectPosition(page, raidsY)
-
   await page.getByRole('link', { name: 'Главная', exact: true }).click()
   await expectPosition(page, 0)
   await page.evaluate(() => window.scrollTo({ top: 160, behavior: 'instant' }))
