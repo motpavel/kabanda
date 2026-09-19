@@ -1,6 +1,7 @@
 import { test as deviceTest, expect } from './persistent-test.js'
 import { localLink } from './offline-link.mjs'
 import { savedPhotoProbe } from './saved-photo-probe.js'
+import './photo-reload-cases.js'
 
 type NetworkLink = { setOffline: (offline: boolean) => Promise<void>; deniedRequests: () => number }
 type Link = { server: string; offline: boolean; denied: number; disconnect: () => void; close: () => Promise<void> }
