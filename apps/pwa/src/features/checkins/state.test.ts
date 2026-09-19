@@ -79,7 +79,7 @@ describe('organizer participant attestation', () => {
     })).toEqual(['organizer'])
   })
 
-  it('keeps applying live suggestions before a manual fallback exists', () => {
+  it('retains earlier auto-selections when live GPS suggestions fluctuate', () => {
     expect(participantSelectionAfterPresenceRefresh({
       identityId: 'organizer',
       selectedParticipantIds: ['organizer', 'previously-nearby'],
@@ -96,7 +96,44 @@ describe('organizer participant attestation', () => {
         'manually-excluded',
       ]),
       freezeSuggestions: false,
-    })).toEqual(['organizer', 'manual-rider', 'currently-nearby'])
+    })).toEqual(['organizer', 'manual-rider', 'previously-nearby', 'currently-nearby'])
+  })
+
+  it('accumulates attendees seen at different refreshes without requiring simultaneous GPS fixes', () => {
+    const activeParticipantIds = new Set(['organizer', 'first', 'second', 'third'])
+    let selection = ['organizer']
+    for (const nearbyParticipantIds of [['first'], [], ['second'], ['third'], []]) {
+      selection = participantSelectionAfterPresenceRefresh({ identityId: 'organizer',
+        selectedParticipantIds: selection, nearbyParticipantIds,
+        activeParticipantIds, manualParticipantChoices: new Map(), freezeSuggestions: false })
+    }
+    expect(selection).toEqual(['organizer', 'first', 'second', 'third'])
+  })
+
+  it('never restores an explicitly unchecked person when their GPS returns', () => {
+    const input = { identityId: 'organizer', selectedParticipantIds: ['organizer', 'first'],
+      nearbyParticipantIds: ['first'], activeParticipantIds: new Set(['organizer', 'first']),
+      manualParticipantChoices: new Map([['first', false]]), freezeSuggestions: false }
+    const selected = participantSelectionAfterPresenceRefresh(input)
+    expect(selected).toEqual(['organizer'])
+    expect(participantSelectionAfterPresenceRefresh({ ...input, selectedParticipantIds: selected })).toEqual(['organizer'])
+  })
+
+  it('does not retain departed people or duplicate retained selections', () => {
+    expect(participantSelectionAfterPresenceRefresh({ identityId: 'organizer',
+      selectedParticipantIds: ['organizer', 'left', 'active', 'active'],
+      nearbyParticipantIds: ['left', 'active', 'unknown'], manualParticipantChoices: new Map([['left', true]]),
+      activeParticipantIds: new Set(['organizer', 'active']), freezeSuggestions: false,
+    })).toEqual(['organizer', 'active'])
+  })
+
+  it('only caller-provided current selection is retained; a new scope starts with no old attendees', () => {
+    expect(participantSelectionAfterPresenceRefresh({ identityId: 'organizer',
+      selectedParticipantIds: ['organizer'], nearbyParticipantIds: [], manualParticipantChoices: new Map(),
+      activeParticipantIds: new Set(['organizer', 'first', 'second']), freezeSuggestions: false,
+    })).toEqual(['organizer'])
+    expect(participantSelectionScopeKey('other-user', 'point-a', null)).not.toBe(
+      participantSelectionScopeKey('organizer', 'point-a', null))
   })
 })
 
