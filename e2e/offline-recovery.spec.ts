@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from './persistent-test.js'
 import {
   api, fixture, installSyntheticSession, installYandexMapsMock, operationId,
   type FixtureIdentity, waitForServiceWorkerControl,
