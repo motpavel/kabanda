@@ -1,6 +1,5 @@
 import type { Page } from '@playwright/test'
-import { readFileSync } from 'node:fs'
-import { expect, test } from './persistent-test.js'
+import { expect, test } from './offline-network.js'
 import {
   api, fixture, installSyntheticSession, installYandexMapsMock, operationId,
   type FixtureIdentity, waitForServiceWorkerControl,
@@ -46,7 +45,7 @@ async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
 
 // Only the new capability read is synthetic. Every legacy write and receipt is
 // executed by the real API, and the production service worker remains enabled.
-test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page }, info) => {
+test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page, networkLink }, info) => {
   test.setTimeout(120_000)
   const identity = fixture<FixtureIdentity>('prepare')
   await installYandexMapsMock(context)
@@ -101,16 +100,18 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   const serverBaseline = fixture<RaidCounts>('inspect-raid', raid.id)
   const localBaseline = await localCounts(page, raid.id)
 
-  await context.setOffline(true)
+  await networkLink.setOffline(true)
+  // Prove the network is really inaccessible, not just an offline-looking UI.
+  expect(await page.evaluate(async () => {
+    try { await fetch(`/api/health?offline-probe=${Date.now()}`, { cache: 'no-store' }); return true }
+    catch { return false }
+  })).toBe(false)
+  expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+  if (info.project.name === 'webkit') expect(networkLink.deniedRequests()).toBeGreaterThan(0)
   await expect.poll(async () => (await localCounts(page, raid.id)).routeMaxSequence,
     { timeout: 30_000 }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
-  // Pass the checked-in PNG bytes through Playwright's native file-payload API.
-  // The Linux WebKit external-path bridge produced an unreadable File while
-  // offline (both FileReader and File.arrayBuffer failed before our decoder).
-  // No application data is injected: selection, decode, IDB and upload remain real.
-  await page.locator('.checkin-panel input[type="file"]').setInputFiles({ name: 'offline-photo.png',
-    mimeType: 'image/png', buffer: readFileSync('apps/pwa/public/pwa-192x192.png') })
+  await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   try { await expect(page.getByText(/Фото сохранено локально/)).toBeVisible() }
   finally { await attachOfflinePhotoEvidence(page, info) }
   await page.getByRole('button', { name: 'Пометить точку', exact: true }).click()
@@ -129,7 +130,7 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id); return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
-  await context.setOffline(false)
+  await networkLink.setOffline(false)
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(async () => {
