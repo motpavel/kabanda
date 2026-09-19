@@ -1,0 +1,11 @@
+/* These surfaces intentionally use a CSS aspect ratio. HTML width/height
+   attributes describe the source image and must not pin its rendered height.
+   Keep the rules scoped: map icons, avatars and fixed cover crops are different. */
+.kb-shell .prd-template-card > img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+.kb-shell .raid-gather-cover { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: cover; }
+.kb-shell .checkin-gallery img { height: auto; aspect-ratio: 1 / 1; object-fit: cover; }
+.kb-shell .prd-raids { align-content: start; }
+.kb-shell .prd-raids > .rdp-section, .kb-shell .prd-raids .rdp-list-card { align-self: start; align-content: start; grid-auto-rows: max-content; }
+.kb-shell .prd-template-grid { align-items: start; }
+.kb-shell .prd-template-card { align-content: start; align-self: start; }
+.kb-shell .prd-raids .rdp-row { height: auto; align-self: start; }
