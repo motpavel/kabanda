@@ -18,7 +18,8 @@ export async function failNextSavedPhotoRead(page: Page): Promise<SavedPhoto> {
     if (!photo) throw new Error('Missing durable legacy photograph')
     const { operationId, sourceSha256, sizeBytes, contentType } = photo
     const original = Blob.prototype.arrayBuffer
-    const evidence = { injected: 0, nativeReads: 0 }
+    const originalReader = FileReader.prototype.readAsArrayBuffer
+    const evidence = { injected: 0, readerInjected: 0, nativeReads: 0, nativeReaderReads: 0 }
     Object.assign(window, { legacyPhotoReadFault: evidence })
     Blob.prototype.arrayBuffer = function () {
       if (navigator.onLine && this.size === sizeBytes && this.type === contentType) {
@@ -28,8 +29,20 @@ export async function failNextSavedPhotoRead(page: Page): Promise<SavedPhoto> {
         }
         evidence.nativeReads++
       }
-      // All recovery reads use the real browser Blob and IndexedDB bytes.
       return original.call(this)
+    }
+    FileReader.prototype.readAsArrayBuffer = function (blob: Blob) {
+      if (navigator.onLine && blob.size === sizeBytes && blob.type === contentType) {
+        if (evidence.injected === 1 && evidence.readerInjected === 0) {
+          // The first whole attempt must fail, including the new local fallback.
+          // A later success must therefore come from the real automatic retry.
+          evidence.readerInjected++
+          throw new DOMException('Synthetic temporary saved-file failure', 'NotFoundError')
+        }
+        evidence.nativeReaderReads++
+      }
+      // Every recovery attempt uses the actual browser reader and saved bytes.
+      return originalReader.call(this, blob)
     }
     return { operationId, sourceSha256, sizeBytes, contentType }
   })
@@ -52,6 +65,7 @@ export async function expectSavedPhotoRecovered(page: Page, expected: SavedPhoto
     } finally { db.close() }
   }, expected.operationId)
   expect(observed.fault.injected).toBe(1)
+  expect(observed.fault.readerInjected).toBe(1)
   expect(observed.fault.nativeReads).toBeGreaterThan(0)
   expect(observed.photo).toMatchObject({ ...expected, status: 'accepted' })
   expect(observed.photo!.attempts).toBeGreaterThanOrEqual(2)
