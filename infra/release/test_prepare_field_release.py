@@ -83,4 +83,52 @@ class SafetyTests(unittest.TestCase):
         for phrase in ['DELETE ', 'INSERT ', 'UPDATE ', 'CREATE ', 'DROP ', 'TRUNCATE ']: self.assertNotIn(phrase, text)
         self.assertNotIn('console.log(process.env', text)
 
+    def test_prepare_builds_in_new_directory_without_runtime_env(self):
+        from types import SimpleNamespace
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); repo = root / 'repo'; repo.mkdir()
+            out = root / 'candidate'; calls = []
+            args = SimpleNamespace(repo=str(repo), sha=SHA, run=123, public_config='public.json',
+                                   node_image='node:22-bookworm-slim@sha256:' + 'b' * 64, output=str(out))
+            def run(argv, **kwargs):
+                calls.append((argv, kwargs))
+                if argv == ['node', '--version']: return 'v22.16.0'
+                if argv == ['pnpm', '--version']: return '11.19.0'
+                if argv[:2] == ['git', 'clone']: Path(argv[-1]).mkdir()
+                if argv[:3] == ['pnpm', '--filter', '@kabanda/pwa']:
+                    dist = kwargs['cwd'] / 'apps/pwa/dist'; dist.mkdir(parents=True)
+                    for name in ['index.html', 'sw.js', 'sw-build-' + SHA[:12] + '.js']:
+                        (dist / name).write_text('synthetic build output')
+                if argv[:3] == ['docker', 'image', 'inspect']: return 'sha256:' + 'c' * 64
+                return ''
+            with patch.object(kit, 'verify', return_value={'sourceSha': SHA}), patch.object(kit, 'settings', return_value=public()), \
+                 patch.object(kit, 'run', side_effect=run), patch.dict(os.environ, {'DATABASE_URL': 'private', 'NODE_OPTIONS': 'private', 'KABANDA_E2E': 'true'}):
+                report = kit.prepare(args)
+            self.assertEqual(report['status'], 'PREPARED_NOT_DEPLOYED')
+            self.assertEqual(len(report['pwaSha256']), 3)
+            self.assertEqual(json.loads((out / 'api.override.json').read_text())['services']['api']['environment']['EXPECTED_MIGRATION'], kit.SCHEMA)
+            self.assertEqual((out / 'candidate.json').stat().st_mode & 0o777, 0o600)
+            for argv, options in calls:
+                if argv[0] in ['python3', 'pnpm'] and 'env' in options:
+                    self.assertNotIn('DATABASE_URL', options['env'])
+                    self.assertNotIn('NODE_OPTIONS', options['env'])
+                    self.assertNotIn('KABANDA_E2E', options['env'])
+                    self.assertEqual(options['env']['PYTHONDONTWRITEBYTECODE'], '1')
+            self.assertFalse(any(argv[:2] in [['docker', 'run'], ['docker', 'compose']] for argv, _ in calls))
+            self.assertFalse(any('--apply' in argv for argv, _ in calls))
+
+    def test_prepare_refuses_output_inside_original_worktree(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            args = SimpleNamespace(repo=d, sha=SHA, run=123, public_config='public.json',
+                node_image='node:22-bookworm-slim@sha256:' + 'b' * 64, output=str(repo / 'candidate'))
+            def run(argv, **kwargs):
+                return 'v22.16.0' if argv[0] == 'node' else '11.19.0' if argv[0] == 'pnpm' else ''
+            with patch.object(kit, 'verify', return_value={}), patch.object(kit, 'settings', return_value=public()), \
+                 patch.object(kit, 'run', side_effect=run), self.assertRaises(kit.Stop):
+                kit.prepare(args)
+            self.assertFalse((repo / 'candidate').exists())
+
 if __name__ == '__main__': unittest.main()
