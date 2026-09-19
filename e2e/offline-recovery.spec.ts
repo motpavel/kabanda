@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { expect, test } from './persistent-test.js'
 import {
   api, fixture, installSyntheticSession, installYandexMapsMock, operationId,
@@ -104,7 +105,12 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   await expect.poll(async () => (await localCounts(page, raid.id)).routeMaxSequence,
     { timeout: 30_000 }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
-  await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  // Pass the checked-in PNG bytes through Playwright's native file-payload API.
+  // The Linux WebKit external-path bridge produced an unreadable File while
+  // offline (both FileReader and File.arrayBuffer failed before our decoder).
+  // No application data is injected: selection, decode, IDB and upload remain real.
+  await page.locator('.checkin-panel input[type="file"]').setInputFiles({ name: 'offline-photo.png',
+    mimeType: 'image/png', buffer: readFileSync('apps/pwa/public/pwa-192x192.png') })
   try { await expect(page.getByText(/Фото сохранено локально/)).toBeVisible() }
   finally { await attachOfflinePhotoEvidence(page, info) }
   await page.getByRole('button', { name: 'Пометить точку', exact: true }).click()
