@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './persistent-test.js'
 import { installYandexMapsMock } from './support.js'
 import type { RaidProjection } from '../apps/pwa/src/features/raids/types.js'
 
@@ -120,6 +120,5 @@ test('native image buffers survive a real IndexedDB round trip', async ({ page }
     return results
   })
   await info.attach('native-blob-persistence', { body: JSON.stringify(report), contentType: 'application/json' })
-  expect(report.buffer).toBe('ok')
-  expect(report['memory-blob']).toBe('ok')
+  expect(Object.values(report)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok'])
 })
