@@ -6,6 +6,7 @@ import {
 } from './support.js'
 import { installOfflineGps } from './recorder-gps-probe.js'
 import { observePhotoPreparation, attachOfflinePhotoEvidence } from './offline-photo-evidence.js'
+import { failNextSavedPhotoRead, expectSavedPhotoRecovered } from './legacy-photo-read-fault.js'
 
 type RaidCounts = {
   routeSamples: number; routeReceipts: number; checkInAttempts: number; pointCredits: number
@@ -132,11 +133,12 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id); return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
-  // Capture the complete offline backlog before reconnect. The now-correct
-  // recorder keeps producing fresh points; waiting for its entire live queue
-  // to be empty races the one-second producer against the five-second sender.
-  // Instead prove EVERY sample up to this watermark is settled, none rejected,
-  // and that the real API received the watermark. Do not stop/fake the recorder.
+  // A temporary native read error must trigger the durable automatic retry,
+  // not require another online event, manual click or reopening the raid.
+  const savedPhoto = await failNextSavedPhotoRead(page)
+  // Capture the complete offline backlog before reconnect. The recorder keeps
+  // producing points, so require every pre-reconnect point without racing its
+  // next live sample. Do not stop/fake the recorder or ignore rejections.
   const reconnectSequence = (await localCounts(page, raid.id)).routeMaxSequence
   expect(reconnectSequence).toBeGreaterThanOrEqual(offlineRouteSequence)
   await networkLink.setOffline(false)
@@ -146,6 +148,7 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
     const counts = await localCounts(page, raid.id, reconnectSequence)
     return [counts.routePending, counts.routeRejected, counts.checkInPending, counts.mediaPending]
   }, { timeout: 45_000 }).toEqual([0, 0, 0, 0])
+  await expectSavedPhotoRecovered(page, savedPhoto)
   await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence)).requiredRouteSequenceAccepted,
     { timeout: 45_000 }).toBe(true)
   await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(reconnectSequence)).requiredRouteSequenceAccepted,
