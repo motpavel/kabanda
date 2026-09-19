@@ -4,13 +4,17 @@ import type { MediaDraftRecord } from '../offline/types'
 import { readPhotoUploadBody } from './upload-body'
 
 /** Read the CURRENT stored value after claim, before rememberMediaIntent puts
- * that record again. A Blob returned before a record rewrite can refer to an
- * obsolete file backing in WebKit. Materializing here also keeps the upload
- * independent of subsequent receipt metadata writes. No record is altered.
+ * that record again. Materializing here makes the network upload independent
+ * of subsequent receipt metadata writes. No persisted record is altered.
  */
 export async function materializeClaimedPhoto(expected: MediaDraftRecord): Promise<Blob> {
   if (await getActiveIdentityId() !== expected.identityId) throw new TypeError('Photo identity changed')
-  const current = await offlineDb.mediaDrafts.get(expected.operationId)
+  // Use a bounded primary-key collection (native getAll), not an unbounded
+  // gallery read. In the failing WebKit replay, single-record get() returned a
+  // Blob whose read repeatedly failed, while getAll() of the same store yielded
+  // the original readable bytes. Keep the exact-key and claim checks intact.
+  const matches = await offlineDb.mediaDrafts.where('operationId').equals(expected.operationId).toArray()
+  const current = matches.length === 1 ? matches[0] : undefined
   if (!current || current.identityId !== expected.identityId || current.raidId !== expected.raidId ||
       current.status !== 'uploading' || current.attempts !== expected.attempts ||
       current.clientDraftId !== expected.clientDraftId || current.sourceSha256 !== expected.sourceSha256 ||
