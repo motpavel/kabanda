@@ -144,7 +144,11 @@ describe('independent durable field lanes', () => {
     expect(await offlineDb.routeOutbox.toArray()).toEqual(before.gps)
     expect(await offlineDb.checkInOutbox.toArray()).toEqual(before.checkins)
     expect(await offlineDb.mediaDrafts.toArray()).toEqual(before.media)
-    expect(await (await offlineDb.mediaDrafts.get('legacy-media'))!.blob.text()).toBe('legacy-photo')
+    // mediaDrafts is keyed by operationId, not clientDraftId. Verify the saved
+    // bytes as well as metadata; neither is allowed to change with the new lane.
+    const preservedPhoto = await offlineDb.mediaDrafts.get('legacy-media-op')
+    expect(preservedPhoto).toBeDefined()
+    expect(await preservedPhoto!.blob.text()).toBe('legacy-photo')
   })
 
   it('bridges only a server-created manual attempt, never a pending v2 command', async () => {
