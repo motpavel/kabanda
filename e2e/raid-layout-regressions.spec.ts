@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import sharp from 'sharp'
+import { renderRaidShareCard } from '../apps/api/src/raid-share-card.js'
 import { installYandexMapsMock } from './support.js'
 import type { RaidProjection } from '../apps/pwa/src/features/raids/types.js'
+import type { RaidResult } from '../apps/pwa/src/features/results/types.js'
 
 const userId = '11111111-1111-4111-8111-111111111111'
 const teamId = '22222222-2222-4222-8222-222222222222'
@@ -16,13 +17,15 @@ const base: RaidProjection = {
   participants: [{ id: userId, displayName: 'Участник', avatarUrl: null, state: 'active' }], allowedActions: [],
   routeStatus: { status: 'awaiting_lease', acceptedSampleCount: 0, missingSequenceCount: 0, lastSampleAt: null, lastReceivedAt: null },
 }
-const result = { schemaVersion: 1, raid: { id: raidId, kabandaId: teamId, title: base.title,
+const result: RaidResult = { schemaVersion: 1, raid: { id: raidId, kabandaId: teamId, title: base.title,
   startedAt: '2026-09-16T12:00:00Z', completedAt: '2026-09-16T12:10:00Z', partial: true },
   team: metrics, personal: metrics, participants: [{ userId, displayName: 'Участник', metrics }] }
 
 test.use({ reducedMotion: 'reduce', serviceWorkers: 'block' })
 async function prepare(page: Page, planned = false) {
-  const card = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: '#dadfd9' } }).png().toBuffer()
+  // Use the production renderer, whose native dependency belongs to apps/api.
+  // Do not require an undeclared root-workspace sharp dependency just for tests.
+  const card = await renderRaidShareCard(result)
   const photo = readFileSync('apps/pwa/public/brand/kabanda-team-cover.jpg')
   const raid = planned ? { ...base, state: 'planned', scheduledAt: new Date(Date.now() + 7 * 86400_000).toISOString() } : base
   await page.route('**/api/**', async route => {
