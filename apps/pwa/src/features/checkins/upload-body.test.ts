@@ -3,7 +3,7 @@ import { readPhotoUploadBody } from './upload-body'
 import { uploadMediaContent } from './api'
 
 const original = new Uint8Array([0, 255, 128, 31, 0, 16, 243, 17])
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('saved binary upload', () => {
   it('materializes exact bytes without modifying the persisted blob', async () => {
@@ -21,19 +21,23 @@ describe('saved binary upload', () => {
     }
   })
   it('does not submit truncated bytes as a successful upload', async () => {
-    const blob = { size: 8, arrayBuffer: async () => new ArrayBuffer(0) } as Blob
+    const blob = new Blob([original])
+    vi.spyOn(blob, 'arrayBuffer').mockResolvedValue(new ArrayBuffer(0))
     await expect(readPhotoUploadBody(blob)).rejects.toThrow('incomplete')
   })
   it('bounds a stalled local read without cancelling or clearing saved work', async () => {
     vi.useFakeTimers()
-    const failed = expect(readPhotoUploadBody({ size: 8, arrayBuffer: () => new Promise(() => {}) } as Blob)).rejects.toThrow('timed out')
+    const blob = new Blob([original])
+    vi.spyOn(blob, 'arrayBuffer').mockImplementation(() => new Promise<ArrayBuffer>(() => {}))
+    const failed = expect(readPhotoUploadBody(blob)).rejects.toThrow('timed out')
     await vi.advanceTimersByTimeAsync(10_000)
     await failed
     expect(vi.getTimerCount()).toBe(0)
   })
   it('propagates local failures without making any network request', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
-    const blob = { size: 8, type: 'image/jpeg', arrayBuffer: async () => { throw new TypeError('Unavailable') } } as Blob
+    const blob = new Blob([original], { type: 'image/jpeg' })
+    vi.spyOn(blob, 'arrayBuffer').mockRejectedValue(new TypeError('Unavailable'))
     await expect(uploadMediaContent('raid', 'intent', 'synthetic-capability', 'a'.repeat(64), blob)).rejects.toThrow('Unavailable')
     expect(fetch).not.toHaveBeenCalled()
   })
