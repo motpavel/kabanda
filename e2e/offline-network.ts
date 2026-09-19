@@ -1,5 +1,6 @@
 import { test as deviceTest, expect } from './persistent-test.js'
 import { localLink } from './offline-link.mjs'
+import { savedPhotoProbe } from './saved-photo-probe.js'
 
 type NetworkLink = { setOffline: (offline: boolean) => Promise<void>; deniedRequests: () => number }
 type Link = { server: string; offline: boolean; denied: number; disconnect: () => void; close: () => Promise<void> }
@@ -17,7 +18,7 @@ export const test = deviceTest.extend<{ networkLink: NetworkLink }>({
     try { await use({ ...contextOptions, proxy: { server: link.server, bypass: '' } }) }
     finally { links.delete(link.server); await link.close() }
   },
-  networkLink: async ({ context, contextOptions, browserName }, use) => {
+  networkLink: async ({ context, contextOptions, browserName }, use, info) => {
     if (browserName !== 'webkit') {
       await use({ setOffline: value => context.setOffline(value), deniedRequests: () => -1 }); return
     }
@@ -28,17 +29,23 @@ export const test = deviceTest.extend<{ networkLink: NetworkLink }>({
         try { return sessionStorage.getItem('kabanda-test-link-offline') !== 'true' } catch { return true }
       } })
     })
-    await use({ deniedRequests: () => link.denied, setOffline: async offline => {
-      link.offline = offline
-      if (offline) link.disconnect()
-      for (const page of context.pages()) {
-        if (!page.url().startsWith('http://127.0.0.1:4173/')) continue
-        await page.evaluate(value => {
-          sessionStorage.setItem('kabanda-test-link-offline', String(value))
-          window.dispatchEvent(new Event(value ? 'offline' : 'online'))
-        }, offline)
+    try {
+      await use({ deniedRequests: () => link.denied, setOffline: async offline => {
+        link.offline = offline
+        if (offline) link.disconnect()
+        for (const page of context.pages()) {
+          if (!page.url().startsWith('http://127.0.0.1:4173/')) continue
+          await page.evaluate(value => {
+            sessionStorage.setItem('kabanda-test-link-offline', String(value))
+            window.dispatchEvent(new Event(value ? 'offline' : 'online'))
+          }, offline)
+        }
+      } })
+    } finally {
+      if (info.status !== info.expectedStatus) for (const page of context.pages()) {
+        if (page.url().startsWith('http://127.0.0.1:4173/')) await savedPhotoProbe(page, info)
       }
-    } })
+    }
   },
 })
 export { expect }
