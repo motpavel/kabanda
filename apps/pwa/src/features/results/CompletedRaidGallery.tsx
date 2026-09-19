@@ -38,6 +38,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const generation = useRef(0)
   const successfulDepth = useRef(1)
   const requestedDepth = useRef(1)
+  const visibleTail = useRef<string | undefined>(undefined)
   const flight = useRef<AbortController | null>(null)
   const denied = useRef(onAccessDenied)
   denied.current = onAccessDenied
@@ -54,20 +55,20 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
       const window = await loadGalleryWindow(depth,
         () => current === generation.current && !controller.signal.aborted,
         async after => {
-          // Stop before requesting a later page after another account signs in.
           if (await getActiveIdentityId() !== identityId) throw new TypeError('Gallery identity changed')
           const query = new URLSearchParams({ limit: String(GALLERY_PAGE_SIZE) })
           if (after) query.set('cursor', after)
           return requestJson<RaidMediaPage>(`/api/raids/${encodeURIComponent(raidId)}/media?${query}`, { signal: controller.signal })
-        })
+        }, visibleTail.current)
       if (current !== generation.current || controller.signal.aborted || await getActiveIdentityId() !== identityId) return
       setItems(window.items); setCursor(window.nextCursor)
+      visibleTail.current = window.items.at(-1)?.id
       successfulDepth.current = window.pageCount; requestedDepth.current = window.pageCount
       setLoaded(true); setError(null)
     } catch (reason) {
       if (current !== generation.current) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
-        setItems([]); setDrafts([]); setCursor(null)
+        setItems([]); setDrafts([]); setCursor(null); visibleTail.current = undefined
         successfulDepth.current = 1; requestedDepth.current = 1
         denied.current()
       }
@@ -82,7 +83,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   useEffect(() => {
     generation.current++
     flight.current?.abort(); flight.current = null
-    successfulDepth.current = 1; requestedDepth.current = 1
+    successfulDepth.current = 1; requestedDepth.current = 1; visibleTail.current = undefined
     setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
     if (!enabled) return
     let active = true
