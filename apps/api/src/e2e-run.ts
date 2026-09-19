@@ -39,7 +39,7 @@ try {
 }
 await run('pnpm', ['db:migrate'])
 await run('pnpm', ['build'])
-// Cross-engine file decoding is a prerequisite for the longer offline/three-
-// account scenarios. On success the full suite still runs, without exclusions.
-await run('pnpm', ['exec', 'playwright', 'test', 'e2e/browser-photo.spec.ts'])
+// Native offline file access is a prerequisite for the longer multi-account
+// suite. This is fail-fast ordering, never an exclusion from the full run.
+await run('pnpm', ['exec', 'playwright', 'test', 'e2e/browser-photo.spec.ts', 'e2e/offline-recovery.spec.ts'])
 await run('pnpm', ['exec', 'playwright', 'test'])
