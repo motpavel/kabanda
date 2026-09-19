@@ -14,8 +14,6 @@ if (typeof window !== 'undefined') {
   })
   window.addEventListener('storage', (event) => {
     if (event.key !== null && event.key !== 'kabanda:relay-session:v1') return
-    // Storage events are the cross-tab source of truth for the relay session.
-    // Fence confirmed-write events under the same identity the transport just adopted.
     identity = undefined
     try {
       const saved = JSON.parse(event.newValue ?? 'null') as { identityId?: unknown } | null
@@ -38,13 +36,38 @@ export class ApiError extends Error {
   }
 }
 
+/** Telemetry must not discard unrelated pending reads. Session/command writes
+ * retain the conservative global fence. Only these exact, non-authorizing
+ * endpoints use targeted eviction, AFTER the server acknowledges the write. */
+export function telemetryReadScope(input: string, method: string): ((path: string) => boolean) | null {
+  let path: string
+  try { path = new URL(input, 'https://kabanda.invalid').pathname } catch { return null }
+  const presence = method === 'PUT' && /^\/api\/raids\/([^/]+)\/presence\/me$/.exec(path)
+  const route = method === 'POST' && /^\/api\/raids\/([^/]+)\/route\/batches$/.exec(path)
+  const match = presence || route
+  if (!match) return null
+  const prefix = `/api/raids/${match[1]}`
+  return candidate => {
+    let pathname: string
+    try { pathname = new URL(candidate, 'https://kabanda.invalid').pathname } catch { return false }
+    return pathname === `${prefix}/live` || (presence
+      ? pathname === `${prefix}/presence` || pathname === `${prefix}/check-ins/presence`
+      : pathname === `${prefix}/route/track`)
+  }
+}
+
 export function requestJson<T>(input: RequestInfo | URL, init?: RequestInit, options?: { maxAgeMs?: number }): Promise<T> {
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
   const operation = () => performJsonRequest<T>(input, init)
   if (method !== 'GET' && method !== 'HEAD') {
     const requestIdentity = identity
-    return reads.mutate(operation).then(body => {
-      if (requestIdentity === identity) notifyConfirmedWrite({ identityId: requestIdentity, path: String(input), body })
+    const path = input instanceof Request ? input.url : String(input)
+    const targeted = telemetryReadScope(path, method)
+    return (targeted ? operation() : reads.mutate(operation)).then(body => {
+      if (requestIdentity === identity) {
+        if (targeted) evictApiReads(targeted)
+        notifyConfirmedWrite({ identityId: requestIdentity, path, body })
+      }
       return body
     })
   }

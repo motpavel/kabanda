@@ -72,7 +72,7 @@ if (typeof window !== 'undefined') window.addEventListener(IDENTITY_CHANGED_EVEN
 })
 
 export function isPrivateCover(src: string): boolean {
-  return /^\/(?:kabanda\/)?api\/(?:raid-templates\/[^/?#]+\/cover|raids\/[^/?#]+\/media\/[^/?#]+\/content)(?:\?[^#]*)?$/.test(src)
+  return /^\/(?:kabanda\/)?api\/(?:raid-templates\/[^/?#]+\/cover|raids\/[^/?#]+\/(?:media\/[^/?#]+|points\/[^/?#]+\/materials\/[^/?#]+)\/content)(?:\?[^#]*)?$/.test(src)
 }
 
 function keyFor(identityId: string, src: string, revision: string) { return JSON.stringify([identityId, src, revision]) }

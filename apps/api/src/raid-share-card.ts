@@ -23,7 +23,8 @@ export function shareTitleLines(title: string): string[] {
 export async function renderRaidShareCard(result: RaidResult): Promise<Buffer> {
   const titles = shareTitleLines(result.raid.title)
   const titleWidths = await Promise.all(titles.map(async (line) => {
-    const { info } = await sharp({ text: { text: escapeShareCardXml(line), font: 'DejaVu Sans Bold 58', rgba: true } }).png().toBuffer({ resolveWithObject: true })
+    // Measure the rendered text without encoding and immediately discarding a PNG.
+    const { info } = await sharp({ text: { text: escapeShareCardXml(line), font: 'DejaVu Sans Bold 58', rgba: true } }).raw().toBuffer({ resolveWithObject: true })
     return info.width
   }))
   const titleSize = Math.min(58, Math.floor(58 * 960 / Math.max(...titleWidths, 1)))
@@ -50,6 +51,9 @@ export async function renderRaidShareCard(result: RaidResult): Promise<Buffer> {
   return sharp(new URL('../../pwa/public/brand/raid-share-art-v1.jpg', import.meta.url).pathname)
     .resize(1080,1350)
     .composite([{ input: svg }, { input: wordmark, left: 815, top: 25 }])
-    .png({ compressionLevel: 9, palette: true, colours: 256, dither: .4 })
+    // Palette search is CPU-heavy and runs while finishing the raid. Keep the
+    // resolution, colour count and metadata-free deterministic format, but do
+    // not spend maximum compression effort on the interactive finish path.
+    .png({ compressionLevel: 6, palette: true, colours: 256, dither: .4, effort: 3 })
     .toBuffer()
 }

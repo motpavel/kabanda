@@ -1,0 +1,20 @@
+/* Width/height attributes reserve the source aspect ratio, not CSS pixels.
+   Without height:auto the 1080x1350 share image kept a 1350px box on phones. */
+.kb-shell .result-share { align-content: start; min-width: 0; }
+.kb-shell .result-share > img { display: block; width: 100%; height: auto; max-width: 420px; aspect-ratio: 4 / 5; object-fit: contain; justify-self: center; }
+.kb-shell .result-completion-details { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.kb-shell .result-completion-details > h2, .kb-shell .result-completion-details > p { margin: 0; }
+.kb-shell .result-data-details { width: fit-content; max-width: 100%; margin-top: 4px; color: var(--kb-muted); font-size: 12px; line-height: 1.5; }
+.kb-shell .result-data-details summary { cursor: pointer; padding: 5px 0; }
+.kb-shell .result-data-details p { margin: 5px 0 0; max-width: 60ch; }
+.kb-shell .result-gallery { display: grid; align-content: start; gap: 12px; min-width: 0; }
+.kb-shell .result-gallery h2 { font-size: 18px; margin: 0; }
+.kb-shell .result-gallery h3 { font-size: 15px; margin: 8px 0 0; }
+.kb-shell .result-gallery p { margin: 0; }
+.result-gallery__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; }
+.result-gallery__grid figure { margin: 0; min-width: 0; }
+.result-gallery__grid img { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 12px; background: #efefeb; }
+.result-gallery__grid figcaption { margin-top: 6px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.result-gallery__local figcaption { color: var(--kb-muted); }
+.result-gallery__local strong { display: block; font-weight: 600; }
+@media (min-width: 760px) { .result-gallery__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

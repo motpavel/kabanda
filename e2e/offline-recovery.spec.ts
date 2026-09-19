@@ -1,240 +1,133 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
-  api,
-  fixture,
-  installSyntheticSession,
-  installYandexMapsMock,
-  operationId,
-  type FixtureIdentity,
-  waitForServiceWorkerControl,
+  api, fixture, installSyntheticSession, installYandexMapsMock, operationId,
+  type FixtureIdentity, waitForServiceWorkerControl,
 } from './support.js'
+import { installOfflineGps } from './recorder-gps-probe.js'
 
 type RaidCounts = {
-  routeSamples: number
-  routeReceipts: number
-  checkInAttempts: number
-  pointCredits: number
-  media: number
-  readyMedia: number
-  requiredRouteSequenceAccepted: boolean | null
+  routeSamples: number; routeReceipts: number; checkInAttempts: number; pointCredits: number
+  media: number; readyMedia: number; requiredRouteSequenceAccepted: boolean | null
 }
-
-type LocalCounts = {
-  routeMaxSequence: number
-  routePending: number
-  checkInPending: number
-  mediaPending: number
-}
+type LocalCounts = { routeMaxSequence: number; routePending: number; checkInPending: number; mediaPending: number }
 
 async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
-  return page.evaluate(async (wantedRaidId) => {
+  return page.evaluate(async wantedRaidId => {
     const request = indexedDB.open('kabanda-offline')
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
     })
     try {
       const storeNames = ['routeOutbox', 'checkInOutbox', 'mediaDrafts'] as const
       const transaction = db.transaction([...storeNames], 'readonly')
       const getAll = <T>(storeName: typeof storeNames[number]) => new Promise<T[]>((resolve, reject) => {
         const read = transaction.objectStore(storeName).getAll()
-        read.onsuccess = () => resolve(read.result as T[])
-        read.onerror = () => reject(read.error)
+        read.onsuccess = () => resolve(read.result as T[]); read.onerror = () => reject(read.error)
       })
       const [routes, checkIns, media] = await Promise.all([
         getAll<{ raidId: string; sequence: number; status: string }>('routeOutbox'),
         getAll<{ raidId: string; status: string }>('checkInOutbox'),
         getAll<{ raidId: string; status: string }>('mediaDrafts'),
       ])
-      const forRaid = <T extends { raidId: string }>(rows: T[]) => rows.filter((row) => row.raidId === wantedRaidId)
-      const routeRows = forRaid(routes)
-      const open = (status: string) => !['accepted', 'rejected'].includes(status)
+      const forRaid = <T extends { raidId: string }>(rows: T[]) => rows.filter(row => row.raidId === wantedRaidId)
+      const routeRows = forRaid(routes), open = (status: string) => !['accepted', 'rejected'].includes(status)
       return {
         routeMaxSequence: Math.max(0, ...routeRows.map(({ sequence }) => sequence)),
         routePending: routeRows.filter(({ status }) => open(status)).length,
         checkInPending: forRaid(checkIns).filter(({ status }) => open(status)).length,
         mediaPending: forRaid(media).filter(({ status }) => open(status)).length,
       }
-    } finally {
-      db.close()
-    }
+    } finally { db.close() }
   }, raidId)
 }
 
-test('offline route, check-in and photo survive reload and replay once', async ({ context, page }) => {
+// Keep a genuine old-server/installed-queue compatibility path. Only the new
+// capability read returns unknown-endpoint; every legacy write and receipt is
+// executed by the real API. A separate field test covers the new v2 queue.
+test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page }) => {
+  test.setTimeout(120_000)
   const identity = fixture<FixtureIdentity>('prepare')
   await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
+  await installOfflineGps(context, identity.point)
+  await page.route('**/fast/live*', route => route.fulfill({ status: 404,
+    json: { error: { code: 'NOT_FOUND', message: 'Synthetic pre-field API version' } } }))
 
-  const kabanda = await api<{ kabanda: { id: string } }>(page, 'POST', '/api/kabandas', {
-    name: `Offline E2E ${identity.runId.slice(0, 8)}`,
-    avatar: '🚲',
+  const { kabanda } = await api<{ kabanda: { id: string } }>(page, 'POST', '/api/kabandas', {
+    name: `Offline E2E ${identity.runId.slice(0, 8)}`, avatar: '🚲',
   }, operationId('create-kabanda'))
-  fixture('attach-point', kabanda.kabanda.id)
-  const created = await api<{ raid: { id: string; version: number } }>(
-    page,
-    'POST',
-    `/api/kabandas/${kabanda.kabanda.id}/raids`,
-    { title: 'Offline recovery raid', description: null, scheduledAt: null },
-    operationId('create-raid'),
-  )
-  let raid = created.raid
+  fixture('attach-point', kabanda.id)
+  let { raid } = await api<{ raid: { id: string; version: number } }>(page, 'POST', `/api/kabandas/${kabanda.id}/raids`,
+    { title: 'Offline recovery raid', description: null, scheduledAt: null }, operationId('create-raid'))
   for (const command of ['open-lobby', 'assign-navigator'] as const) {
-    const response = await api<{ raid: typeof raid }>(
-      page,
-      'POST',
-      `/api/raids/${raid.id}/commands/${command}`,
-      command === 'assign-navigator'
-        ? { expectedVersion: raid.version, navigatorUserId: identity.userId }
-        : { expectedVersion: raid.version },
-      operationId(command),
-    )
-    raid = response.raid
+    raid = (await api<{ raid: typeof raid }>(page, 'POST', `/api/raids/${raid.id}/commands/${command}`,
+      { expectedVersion: raid.version, ...(command === 'assign-navigator' ? { navigatorUserId: identity.userId } : {}) }, operationId(command))).raid
   }
-  raid = (await api<{ raid: typeof raid }>(
-    page,
-    'POST',
-    `/api/raids/${raid.id}/participants/me/ready`,
-    { expectedVersion: raid.version },
-    operationId('ready'),
-  )).raid
+  raid = (await api<{ raid: typeof raid }>(page, 'POST', `/api/raids/${raid.id}/participants/me/ready`,
+    { expectedVersion: raid.version }, operationId('ready'))).raid
   const measuredAt = new Date().toISOString()
-  raid = (await api<{ raid: typeof raid }>(
-    page,
-    'POST',
-    `/api/raids/${raid.id}/readiness`,
-    {
-      expectedVersion: raid.version,
-      appMode: 'browser',
-      locationPermission: 'granted',
-      coordinateMeasuredAt: measuredAt,
-      accuracyM: 8,
-      indexedDbWritable: true,
-      storageAvailable: true,
-      online: true,
-      measuredAt,
-    },
-    operationId('readiness'),
-  )).raid
-  await api(page, 'PUT', `/api/raids/${raid.id}/presence/me`, {
-    latitude: identity.point.latitude,
-    longitude: identity.point.longitude,
-    capturedAt: new Date().toISOString(),
-    accuracyMeters: 8,
-  })
-  raid = (await api<{ raid: typeof raid }>(
-    page,
-    'POST',
-    `/api/raids/${raid.id}/commands/start`,
-    { expectedVersion: raid.version },
-    operationId('start'),
-  )).raid
+  raid = (await api<{ raid: typeof raid }>(page, 'POST', `/api/raids/${raid.id}/readiness`, {
+    expectedVersion: raid.version, appMode: 'browser', locationPermission: 'granted', coordinateMeasuredAt: measuredAt,
+    accuracyM: 8, indexedDbWritable: true, storageAvailable: true, online: true, measuredAt,
+  }, operationId('readiness'))).raid
+  await api(page, 'PUT', `/api/raids/${raid.id}/presence/me`, { ...identity.point, capturedAt: measuredAt, accuracyMeters: 8 })
+  raid = (await api<{ raid: typeof raid }>(page, 'POST', `/api/raids/${raid.id}/commands/start`,
+    { expectedVersion: raid.version }, operationId('start'))).raid
 
   await page.goto(`/app?raid=${raid.id}`)
   await waitForServiceWorkerControl(page)
   await expect(page.getByLabel(/Активный рейд Offline recovery raid/)).toBeVisible({ timeout: 30_000 })
-  await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
-  await expect(page.getByRole('complementary', { name: 'Подтверждение точки' })).toBeVisible({ timeout: 15_000 })
+  const confirmation = page.getByRole('complementary', { name: 'Подтверждение точки' })
+  await expect(confirmation).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
-
   const serverBaseline = fixture<RaidCounts>('inspect-raid', raid.id)
   const localBaseline = await localCounts(page, raid.id)
 
   await context.setOffline(true)
-  await expect.poll(async () => {
-    // The foreground recorder polls at five-second intervals and rejects old
-    // fixes. A single setGeolocation keeps one timestamp in Chromium: provide
-    // new synthetic fixes while waiting, without relaxing freshness or sequence checks.
-    await context.setGeolocation({ latitude: 56.8601, longitude: 53.2101, accuracy: 8 })
-    return (await localCounts(page, raid.id)).routeMaxSequence
-  }, {
-    timeout: 30_000,
-  }).toBeGreaterThan(localBaseline.routeMaxSequence)
+  // Real GPS works without Internet. installOfflineGps supplies fresh timestamped
+  // measurements through reload; the production recorder and its outbox are real.
+  await expect.poll(async () => (await localCounts(page, raid.id)).routeMaxSequence,
+    { timeout: 30_000 }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
-  await page.evaluate(({ latitude, longitude, accuracy }) => {
-    Object.defineProperty(navigator.geolocation, 'getCurrentPosition', {
-      configurable: true,
-      value: (success: PositionCallback) => queueMicrotask(() => success({
-        coords: {
-          latitude,
-          longitude,
-          accuracy,
-          altitude: null,
-          altitudeAccuracy: null,
-          heading: null,
-          speed: null,
-          toJSON: () => ({}),
-        },
-        timestamp: Date.now(),
-        toJSON: () => ({}),
-      })),
-    })
-  }, { latitude: 56.86015, longitude: 53.21015, accuracy: 8 })
-  await page.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
-  await page.getByRole('button', { name: 'Пометить точку' }).click()
-  await context.setGeolocation({ latitude: 56.86004, longitude: 53.21004, accuracy: 8 })
+  await page.getByRole('button', { name: 'Пометить точку', exact: true }).click()
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {
-    const counts = await localCounts(page, raid.id)
-    return [counts.checkInPending, counts.mediaPending]
+    const counts = await localCounts(page, raid.id); return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
 
   await page.reload({ waitUntil: 'domcontentloaded' })
-  // A fresh GPS sample can reopen the cached nearby point automatically.
-  const confirmation = page.getByRole('complementary', { name: 'Подтверждение точки' })
   const savedOffline = page.getByRole('button', { name: /Сохранено без сети/ })
   await expect(confirmation.or(savedOffline).first()).toBeVisible()
   if (!(await confirmation.isVisible())) await savedOffline.click()
   await expect(confirmation).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
   await expect.poll(async () => {
-    const counts = await localCounts(page, raid.id)
-    return [counts.checkInPending, counts.mediaPending]
+    const counts = await localCounts(page, raid.id); return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
   await context.setOffline(false)
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
-
   await expect.poll(async () => {
-    const counts = await localCounts(page, raid.id)
-    return [counts.routePending, counts.checkInPending, counts.mediaPending]
+    const counts = await localCounts(page, raid.id); return [counts.routePending, counts.checkInPending, counts.mediaPending]
   }, { timeout: 45_000 }).toEqual([0, 0, 0])
-  await expect.poll(
-    () => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence))
-      .requiredRouteSequenceAccepted,
-    { timeout: 45_000 },
-  ).toBe(true)
-
+  await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence)).requiredRouteSequenceAccepted,
+    { timeout: 45_000 }).toBe(true)
   await expect.poll(async () => {
-    const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(
-      page,
-      'GET',
-      `/api/raids/${raid.id}/check-ins/nearby?latitude=${identity.point.latitude}&longitude=${identity.point.longitude}`,
-    )
+    const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(page, 'GET',
+      `/api/raids/${raid.id}/check-ins/nearby?latitude=${identity.point.latitude}&longitude=${identity.point.longitude}`)
     return nearby.points[0]?.creditedByTeam ?? false
   }, { timeout: 45_000 }).toBe(true)
-  await expect.poll(async () => {
-    const gallery = await api<{ media: unknown[] }>(page, 'GET', `/api/raids/${raid.id}/media`)
-    return gallery.media.length
-  }, { timeout: 45_000 }).toBe(1)
+  await expect.poll(async () => (await api<{ media: unknown[] }>(page, 'GET', `/api/raids/${raid.id}/media`)).media.length,
+    { timeout: 45_000 }).toBe(1)
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Поставить на паузу' }).click()
   await expect(page.getByRole('region', { name: 'Рейд на паузе', exact: true })).toBeVisible()
-
   const acceptedBeforeReload = fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence))
   expect(acceptedBeforeReload.routeSamples).toBeGreaterThan(serverBaseline.routeSamples)
-  expect(acceptedBeforeReload).toMatchObject({
-    checkInAttempts: 1,
-    pointCredits: 1,
-    media: 1,
-    readyMedia: 1,
-    requiredRouteSequenceAccepted: true,
-  })
-
+  expect(acceptedBeforeReload).toMatchObject({ checkInAttempts: 1, pointCredits: 1, media: 1, readyMedia: 1, requiredRouteSequenceAccepted: true })
   await page.reload()
-  await expect.poll(
-    () => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence)),
-  ).toEqual(acceptedBeforeReload)
+  await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence))).toEqual(acceptedBeforeReload)
 })

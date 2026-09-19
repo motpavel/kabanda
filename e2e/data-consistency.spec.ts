@@ -35,7 +35,6 @@ async function mockApi(page: Page, list: () => Promise<unknown[]>, command = asy
   })
 }
 
-// Watches every DOM mutation, including intermediate renders between assertions.
 async function recordVisibleText(page: Page) {
   await page.evaluate(() => {
     const state = window as unknown as { consistencyFrames: string[] }
@@ -97,7 +96,6 @@ test('empty server list survives reload with unavailable raid API and a verified
     const rows = await new Promise<any[]>(resolve => { const r = db.transaction('snapshots').objectStore('snapshots').getAll(); r.onsuccess = () => resolve(r.result) })
     db.close(); return rows.find(row => row.key.includes('actionable'))?.value.length
   })).toBe(0)
-  // Offline API; assets remain served locally so reload exercises IndexedDB, not HTTP cache.
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname
     return path === '/api/me' || path === '/api/kabandas' ? route.fallback() : route.abort('internetdisconnected')
@@ -144,7 +142,9 @@ test('accepting a direct-link raid updates a previously empty Home before list r
     await freshList.promise
     return [plannedAcceptance]
   }, async () => { confirmed = true; return plannedAcceptance })
-  await page.route(`**/api/raids/${raidId}/live`, route =>
+  // The direct-link override must apply to the fast endpoint too. Otherwise
+  // mockApi returns its unrelated default accepted lobby before the click.
+  await page.route(new RegExp(`/api/raids/${raidId}/(?:fast/)?live(?:\\?.*)?$`), route =>
     route.fulfill({ json: { raid: confirmed ? plannedAcceptance : plannedInvitation } }))
   try {
     await page.goto(`/app?kabanda=${teamId}`)
@@ -167,7 +167,5 @@ test('accepting a direct-link raid updates a previously empty Home before list r
     expect(frames.every(text => !text.includes('Соберёмся на прогулку?') && !text.includes('Вас ждут в рейде'))).toBe(true)
     expect(pageErrors).toEqual([])
     await page.screenshot({ path: info.outputPath('direct-link-confirmed-before-list.png') })
-  } finally {
-    freshList.resolve()
-  }
+  } finally { freshList.resolve() }
 })
