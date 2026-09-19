@@ -1,0 +1,14 @@
+.point-materials { display: grid; gap: 12px; min-width: 0; margin-top: 16px; align-content: start; }
+.point-materials h3, .point-materials p { margin: 0; }
+.point-materials h3 { font-size: 16px; }
+.point-materials__item { display: grid; gap: 6px; min-width: 0; padding-block: 10px; border-bottom: 1px solid #deded8; }
+.point-materials__item img { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 12px; background: #efefeb; }
+.point-materials__item p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.point-materials__item small { color: #667069; font-size: 12px; }
+.point-materials__pending { padding-left: 18px; font-size: 13px; }
+.point-materials__compose { display: grid; gap: 8px; min-width: 0; }
+.point-materials__compose > label { display: grid; gap: 6px; font-size: 13px; }
+.point-materials__compose textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 72px; border: 1px solid #c9cec8; border-radius: 10px; padding: 10px; font: inherit; resize: vertical; }
+.point-materials__compose > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.point-materials__compose > div > * { flex: 1 1 140px; min-height: 44px; text-align: center; }
+.point-materials__compose .kb-muted { font-size: 12px; line-height: 1.4; }
