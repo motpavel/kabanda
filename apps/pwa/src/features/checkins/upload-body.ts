@@ -13,11 +13,12 @@ export async function readPhotoUploadBody(blob: Blob): Promise<ArrayBuffer> {
   }
   let timer: ReturnType<typeof setTimeout> | undefined
   let reader: FileReader | undefined
+  let finished = false
   const read = async (): Promise<ArrayBuffer> => {
     try { return await blob.arrayBuffer() }
     catch (error) {
       const name = error instanceof Error || error instanceof DOMException ? error.name : ''
-      if (!['NotFoundError', 'NotReadableError'].includes(name) || typeof FileReader === 'undefined') throw error
+      if (finished || !['NotFoundError', 'NotReadableError'].includes(name) || typeof FileReader === 'undefined') throw error
       return new Promise<ArrayBuffer>((resolve, reject) => {
         const current = reader = new FileReader()
         current.onload = () => {
@@ -40,6 +41,7 @@ export async function readPhotoUploadBody(blob: Blob): Promise<ArrayBuffer> {
     if (bytes.byteLength !== blob.size) throw new TypeError('Saved photograph bytes are incomplete')
     return bytes
   } finally {
+    finished = true
     clearTimeout(timer)
     if (reader) {
       reader.onload = null; reader.onerror = null; reader.onabort = null
