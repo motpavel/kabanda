@@ -7,7 +7,7 @@ const teamId = '22222222-2222-4222-8222-222222222222'
 const raidId = '33333333-3333-4333-8333-333333333333'
 const pointId = '44444444-4444-4444-8444-444444444444'
 const raid: RaidProjection = { id: raidId, kabandaId: teamId, title: 'Подготовка фото', state: 'active', version: 1,
-  scheduledAt: null, description: null, organizerUserId: userId, navigatorUserId: userId,
+  scheduledAt: null, description: null, organizerUserId: userId, navigatorUserId: '55555555-5555-4555-8555-555555555555',
   navigatorReady: true, navigatorBlockers: [], navigatorWarnings: [], navigatorLease: null, finalization: null,
   participants: [{ id: userId, displayName: 'Участник', avatarUrl: null, state: 'active' }], allowedActions: [],
   routeStatus: { status: 'awaiting_lease', acceptedSampleCount: 0, missingSequenceCount: 0, lastSampleAt: null, lastReceivedAt: null } }
@@ -18,13 +18,15 @@ test('selected PNG reaches the durable photo queue through the real browser deco
   await context.addInitScript(() => {
     const diagnostic: string[] = []
     Object.assign(window, { photoPreparationSteps: diagnostic })
-    const bitmap = window.createImageBitmap.bind(window)
-    window.createImageBitmap = ((...args: Parameters<typeof createImageBitmap>) => {
-      diagnostic.push('decode:start')
-      return bitmap(...args).then(value => { diagnostic.push('decode:ok'); return value }, error => {
-        diagnostic.push(`decode:${error.name}:${error.message}`); throw error
-      })
-    }) as typeof createImageBitmap
+    if (typeof window.createImageBitmap === 'function') {
+      const bitmap = window.createImageBitmap.bind(window)
+      window.createImageBitmap = ((...args: Parameters<typeof createImageBitmap>) => {
+        diagnostic.push('decode:start')
+        return bitmap(...args).then(value => { diagnostic.push('decode:ok'); return value }, error => {
+          diagnostic.push(`decode:${error.name}:${error.message}`); throw error
+        })
+      }) as typeof createImageBitmap
+    } else diagnostic.push('decode:unavailable')
     const encode = HTMLCanvasElement.prototype.toBlob
     HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
       diagnostic.push('encode:start')
@@ -40,7 +42,6 @@ test('selected PNG reaches the durable photo queue through the real browser deco
       uploadRequests++
       return route.fulfill({ status: 503, json: { error: { code: 'TEST_PHOTO', message: 'Synthetic upload pause' } } })
     }
-    if (path.includes('/route/lease/')) return route.fulfill({ status: 409, json: { error: { code: 'NAVIGATOR_LEASE_HELD', message: 'Synthetic recorder' } } })
     const body = path === '/api/me' ? { user: { id: userId, displayName: 'Участник', username: 'photo-qa', email: 'photo@example.test', identityKind: 'verified', avatarUrl: null } }
       : path === '/api/kabandas' ? { kabandas: [{ id: teamId, name: 'Фото', role: 'member', avatar: '🐗', coverImage: null, memberCount: 1, pointsCollectionId: null }] }
       : path.endsWith('/live') ? { raid, teamVisits: true, revision: '1', serverAt: new Date().toISOString(), claims: [], fallbacks: [], positions: [],
@@ -55,6 +56,9 @@ test('selected PNG reaches the durable photo queue through the real browser deco
     return route.fulfill({ json: body })
   })
   await page.goto(`/app?raid=${raidId}`)
+  // Materials can be added by an ordinary member independently of GPS and
+  // visiting the point. Do not make an image-compatibility test depend on GPS.
+  await page.getByRole('button', { name: /^Остановка\./ }).click()
   const panel = page.getByRole('region', { name: 'Фото и комментарии точки' })
   await expect(panel).toBeVisible()
   await panel.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
