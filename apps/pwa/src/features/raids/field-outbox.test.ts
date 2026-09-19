@@ -25,8 +25,7 @@ function deferred<T>() {
 }
 function accepted(operationId: string) {
   return { operationId, attemptId: 'server-attempt', outcome: 'accepted', reason: null,
-    point: { pointSnapshotId: point, sourcePointId: 'source-a', name: 'Остановка' },
-    credits: [], claims: [] }
+    point: { pointSnapshotId: point, sourcePointId: 'source-a', name: 'Остановка' }, credits: [], claims: [] }
 }
 
 describe('independent durable field lanes', () => {
@@ -52,7 +51,8 @@ describe('independent durable field lanes', () => {
     const photo = await enqueueField({ ...context, kind: 'photo', blob, payload: {
       kind: 'photo', body: 'Остановка', sourceSha256: 'a'.repeat(64), contentType: 'image/jpeg', sizeBytes: blob.size,
     } })
-    send.mockImplementation(async (path, init) => {
+    send.mockImplementation(async (input, init) => {
+      const path = input instanceof Request ? input.url : String(input)
       if (path.endsWith('/materials')) return { material: { id: 'server-photo', ready: false } }
       if (path.endsWith('/content')) { photoStarted = true; return upload.promise }
       return accepted(String((init!.headers as Record<string, string>)['Idempotency-Key']))
@@ -74,7 +74,7 @@ describe('independent durable field lanes', () => {
 
   it('keeps the exact operation ID, evidence and attendance through delayed retry', async () => {
     const row = await enqueueField(teamInput)
-    send.mockRejectedValueOnce(new ApiError(503, 'TEMPORARY', 'Temporary outage'))
+    send.mockRejectedValueOnce(new ApiError('TEMPORARY', 'Temporary outage', 503))
     await pumpFieldOperations(owner, raid, 'team')
     const retry = await fieldDb.operations.get(row.operationId)
     expect(retry).toMatchObject({ status: 'retryable', attempts: 1, nextAttemptAt: now + 2000 })
@@ -132,7 +132,7 @@ describe('independent durable field lanes', () => {
       status: 'retryable', intentId: 'old-intent', mediaId: null, attempts: 3, claimUntil: null,
       nextAttemptAt: new Date(now + 5000).toISOString(), createdAt: evidence.capturedAt,
       updatedAt: evidence.capturedAt, lastErrorCode: 'OFFLINE' })
-    await offlineDb.routeOutbox.add({ operationId: 'legacy-gps', identityId: owner, kabandaId: team, raidId: raid,
+    await offlineDb.routeOutbox.add({ id: 'legacy-gps', identityId: owner, kabandaId: team, raidId: raid,
       navigatorLeaseId: 'lease-a', leaseGeneration: 1, clientInstanceId: 'client-a', sequence: 7,
       capturedAt: evidence.capturedAt, latitude: evidence.latitude, longitude: evidence.longitude, accuracyM: 8,
       speedMps: null, headingDeg: null, status: 'retryable', batchId: 'old-batch', attempts: 2,
@@ -152,10 +152,8 @@ describe('independent durable field lanes', () => {
     expect(await offlineDb.checkInOutbox.count()).toBe(0)
     send.mockResolvedValueOnce({ ...accepted(visit.operationId), outcome: 'needs_manual_verification', reason: 'accuracy_insufficient' })
     await pumpFieldOperations(owner, raid, 'team')
-    expect(await offlineDb.checkInOutbox.get(visit.operationId)).toMatchObject({
-      status: 'needs_action', evidence, organizerAttestation: false, operationId: visit.operationId,
-      response: { outcome: 'needs_manual_verification', attemptId: 'server-attempt' },
-    })
+    expect(await offlineDb.checkInOutbox.get(visit.operationId)).toMatchObject({ status: 'needs_action', evidence,
+      organizerAttestation: false, operationId: visit.operationId, response: { outcome: 'needs_manual_verification', attemptId: 'server-attempt' } })
     expect((await fieldDb.operations.get(visit.operationId))?.response).toMatchObject({ outcome: 'needs_manual_verification' })
   })
 
