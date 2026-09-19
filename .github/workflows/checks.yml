@@ -86,7 +86,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium webkit
       - name: Create exact synthetic run ID
         run: node -e "console.log('E2E_RUN_ID=' + require('node:crypto').randomUUID())" >> "$GITHUB_ENV"
       - name: Mark disposable E2E database
@@ -101,10 +101,11 @@ jobs:
           COMMENT ON DATABASE kabanda_e2e IS 'kabanda-e2e-disposable-v1';
           SQL
       - run: pnpm test:e2e
-      - if: failure()
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
+          retention-days: 3
           path: |
             playwright-report/
             test-results/
