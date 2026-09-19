@@ -47,7 +47,13 @@ export function participantSelectionAfterPresenceRefresh(input: {
   const manuallySelected = Array.from(input.manualParticipantChoices)
     .filter(([id, selected]) => selected && input.activeParticipantIds.has(id))
     .map(([id]) => id)
-  const suggested = input.nearbyParticipantIds.filter(
+  // This is a stop-scoped selection, NOT a claim that an old GPS fix is fresh.
+  // Once suggested, retain a rider while this point's selection is open, so
+  // border jitter cannot repeatedly undo the organizer's preparation. Explicit
+  // deselection wins, departed members are removed, and the caller clears the
+  // selection on identity/point/fallback scope changes. Final organizer
+  // attestation is still separate; no credit is issued by this UI helper.
+  const suggested = [...current, ...input.nearbyParticipantIds].filter(
     (id) => id !== input.identityId &&
       input.activeParticipantIds.has(id) &&
       !input.manualParticipantChoices.has(id),
