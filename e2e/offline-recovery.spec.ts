@@ -11,10 +11,10 @@ type RaidCounts = {
   routeSamples: number; routeReceipts: number; checkInAttempts: number; pointCredits: number
   media: number; readyMedia: number; requiredRouteSequenceAccepted: boolean | null
 }
-type LocalCounts = { routeMaxSequence: number; routePending: number; checkInPending: number; mediaPending: number }
+type LocalCounts = { routeMaxSequence: number; routePending: number; routeRejected: number; checkInPending: number; mediaPending: number }
 
-async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
-  return page.evaluate(async wantedRaidId => {
+async function localCounts(page: Page, raidId: string, throughSequence?: number): Promise<LocalCounts> {
+  return page.evaluate(async ({ wantedRaidId, throughSequence }) => {
     const request = indexedDB.open('kabanda-offline')
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
@@ -33,14 +33,16 @@ async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
       ])
       const forRaid = <T extends { raidId: string }>(rows: T[]) => rows.filter(row => row.raidId === wantedRaidId)
       const routeRows = forRaid(routes), open = (status: string) => !['accepted', 'rejected'].includes(status)
+      const captured = routeRows.filter(row => throughSequence === undefined || row.sequence <= throughSequence)
       return {
         routeMaxSequence: Math.max(0, ...routeRows.map(({ sequence }) => sequence)),
-        routePending: routeRows.filter(({ status }) => open(status)).length,
+        routePending: captured.filter(({ status }) => open(status)).length,
+        routeRejected: captured.filter(({ status }) => status === 'rejected').length,
         checkInPending: forRaid(checkIns).filter(({ status }) => open(status)).length,
         mediaPending: forRaid(media).filter(({ status }) => open(status)).length,
       }
     } finally { db.close() }
-  }, raidId)
+  }, { wantedRaidId: raidId, throughSequence })
 }
 
 // Only the new capability read is synthetic. Every legacy write and receipt is
@@ -130,13 +132,23 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id); return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
+  // Capture the complete offline backlog before reconnect. The now-correct
+  // recorder keeps producing fresh points; waiting for its entire live queue
+  // to be empty races the one-second producer against the five-second sender.
+  // Instead prove EVERY sample up to this watermark is settled, none rejected,
+  // and that the real API received the watermark. Do not stop/fake the recorder.
+  const reconnectSequence = (await localCounts(page, raid.id)).routeMaxSequence
+  expect(reconnectSequence).toBeGreaterThanOrEqual(offlineRouteSequence)
   await networkLink.setOffline(false)
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(async () => {
-    const counts = await localCounts(page, raid.id); return [counts.routePending, counts.checkInPending, counts.mediaPending]
-  }, { timeout: 45_000 }).toEqual([0, 0, 0])
+    const counts = await localCounts(page, raid.id, reconnectSequence)
+    return [counts.routePending, counts.routeRejected, counts.checkInPending, counts.mediaPending]
+  }, { timeout: 45_000 }).toEqual([0, 0, 0, 0])
   await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence)).requiredRouteSequenceAccepted,
+    { timeout: 45_000 }).toBe(true)
+  await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(reconnectSequence)).requiredRouteSequenceAccepted,
     { timeout: 45_000 }).toBe(true)
   await expect.poll(async () => {
     const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(page, 'GET',
