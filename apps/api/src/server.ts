@@ -9,7 +9,8 @@ import { assertDatabaseReady, createDatabase } from './database.js'
 import { NominatimReverseGeocoder } from './geocoding.js'
 import { SmtpMagicLinkMailer } from './mailer.js'
 import { DatabaseKabandaService } from './kabandas.js'
-import { DatabaseRaidService } from './raids.js'
+import { FieldRaidService } from './field-service.js'
+import { registerFieldRoutes } from './field-routes.js'
 import { DatabaseRaidTemplateService } from './raid-templates.js'
 import { buildRelayBridge } from './relay-bridge.js'
 import { S3RelayBlobStore } from './relay-blob-store.js'
@@ -34,7 +35,7 @@ const kabandas = new DatabaseKabandaService(database, {
   ...(config.ALPHA_ACCESS_SECRET ? { alphaAccessSecret: config.ALPHA_ACCESS_SECRET } : {}),
   sessionTtlDays: config.SESSION_TTL_DAYS,
 })
-const raids = new DatabaseRaidService(database, config.MEDIA_CAPABILITY_SECRET)
+const raids = new FieldRaidService(database, config.MEDIA_CAPABILITY_SECRET)
 const raidTemplates = new DatabaseRaidTemplateService(database)
 const geocoding = new NominatimReverseGeocoder({
   baseUrl: config.NOMINATIM_BASE_URL,
@@ -42,15 +43,10 @@ const geocoding = new NominatimReverseGeocoder({
   userAgent: `KabandaClosedAlpha/${config.API_BUILD_ID} (${config.APP_ORIGIN})`,
 })
 const app = await buildApp({
-  auth,
-  kabandas,
-  raids,
-  raidTemplates,
-  geocoding,
-  database,
-  config,
+  auth, kabandas, raids, raidTemplates, geocoding, database, config,
   readiness: () => assertDatabaseReady(database, config.EXPECTED_MIGRATION),
 })
+await registerFieldRoutes(app, { auth, config, raids })
 
 const relay = config.RELAY_ENABLED ? await buildRelayBridge({
   app,
@@ -73,23 +69,17 @@ const relay = config.RELAY_ENABLED ? await buildRelayBridge({
 }) : null
 
 let stopFinalizationWorker: (() => Promise<void>) | undefined
-
 const shutdown = async () => {
   await stopFinalizationWorker?.()
   await relay?.close()
   await app.close()
   await database.end()
 }
-
 process.once('SIGINT', () => void shutdown())
 process.once('SIGTERM', () => void shutdown())
-
 await app.listen({ host: config.API_HOST, port: config.API_PORT })
 await relay?.listen({ host: '127.0.0.1', port: config.RELAY_PORT })
-
 stopFinalizationWorker = startFinalizationWorker(
-  () => raids.settleExpiredFinalizations((err, raidId) => {
-    app.log.error({ err, raidId }, 'Raid finalization failed; will retry')
-  }),
+  () => raids.settleExpiredFinalizations((err, raidId) => { app.log.error({ err, raidId }, 'Raid finalization failed; will retry') }),
   (err) => app.log.error({ err }, 'Finalization sweep failed; will retry'),
 )
