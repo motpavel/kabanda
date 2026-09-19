@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { userSchema } from '@kabanda/contracts'
+import { userSchema } from '../packages/contracts/src/index.js'
 import { readFileSync } from 'node:fs'
 import { renderRaidShareCard } from '../apps/api/src/raid-share-card.js'
 import { installYandexMapsMock } from './support.js'
