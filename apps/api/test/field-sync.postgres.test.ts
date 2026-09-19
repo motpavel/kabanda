@@ -21,8 +21,7 @@ suite('field synchronization through real PostgreSQL services', () => {
     owner = randomUUID(); nav = randomUUID(); rider = randomUUID(); other = randomUUID(); outsider = randomUUID()
     raid = randomUUID(); team = randomUUID(); point = randomUUID(); pointB = randomUUID(); lease = randomUUID()
     const collection = randomUUID(), source = randomUUID(), sourceB = randomUUID()
-    // Each test owns unique fixture IDs. No truncation, reset or deletion of
-    // another test's data and no production credentials are used.
+    // Unique fixture IDs; no shared truncation or production access.
     for (const [id, name] of [[owner, 'Организатор'], [nav, 'Навигатор'], [rider, 'Участник'], [other, 'Без отметки'], [outsider, 'Чужой']]) {
       await pool!.query('INSERT INTO users(id,email,display_name) VALUES($1,$2,$3)', [id, `${id}@example.test`, name])
     }
@@ -44,8 +43,8 @@ suite('field synchronization through real PostgreSQL services', () => {
   const count = async (table: string) => Number((await pool!.query(`SELECT count(*)::int AS n FROM ${table} WHERE raid_id=$1`, [raid])).rows[0]!.n)
   const sample = async (sequence: number, accuracy = 8) => pool!.query(`INSERT INTO raid_route_samples
     (raid_id,lease_id,operation_id,sequence,captured_at,geom,accuracy_m,speed_mps,payload_hash)
-    VALUES($1,$2,$2::uuid::text||':'||$3,$3,now()-interval '10 minutes'+$3*interval '1 second',
-      ST_SetSRID(ST_MakePoint(53.21,56.86+$3*0.00001),4326)::geography,$4,1,repeat('a',64))`, [raid, lease, sequence, accuracy])
+    VALUES($1,$2,$2::uuid::text||':'||$3::bigint::text,$3::bigint,now()-interval '10 minutes'+$3::bigint*interval '1 second',
+      ST_SetSRID(ST_MakePoint(53.21,56.86+$3::bigint*0.00001),4326)::geography,$4,1,repeat('a',64))`, [raid, lease, sequence, accuracy])
 
   it('lets the assigned navigator, not merely the organizer, confirm exactly one selected team visit', async () => {
     await expect(service!.createTeamVisit(owner, raid, input(), randomUUID())).rejects.toMatchObject({ code: 'NAVIGATOR_REQUIRED' })
@@ -103,6 +102,21 @@ suite('field synchronization through real PostgreSQL services', () => {
     expect((await service!.getFastSnapshot(owner, raid)).claims).toHaveLength(1)
     const confirmed = await service!.respondClaim(owner, raid, legacy.claims[0]!.id, 'confirm', randomUUID())
     expect(confirmed.credit?.userId).toBe(owner)
+  })
+
+  it('clears the reached shared destination only after a confirmed visit, never on a failed attempt or replay', async () => {
+    await service!.setDestination(nav, raid, { expectedVersion: 1, pointSnapshotId: point }, randomUUID())
+    const before = await service!.getRaid(nav, raid)
+    await service!.createTeamVisit(nav, raid, input({ evidence: { ...input().evidence, accuracyMeters: 100 } }), randomUUID())
+    expect((await service!.getRaid(rider, raid)).destination?.pointSnapshotId).toBe(point)
+    const payload = input(), operation = randomUUID()
+    await service!.createTeamVisit(nav, raid, payload, operation)
+    const after = await service!.getRaid(rider, raid)
+    expect(after.destination).toBeNull()
+    expect(after.version).toBe(before.version + 1)
+    await service!.setDestination(nav, raid, { expectedVersion: after.version, pointSnapshotId: pointB }, randomUUID())
+    await service!.createTeamVisit(nav, raid, payload, operation)
+    expect((await service!.getRaid(rider, raid)).destination?.pointSnapshotId).toBe(pointB)
   })
 
   it('changes point revisions only for point changes and never calls the full route reader', async () => {
