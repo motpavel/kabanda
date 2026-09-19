@@ -1,6 +1,7 @@
 import { requestApi } from '../../lib/api-transport'
 import { ApiError, invalidateApiReads, requestJson } from '../../lib/http'
 import { diagnosticRequestHeaders } from '../../lib/diagnostics'
+import { readPhotoUploadBody } from './upload-body'
 import type {
   CheckInClaim,
   CheckInFallback,
@@ -108,6 +109,7 @@ export async function uploadMediaContent(
   sha256: string,
   blob: Blob,
 ): Promise<MediaUploadResponse> {
+  const bytes = await readPhotoUploadBody(blob)
   const response = await requestApi(`${raidBase(raidId)}/media/intents/${encodeURIComponent(intentId)}/content`, {
     method: 'PUT',
     credentials: 'same-origin',
@@ -117,7 +119,7 @@ export async function uploadMediaContent(
       'X-Upload-Capability': capability,
       'X-Content-SHA256': sha256,
     },
-    body: blob,
+    body: bytes,
   })
   const body = await response.json()
   if (!response.ok) {
