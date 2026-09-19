@@ -6,6 +6,7 @@ import { offlineDb } from '../offline/db'
 import { getActiveIdentityId } from '../offline/ledger'
 import type { MediaDraftRecord } from '../offline/types'
 import type { RaidMedia, RaidMediaPage } from '../checkins/types'
+import { GALLERY_PAGE_SIZE, loadGalleryWindow } from './gallery-window'
 import './result-layout.css'
 
 function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
@@ -22,8 +23,8 @@ function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
 }
 
 /** Gallery availability is not inferred from frozen metrics or partial=true.
- * A failed request and an empty gallery are different states. Existing drafts
- * are only read here: viewing a result never deletes or rewrites their queue. */
+ * The displayed window survives refresh/page failures; access denial is not a
+ * transient failure. Viewing a result never deletes or rewrites photo queues. */
 export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDenied }: {
   identityId: string; raidId: string; enabled: boolean; onAccessDenied: () => void
 }) {
@@ -35,36 +36,42 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const [error, setError] = useState<string | null>(null)
   const [localError, setLocalError] = useState(false)
   const generation = useRef(0)
+  const successfulDepth = useRef(1)
+  const requestedDepth = useRef(1)
   const flight = useRef<AbortController | null>(null)
   const denied = useRef(onAccessDenied)
   denied.current = onAccessDenied
 
-  const load = async (after: string | null = null) => {
+  const load = async (depth = Math.max(successfulDepth.current, requestedDepth.current)) => {
     if (!enabled || !navigator.onLine || flight.current) return
     const current = generation.current
     const controller = new AbortController()
     flight.current = controller
+    requestedDepth.current = depth
     setLoading(true)
     const deadline = setTimeout(() => controller.abort(), 15_000)
     try {
-      const query = new URLSearchParams({ limit: '24' })
-      if (after) query.set('cursor', after)
-      const page = await requestJson<RaidMediaPage>(`/api/raids/${encodeURIComponent(raidId)}/media?${query}`, { signal: controller.signal })
+      const window = await loadGalleryWindow(depth,
+        () => current === generation.current && !controller.signal.aborted,
+        async after => {
+          // Stop before requesting a later page after another account signs in.
+          if (await getActiveIdentityId() !== identityId) throw new TypeError('Gallery identity changed')
+          const query = new URLSearchParams({ limit: String(GALLERY_PAGE_SIZE) })
+          if (after) query.set('cursor', after)
+          return requestJson<RaidMediaPage>(`/api/raids/${encodeURIComponent(raidId)}/media?${query}`, { signal: controller.signal })
+        })
       if (current !== generation.current || controller.signal.aborted || await getActiveIdentityId() !== identityId) return
-      if (!Array.isArray(page.media) || page.media.some(item => item.state !== 'ready' || !item.id || item.width <= 0 || item.height <= 0) ||
-        (page.nextCursor !== null && typeof page.nextCursor !== 'string') || (after !== null && page.nextCursor === after)) {
-        throw new TypeError('Invalid gallery page')
-      }
-      setItems(previous => after ? [...new Map([...previous, ...page.media].map(item => [item.id, item])).values()] : page.media)
-      setCursor(page.nextCursor)
-      setLoaded(true)
-      setError(null)
+      setItems(window.items); setCursor(window.nextCursor)
+      successfulDepth.current = window.pageCount; requestedDepth.current = window.pageCount
+      setLoaded(true); setError(null)
     } catch (reason) {
       if (current !== generation.current) return
-      if (reason instanceof ApiError && [401, 403].includes(reason.status)) {
-        setItems([]); setDrafts([]); denied.current()
+      if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
+        setItems([]); setDrafts([]); setCursor(null)
+        successfulDepth.current = 1; requestedDepth.current = 1
+        denied.current()
       }
-      setError('Не удалось загрузить фото рейда. Повторите при восстановлении связи.')
+      setError('Не удалось загрузить фото рейда. Уже открытые фотографии сохранены на экране. Повторите при восстановлении связи.')
     } finally {
       clearTimeout(deadline)
       if (flight.current === controller) flight.current = null
@@ -75,6 +82,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   useEffect(() => {
     generation.current++
     flight.current?.abort(); flight.current = null
+    successfulDepth.current = 1; requestedDepth.current = 1
     setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
     if (!enabled) return
     let active = true
@@ -84,13 +92,15 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
         .filter(row => row.raidId === raidId && row.status !== 'accepted').toArray()
       return await getActiveIdentityId() === identityId ? rows : []
     }).subscribe({ next: rows => { if (active) setDrafts(rows) }, error: () => { if (active) setLocalError(true) } })
-    void load()
+    void load(1)
     const resume = () => { if (document.visibilityState === 'visible') void load() }
     window.addEventListener('online', resume)
+    window.addEventListener('focus', resume)
     document.addEventListener('visibilitychange', resume)
     return () => {
       active = false; generation.current++; flight.current?.abort(); flight.current = null
-      subscription.unsubscribe(); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume)
+      subscription.unsubscribe(); window.removeEventListener('online', resume); window.removeEventListener('focus', resume)
+      document.removeEventListener('visibilitychange', resume)
     }
   }, [identityId, raidId, enabled])
 
@@ -106,8 +116,8 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     </figure>)}</div>}
     {loaded && !items.length && !error && <p className="kb-muted">В общей галерее пока нет фотографий. Фото и комментарии отдельных точек можно открыть на карте.</p>}
     {!loaded && !error && <p className="kb-muted" role="status">{navigator.onLine ? 'Загружаем фотографии…' : 'Для общей галереи нужно соединение.'}</p>}
-    {cursor && <button type="button" disabled={loading} onClick={() => void load(cursor)}>Показать ещё фотографии</button>}
-    {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void load()}>Повторить загрузку фотографий</button></p>}
+    {cursor && <button type="button" disabled={loading || !!error} onClick={() => void load(successfulDepth.current + 1)}>Показать ещё фотографии</button>}
+    {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void load(requestedDepth.current)}>Повторить загрузку фотографий</button></p>}
     {local.length > 0 && <><h3>На этом телефоне</h3><div className="result-gallery__grid">{local.map(draft => <LocalPhoto key={draft.operationId} draft={draft} />)}</div></>}
     {localError && <p role="status">Не удалось проверить локальные фотографии. Не очищайте данные приложения.</p>}
   </section>
