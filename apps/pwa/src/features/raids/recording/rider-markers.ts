@@ -1,6 +1,8 @@
 import type { OneShotCoordinate } from '../../checkins/types'
 import type { RouteTrackPoint, RouteTrackProjection } from '../types'
 
+export const FLOCK_RADIUS_METERS = 70
+
 export type RiderMarker = {
   id: 'viewer' | 'navigator' | 'flock'
   point: RouteTrackPoint
@@ -44,9 +46,10 @@ export function selectRiderMarkers(input: {
     Date.parse(endpoint.capturedAt) === Date.parse(navigatorSampleAt) ? endpoint : null
   if (!navigator) return viewer ? [viewer] : []
   const stale = !fresh(navigator, now)
-  if (viewer && !viewer.stale && !stale && location!.accuracyMeters <= 50 && riderDistanceMeters(viewer.point, navigator) <= 50 + 1e-6) {
-    // Anchor the flock to the viewer so “my location” retains its meaning.
-    return [{ id: 'flock', point: viewer.point, kind: 'flock', label: 'Стая — вы и навигатор рядом, до 50 метров', stale: false }]
+  if (viewer && !viewer.stale && !stale && location!.accuracyMeters <= 50 && riderDistanceMeters(viewer.point, navigator) <= FLOCK_RADIUS_METERS + 1e-6) {
+    // Grouping is presentation only. Do not widen check-in/presence policy or
+    // turn a cached coordinate into fresh evidence to keep a flock visible.
+    return [{ id: 'flock', point: viewer.point, kind: 'flock', label: `Стая — вы и навигатор рядом, до ${FLOCK_RADIUS_METERS} метров`, stale: false }]
   }
   return [...(viewer ? [viewer] : []), {
     id: 'navigator', point: navigator, kind: 'navigator', stale,
