@@ -3,6 +3,7 @@ import {ApiError,requestJson} from '../../lib/http'
 import {getActiveIdentityId} from '../offline/ledger'
 import {offlineDb} from '../offline/db'
 import type {CheckInResponse,OneShotCoordinate} from '../checkins/types'
+import {readPhotoUploadBody} from '../checkins/upload-body'
 
 export type TeamPayload={pointSnapshotId:string;evidence:OneShotCoordinate;presentParticipantIds:string[];
   confirmedAttendance:true;repeatVisit?:boolean;previousAttemptId?:string|null}
@@ -92,9 +93,10 @@ async function deliver(row:FieldOperation){
   let response:unknown=intent
   if(row.kind==='photo'&&!intent.material.ready){
     if(!row.blob||!('sourceSha256'in row.payload))throw new TypeError('Missing saved photograph')
+    const bytes=await readPhotoUploadBody(row.blob)
     if(await getActiveIdentityId()!==row.identityId)return
     response=await requestJson(`${path}/${encodeURIComponent(intent.material.id)}/content`,{
-      method:'PUT',headers:{'content-type':row.blob.type,'x-content-sha256':row.payload.sourceSha256},body:row.blob})
+      method:'PUT',headers:{'content-type':row.blob.type,'x-content-sha256':row.payload.sourceSha256},body:bytes})
   }
   await updateOwned(row,{status:'accepted',response,claimToken:null,claimUntil:0,lastError:null})
 }
