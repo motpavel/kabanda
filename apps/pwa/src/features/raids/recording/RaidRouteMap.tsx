@@ -41,7 +41,7 @@ export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude
     maxLongitude = Math.max(maxLongitude, point.longitude)
   }
   if (viewport && viewport.width > 0 && viewport.height > 0) {
-    const mercatorY = (latitude: number) => Math.log(Math.tan(Math.PI / 4 + Math.max(-85, Math.min(85, latitude)) * Math.PI / 360))
+    const mercatorY = (latitude: number) => Math.log(Math.tan(Math.PI / 4 + Math.max(-85, Math.min(85, latitude)) * Math.PI / 180 / 2))
     const top = mercatorY(maxLatitude), bottom = mercatorY(minLatitude)
     const horizontalSpan = (maxLongitude - minLongitude) / 360
     const verticalSpan = (top - bottom) / (2 * Math.PI)
@@ -251,7 +251,9 @@ export function RaidRouteMap({
     for (const point of points) {
       const highlighted = point.id === highlightedPointId
       const isDestination = point.id === destinationPointId
-      const visited = point.visitedByMe
+      // Team completion is common to every viewer. Personal credit stays a
+      // separate server fact and is never invented just to paint a green pin.
+      const visited = point.visitedByMe || point.visitedByTeam
       const markerClass = `raid-live-point${visited ? ' raid-live-point--visited' : ''}${highlighted && !visited ? ' raid-live-point--nearby' : ''}${isDestination ? ' raid-live-point--destination' : ''}`
       const ariaLabel = `${point.name}. ${isDestination ? 'Цель рейда. ' : ''}${point.visitedByMe ? 'Вы уже были. История посещений' : point.visitedByTeam ? 'Кабанда уже была. История посещений' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда. История посещений'}`
       const signature = JSON.stringify([markerClass, ariaLabel, point.latitude, point.longitude])
