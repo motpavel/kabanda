@@ -38,18 +38,30 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const generation = useRef(0)
   const successfulDepth = useRef(1)
   const requestedDepth = useRef(1)
+  const activeDepth = useRef(0)
+  const queuedDepth = useRef<number | null>(null)
   const visibleTail = useRef<string | undefined>(undefined)
   const flight = useRef<AbortController | null>(null)
   const denied = useRef(onAccessDenied)
   denied.current = onAccessDenied
 
   const load = async (depth = Math.max(successfulDepth.current, requestedDepth.current)) => {
-    if (!enabled || !navigator.onLine || flight.current) return
+    if (!enabled || !navigator.onLine) return
+    if (flight.current) {
+      // Background refresh may start between pointer-down and the click. Keep
+      // an explicit deeper request, rather than silently dropping the action.
+      if (depth > activeDepth.current) {
+        queuedDepth.current = Math.max(queuedDepth.current ?? 0, depth)
+        requestedDepth.current = Math.max(requestedDepth.current, depth)
+      }
+      return
+    }
     const current = generation.current
     const controller = new AbortController()
-    flight.current = controller
+    flight.current = controller; activeDepth.current = depth
     requestedDepth.current = depth
     setLoading(true)
+    let succeeded = false
     const deadline = setTimeout(() => controller.abort(), 15_000)
     try {
       const window = await loadGalleryWindow(depth,
@@ -63,8 +75,9 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
       if (current !== generation.current || controller.signal.aborted || await getActiveIdentityId() !== identityId) return
       setItems(window.items); setCursor(window.nextCursor)
       visibleTail.current = window.items.at(-1)?.id
-      successfulDepth.current = window.pageCount; requestedDepth.current = window.pageCount
-      setLoaded(true); setError(null)
+      successfulDepth.current = window.pageCount
+      requestedDepth.current = Math.max(window.pageCount, queuedDepth.current ?? 0)
+      setLoaded(true); setError(null); succeeded = true
     } catch (reason) {
       if (current !== generation.current) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
@@ -76,14 +89,20 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     } finally {
       clearTimeout(deadline)
       if (flight.current === controller) flight.current = null
-      if (current === generation.current) setLoading(false)
+      if (current === generation.current) {
+        setLoading(false)
+        const next = queuedDepth.current
+        queuedDepth.current = null
+        // Failure remains explicit and retryable, never an automatic hot loop.
+        if (succeeded && next !== null && next > successfulDepth.current) void load(next)
+      }
     }
   }
 
   useEffect(() => {
     generation.current++
     flight.current?.abort(); flight.current = null
-    successfulDepth.current = 1; requestedDepth.current = 1; visibleTail.current = undefined
+    successfulDepth.current = 1; requestedDepth.current = 1; activeDepth.current = 0; queuedDepth.current = null; visibleTail.current = undefined
     setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
     if (!enabled) return
     let active = true
@@ -99,7 +118,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     window.addEventListener('focus', resume)
     document.addEventListener('visibilitychange', resume)
     return () => {
-      active = false; generation.current++; flight.current?.abort(); flight.current = null
+      active = false; generation.current++; flight.current?.abort(); flight.current = null; queuedDepth.current = null
       subscription.unsubscribe(); window.removeEventListener('online', resume); window.removeEventListener('focus', resume)
       document.removeEventListener('visibilitychange', resume)
     }
@@ -112,12 +131,12 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     <h2>Фотографии рейда</h2>
     {items.length > 0 && <div className="result-gallery__grid">{items.map(item => <figure key={item.id}>
       <CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}
-        width={item.width} height={item.height} loading="lazy" alt={item.caption || 'Фото рейда'} />
+        width={item.width} height={item.height} style={{ aspectRatio: `${item.width} / ${item.height}` }} loading="lazy" alt={item.caption || 'Фото рейда'} />
       {item.caption && <figcaption>{item.caption}</figcaption>}
     </figure>)}</div>}
     {loaded && !items.length && !error && <p className="kb-muted">В общей галерее пока нет фотографий. Фото и комментарии отдельных точек можно открыть на карте.</p>}
     {!loaded && !error && <p className="kb-muted" role="status">{navigator.onLine ? 'Загружаем фотографии…' : 'Для общей галереи нужно соединение.'}</p>}
-    {cursor && <button type="button" disabled={loading || !!error} onClick={() => void load(successfulDepth.current + 1)}>Показать ещё фотографии</button>}
+    {cursor && <button type="button" aria-busy={loading} disabled={!loaded || !!error} onClick={() => void load(successfulDepth.current + 1)}>Показать ещё фотографии</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void load(requestedDepth.current)}>Повторить загрузку фотографий</button></p>}
     {local.length > 0 && <><h3>На этом телефоне</h3><div className="result-gallery__grid">{local.map(draft => <LocalPhoto key={draft.operationId} draft={draft} />)}</div></>}
     {localError && <p role="status">Не удалось проверить локальные фотографии. Не очищайте данные приложения.</p>}
