@@ -15,6 +15,8 @@ const raid: RaidProjection = { id: raidId, kabandaId: teamId, title: 'Подго
 test.use({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', reducedMotion: 'reduce' })
 test('selected PNG reaches the durable photo queue through the real browser decoder', async ({ page, context }, info) => {
   await installYandexMapsMock(context)
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
   await context.addInitScript(() => {
     const diagnostic: string[] = []
     Object.assign(window, { photoPreparationSteps: diagnostic })
@@ -47,6 +49,7 @@ test('selected PNG reaches the durable photo queue through the real browser deco
       : path.endsWith('/live') ? { raid, teamVisits: true, revision: '1', serverAt: new Date().toISOString(), claims: [], fallbacks: [], positions: [],
         points: [{ id: pointId, sourcePointId: pointId, name: 'Остановка', latitude: 56.86, longitude: 53.21, position: 0, visitedByMe: false, visitedByTeam: false }] }
       : path.endsWith('/materials') ? { materials: [], nextCursor: null }
+      : path.endsWith(`/points/${pointId}/history`) ? { pointId, personalCount: 0, visitors: [], entries: [], nextOffset: null }
       : path.endsWith('/check-ins/nearby') ? { policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 }, points: [photo] }
       : path.endsWith('/check-ins/presence') ? { pointSnapshotId: pointId, radiusMeters: 50, participants: [], serverAt: new Date().toISOString() }
       : path.endsWith('/presence/me') ? { radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: new Date().toISOString() }
@@ -56,21 +59,20 @@ test('selected PNG reaches the durable photo queue through the real browser deco
     return route.fulfill({ json: body })
   })
   await page.goto(`/app?raid=${raidId}`)
-  // Materials can be added by an ordinary member independently of GPS and
-  // visiting the point. Do not make an image-compatibility test depend on GPS.
   await page.getByRole('button', { name: /^Остановка\./ }).click()
   const panel = page.getByRole('region', { name: 'Фото и комментарии точки' })
-  await expect(panel).toBeVisible()
-  await panel.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   try {
+    await expect(panel).toBeVisible()
+    await panel.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
     await expect.poll(async () => {
       if (uploadRequests > 0) return 'durably saved'
       return page.evaluate(() => JSON.stringify({ steps: (window as any).photoPreparationSteps,
         message: document.querySelector('.point-materials [role="status"]')?.textContent ?? null }))
     }, { timeout: 15000 }).toBe('durably saved')
+    expect(errors).toEqual([])
   } finally {
-    await info.attach('photo-preparation-steps', { body: await page.evaluate(() => JSON.stringify({
+    await info.attach('photo-preparation-steps', { body: JSON.stringify({ errors, browser: await page.evaluate(() => ({
       steps: (window as any).photoPreparationSteps, message: document.querySelector('.point-materials [role="status"]')?.textContent ?? null,
-    })), contentType: 'application/json' })
+    })) }), contentType: 'application/json' })
   }
 })
