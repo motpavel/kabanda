@@ -558,7 +558,7 @@ export function CheckInPanel({
 
       {message && <p className="kb-notice" role="status">{message}</p>}
 
-      {pendingClaim && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => claimAction(pendingClaim, 'decline')}>Это ошибка — отклоннить</button>}
+      {pendingClaim && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => claimAction(pendingClaim, 'decline')}>Это ошибка — отклонить</button>}
       {pendingFallback && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => fallbackAction(pendingFallback, 'decline')}>Не могу подтвердить</button>}
       {Boolean(local?.unsynced) && <button className="kb-text-action" type="button" disabled={Boolean(busy) || !navigator.onLine} onClick={() => void flush()}>Синхронизировать сохранённое</button>}
 
