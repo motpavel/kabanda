@@ -89,6 +89,12 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(history).toBeVisible()
     await expect(history.getByRole('button', { name: /Пометить|Новый визит/ })).toHaveCount(0)
     await expect(history.getByRole('button', { name: 'Добавить комментарий' })).toBeVisible()
+    // Renewing the same identity must reconnect a mounted live screen, not
+    // strand it on a retired feed with permanently empty data.
+    const liveAfterRenewal = riderPage.waitForResponse(response => response.url().includes(`/api/raids/${raidId}/fast/live`) && response.ok())
+    await riderPage.evaluate(userId => window.dispatchEvent(new CustomEvent('kabanda:identity-changed', { detail: { userId } })), rider.userId)
+    await liveAfterRenewal
+    await expect(riderPage.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/)
     releaseUpload()
     await expect.poll(async () => (await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(true)
     const pending = (await pool.query('SELECT request_fingerprint FROM raid_feature_receipts WHERE raid_id=$1 AND command=$2', [raidId, 'team-visit-v1'])).rows
@@ -96,8 +102,8 @@ test('navigator visit reaches three open phones independently of a photo and sur
     const current = await api<{ raid: { version: number } }>(ownerPage, 'GET', `/api/raids/${raidId}`)
     const finishing = await api<{ raid: { version: number } }>(ownerPage, 'POST', `/api/raids/${raidId}/commands/finish`, {
       expectedVersion: current.raid.version, inventory: { routePending: 0, checkInsPending: 0, mediaPending: 0, needsAction: 0 }, confirmPartial: false,
-    })
-    await api(ownerPage, 'POST', `/api/raids/${raidId}/finalization/settle`, { expectedVersion: finishing.raid.version })
+    }, randomUUID())
+    await api(ownerPage, 'POST', `/api/raids/${raidId}/finalization/settle`, { expectedVersion: finishing.raid.version }, randomUUID())
     const before = (await pool.query('SELECT result_json,share_sha256 FROM raid_results WHERE raid_id=$1', [raidId])).rows[0]
     await navPage.goto(`/app?raid=${raidId}`)
     await expect(navPage.getByRole('heading', { name: 'Итоги рейда' })).toBeAttached()
