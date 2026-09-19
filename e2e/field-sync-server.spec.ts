@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createDatabase } from '../apps/api/src/database.js'
 import { assertE2EDatabaseGuard, prepareE2EIdentity, requireE2EDatabaseUrl } from '../apps/api/src/e2e-fixture.js'
 import { api, fixture, installSyntheticSession, installYandexMapsMock, type FixtureIdentity } from './support.js'
+import { createDeviceContext } from './persistent-context.js'
 
 // Real auth cookies, API routes and a guarded disposable PostgreSQL database.
 // Only GPS, the map provider and one delayed upload connection are synthetic.
@@ -35,7 +36,7 @@ test('navigator visit reaches three open phones independently of a photo and sur
     const pages: import('@playwright/test').Page[] = []
     const errors: string[] = []
     for (const [index, identity] of [owner, nav, rider].entries()) {
-      const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4173', viewport: { width: 390, height: 844 },
+      const context = await createDeviceContext(browser, { baseURL: 'http://127.0.0.1:4173', viewport: { width: 390, height: 844 },
         serviceWorkers: 'block', reducedMotion: 'reduce', permissions: ['geolocation'] })
       contexts.push(context)
       await installSyntheticSession(context, identity)
@@ -78,7 +79,6 @@ test('navigator visit reaches three open phones independently of a photo and sur
     for (const page of pages) await expect(page.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/, { timeout: 8000 })
     const propagationMs = Date.now() - start
     expect(propagationMs).toBeLessThan(8000)
-    // The photo connection is still held, so success cannot have waited for it.
     expect((await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(false)
     const credits = (await pool.query('SELECT user_id FROM raid_point_credits WHERE raid_id=$1 ORDER BY user_id', [raidId])).rows
     expect(credits.map(row => row.user_id).sort()).toEqual([nav.userId, rider.userId].sort())
@@ -89,8 +89,6 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(history).toBeVisible()
     await expect(history.getByRole('button', { name: /Пометить|Новый визит/ })).toHaveCount(0)
     await expect(history.getByRole('button', { name: 'Добавить комментарий' })).toBeVisible()
-    // Renewing the same identity must reconnect a mounted live screen, not
-    // strand it on a retired feed with permanently empty data.
     const liveAfterRenewal = riderPage.waitForResponse(response => response.url().includes(`/api/raids/${raidId}/fast/live`) && response.ok())
     await riderPage.evaluate(userId => window.dispatchEvent(new CustomEvent('kabanda:identity-changed', { detail: { userId } })), rider.userId)
     await liveAfterRenewal
