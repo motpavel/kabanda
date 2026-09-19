@@ -76,3 +76,50 @@ test('selected PNG reaches the durable photo queue through the real browser deco
     })) }), contentType: 'application/json' })
   }
 })
+
+test('native image buffers survive a real IndexedDB round trip', async ({ page }, info) => {
+  await page.route('**/photo-storage-probe', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><input type="file">' }))
+  await page.goto('/photo-storage-probe')
+  await page.locator('input').setInputFiles('apps/pwa/public/pwa-192x192.png')
+  const report = await page.evaluate(async () => {
+    const selected = document.querySelector('input')!.files![0]!
+    const results: Record<string, string> = {}
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open('synthetic-photo-probe', 1)
+      open.onupgradeneeded = () => open.result.createObjectStore('files')
+      open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error)
+    })
+    async function roundTrip(name: string, value: Blob | ArrayBuffer) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction('files', 'readwrite')
+          transaction.objectStore('files').put(value, name)
+          transaction.oncomplete = () => resolve(); transaction.onabort = () => reject(transaction.error)
+          transaction.onerror = () => reject(transaction.error)
+        })
+        const saved = await new Promise<Blob | ArrayBuffer>((resolve, reject) => {
+          const request = db.transaction('files').objectStore('files').get(name)
+          request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+        })
+        const before = new Uint8Array(value instanceof Blob ? await value.arrayBuffer() : value)
+        const after = new Uint8Array(saved instanceof Blob ? await saved.arrayBuffer() : saved)
+        results[name] = before.length === after.length && before.every((byte, i) => byte === after[i]) ? 'ok' : 'mismatched bytes'
+      } catch (error) { results[name] = error instanceof Error ? `${error.name}: ${error.message}` : String(error) }
+    }
+    try {
+      const bytes = await selected.arrayBuffer()
+      await roundTrip('buffer', bytes)
+      await roundTrip('file', selected)
+      await roundTrip('memory-blob', new Blob([bytes], { type: selected.type }))
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32
+      canvas.getContext('2d')!.fillRect(0, 0, 32, 32)
+      const generated = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('empty canvas')), 'image/jpeg'))
+      await roundTrip('canvas-blob', generated)
+      await roundTrip('copied-canvas-blob', new Blob([await generated.arrayBuffer()], { type: generated.type }))
+    } finally { db.close() }
+    return results
+  })
+  await info.attach('native-blob-persistence', { body: JSON.stringify(report), contentType: 'application/json' })
+  expect(report.buffer).toBe('ok')
+  expect(report['memory-blob']).toBe('ok')
+})
