@@ -39,4 +39,7 @@ try {
 }
 await run('pnpm', ['db:migrate'])
 await run('pnpm', ['build'])
+// Cross-engine file decoding is a prerequisite for the longer offline/three-
+// account scenarios. On success the full suite still runs, without exclusions.
+await run('pnpm', ['exec', 'playwright', 'test', 'e2e/browser-photo.spec.ts'])
 await run('pnpm', ['exec', 'playwright', 'test'])
