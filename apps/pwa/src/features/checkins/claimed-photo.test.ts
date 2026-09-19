@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { offlineDb } from '../offline/db'
 import { activateIdentity } from '../offline/ledger'
 import type { MediaDraftRecord } from '../offline/types'
@@ -16,6 +16,7 @@ const draft = (): MediaDraftRecord => ({ operationId: 'photo-operation', clientD
 beforeEach(async () => {
   await offlineDb.delete(); await offlineDb.open(); await activateIdentity(identityId)
 })
+afterEach(() => vi.restoreAllMocks())
 
 describe('materializing a current claimed photograph', () => {
   it('reads the current stored Blob, not a stale object returned before a metadata write', async () => {
@@ -43,9 +44,25 @@ describe('materializing a current claimed photograph', () => {
   })
   it('refuses replaced claims, metadata, or a completed operation', async () => {
     for (const change of [{ attempts: 2 }, { status: 'accepted' as const }, { sourceSha256: 'b'.repeat(64) },
-      { raidId: 'another-raid' }, { sizeBytes: 7 }, { clientDraftId: 'another-draft' }]) {
+      { raidId: 'another-raid' }, { kabandaId: 'another-team' }, { sizeBytes: 7 }, { clientDraftId: 'another-draft' }]) {
       const expected = draft(); await offlineDb.mediaDrafts.put({ ...expected, ...change })
       await expect(materializeClaimedPhoto(expected)).rejects.toThrow('claim changed')
     }
+  })
+  it('does not use a cached get or collection and limits the native read to one exact primary key', async () => {
+    const expected = draft(); await offlineDb.mediaDrafts.put(expected)
+    await offlineDb.mediaDrafts.put({ ...draft(), operationId: 'unrelated', raidId: 'unrelated' })
+    vi.spyOn(offlineDb.mediaDrafts, 'get').mockImplementation(() => { throw new Error('Do not read optimistic cached photo') })
+    vi.spyOn(offlineDb.mediaDrafts, 'where').mockImplementation(() => { throw new Error('Do not query cached photo collection') })
+    const nativeRead = vi.spyOn(IDBObjectStore.prototype, 'getAll')
+    const upload = await materializeClaimedPhoto(expected)
+    expect(new Uint8Array(await upload.arrayBuffer())).toEqual(source)
+    expect(nativeRead).toHaveBeenCalledExactlyOnceWith(expected.operationId, 1)
+    expect(offlineDb.isOpen()).toBe(true)
+  })
+  it('rejects a disappeared claim without creating a replacement row or photo', async () => {
+    const expected = draft()
+    await expect(materializeClaimedPhoto(expected)).rejects.toThrow('claim changed')
+    expect(await offlineDb.mediaDrafts.count()).toBe(0)
   })
 })
