@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { Pool } from 'pg'
 import { assertE2EDatabaseGuard, requireE2ERunnerEnvironment } from './e2e-fixture.js'
@@ -16,11 +17,11 @@ const environment = {
   VITE_YANDEX_MAPS_API_KEY: 'kabanda-e2e-yandex-mock',
 }
 
-async function run(command: string, args: string[]): Promise<void> {
+async function run(command: string, args: string[], fixtureRunId = runId): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: repositoryRoot,
-      env: environment,
+      env: { ...environment, E2E_RUN_ID: fixtureRunId },
       stdio: 'inherit',
     })
     child.once('error', reject)
@@ -41,5 +42,7 @@ await run('pnpm', ['db:migrate'])
 await run('pnpm', ['build'])
 // Native offline file access is a prerequisite for the longer multi-account
 // suite. This is fail-fast ordering, never an exclusion from the full run.
-await run('pnpm', ['exec', 'playwright', 'test', 'e2e/browser-photo.spec.ts', 'e2e/offline-recovery.spec.ts'])
+// Its repeated test IDs must not reuse users/paused raids in the full suite.
+// Only the synthetic fixture namespace differs; DB guards and routes do not.
+await run('pnpm', ['exec', 'playwright', 'test', 'e2e/browser-photo.spec.ts', 'e2e/offline-recovery.spec.ts'], randomUUID())
 await run('pnpm', ['exec', 'playwright', 'test'])
