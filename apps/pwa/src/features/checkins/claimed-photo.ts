@@ -3,20 +3,15 @@ import { getActiveIdentityId } from '../offline/ledger'
 import type { MediaDraftRecord } from '../offline/types'
 import { readPhotoUploadBody } from './upload-body'
 
-/** Open a short-lived read-only connection for the file read. In the failing
- * replay the application connection's Blob handle was unreadable, while a new
- * native connection read the original persisted bytes. Never close the shared
- * application database, change its schema, or publish an optimistic cached row.
+/** Short-lived native read connection, never a replacement database or a close
+ * of the shared application connection. Read one exact key and no other photos.
  */
 async function photoConnection(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let finished = false
     const request = indexedDB.open(offlineDb.name)
     const timer = setTimeout(() => { finished = true; reject(new TypeError('Saved photograph database open timed out')) }, 5000)
-    request.onupgradeneeded = () => {
-      // An absent database is not a reason to create a replacement one.
-      request.transaction?.abort()
-    }
+    request.onupgradeneeded = () => { request.transaction?.abort() }
     request.onsuccess = () => {
       clearTimeout(timer)
       if (finished) { request.result.close(); return }
@@ -42,23 +37,24 @@ async function committedPhoto(db: IDBDatabase, operationId: string): Promise<Med
     }, 5000)
     request.onsuccess = () => { row = request.result[0] as MediaDraftRecord | undefined }
     request.onerror = () => { clearTimeout(timer); reject(request.error ?? new TypeError('Saved photograph record unavailable')) }
-    // Do not start the external binary read inside a live IDB transaction.
     transaction.oncomplete = () => { clearTimeout(timer); resolve(row) }
     transaction.onabort = () => { clearTimeout(timer); reject(transaction.error ?? new TypeError('Saved photograph record read interrupted')) }
   })
 }
 
-/** Materialize original bytes before writing upload-intent metadata. The upload
- * remains independent of later record rewrites, never a decoded/reencoded image.
- * Existing identity, immutable payload and claim checks remain authoritative.
+/** Materialize original bytes BEFORE rewriting status/intent metadata. Reading
+ * is not permission to send: the caller must subsequently obtain the existing
+ * durable sender/operation claim and compare its immutable payload. Read errors
+ * are retained for the same operation's normal retry, never a new intent/photo.
  */
 export async function materializeClaimedPhoto(expected: MediaDraftRecord): Promise<Blob> {
   if (await getActiveIdentityId() !== expected.identityId) throw new TypeError('Photo identity changed')
+  if (!['local', 'intent', 'retryable', 'uploading'].includes(expected.status)) throw new TypeError('Photo claim changed')
   const connection = await photoConnection()
   try {
     const current = await committedPhoto(connection, expected.operationId)
     if (!current || current.identityId !== expected.identityId || current.kabandaId !== expected.kabandaId ||
-        current.raidId !== expected.raidId || current.status !== 'uploading' || current.attempts !== expected.attempts ||
+        current.raidId !== expected.raidId || current.status !== expected.status || current.attempts !== expected.attempts ||
         current.clientDraftId !== expected.clientDraftId || current.sourceSha256 !== expected.sourceSha256 ||
         current.sizeBytes !== expected.sizeBytes || current.contentType !== expected.contentType ||
         current.blob.size !== current.sizeBytes) throw new TypeError('Photo claim changed')
