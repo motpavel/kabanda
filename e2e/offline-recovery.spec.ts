@@ -1,18 +1,21 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from './offline-network.js'
 import {
   api, fixture, installSyntheticSession, installYandexMapsMock, operationId,
   type FixtureIdentity, waitForServiceWorkerControl,
 } from './support.js'
 import { installOfflineGps } from './recorder-gps-probe.js'
+import { observePhotoPreparation, attachOfflinePhotoEvidence } from './offline-photo-evidence.js'
+import { failNextSavedPhotoRead, expectSavedPhotoRecovered } from './legacy-photo-read-fault.js'
 
 type RaidCounts = {
   routeSamples: number; routeReceipts: number; checkInAttempts: number; pointCredits: number
   media: number; readyMedia: number; requiredRouteSequenceAccepted: boolean | null
 }
-type LocalCounts = { routeMaxSequence: number; routePending: number; checkInPending: number; mediaPending: number }
+type LocalCounts = { routeMaxSequence: number; routePending: number; routeRejected: number; checkInPending: number; mediaPending: number }
 
-async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
-  return page.evaluate(async wantedRaidId => {
+async function localCounts(page: Page, raidId: string, throughSequence?: number): Promise<LocalCounts> {
+  return page.evaluate(async ({ wantedRaidId, throughSequence }) => {
     const request = indexedDB.open('kabanda-offline')
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
@@ -31,27 +34,43 @@ async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
       ])
       const forRaid = <T extends { raidId: string }>(rows: T[]) => rows.filter(row => row.raidId === wantedRaidId)
       const routeRows = forRaid(routes), open = (status: string) => !['accepted', 'rejected'].includes(status)
+      const captured = routeRows.filter(row => throughSequence === undefined || row.sequence <= throughSequence)
       return {
         routeMaxSequence: Math.max(0, ...routeRows.map(({ sequence }) => sequence)),
-        routePending: routeRows.filter(({ status }) => open(status)).length,
+        routePending: captured.filter(({ status }) => open(status)).length,
+        routeRejected: captured.filter(({ status }) => status === 'rejected').length,
         checkInPending: forRaid(checkIns).filter(({ status }) => open(status)).length,
         mediaPending: forRaid(media).filter(({ status }) => open(status)).length,
       }
     } finally { db.close() }
-  }, raidId)
+  }, { wantedRaidId: raidId, throughSequence })
 }
 
-// Keep a genuine old-server/installed-queue compatibility path. Only the new
-// capability read returns unknown-endpoint; every legacy write and receipt is
-// executed by the real API. A separate field test covers the new v2 queue.
-test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page }) => {
+// Only the new capability read is synthetic. Every legacy write and receipt is
+// executed by the real API, and the production service worker remains enabled.
+test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page, networkLink }, info) => {
   test.setTimeout(120_000)
   const identity = fixture<FixtureIdentity>('prepare')
   await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
   await installOfflineGps(context, identity.point)
-  await page.route('**/fast/live*', route => route.fulfill({ status: 404,
-    json: { error: { code: 'NOT_FOUND', message: 'Synthetic pre-field API version' } } }))
+  await observePhotoPreparation(context)
+  // page.route cannot consistently intercept service-worker-owned requests.
+  // Simulate the one absent capability before it reaches the worker, including
+  // after an offline reload. Do not mock the old API, persistence or its writes.
+  await context.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window)
+    window.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href)
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
+      if (method.toUpperCase() === 'GET' && url.origin === location.origin && /^\/api\/raids\/[^/]+\/fast\/live$/.test(url.pathname)) {
+        return Promise.resolve(new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Synthetic pre-field API version' } }), {
+          status: 404, headers: { 'content-type': 'application/json' },
+        }))
+      }
+      return originalFetch(input, init)
+    }
+  })
 
   const { kabanda } = await api<{ kabanda: { id: string } }>(page, 'POST', '/api/kabandas', {
     name: `Offline E2E ${identity.runId.slice(0, 8)}`, avatar: '🚲',
@@ -80,17 +99,24 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   const confirmation = page.getByRole('complementary', { name: 'Подтверждение точки' })
   await expect(confirmation).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
+  await expect(confirmation.locator('.checkin-panel input[type="file"]')).toHaveCount(1)
   const serverBaseline = fixture<RaidCounts>('inspect-raid', raid.id)
   const localBaseline = await localCounts(page, raid.id)
 
-  await context.setOffline(true)
-  // Real GPS works without Internet. installOfflineGps supplies fresh timestamped
-  // measurements through reload; the production recorder and its outbox are real.
+  await networkLink.setOffline(true)
+  // Prove the network is really inaccessible, not just an offline-looking UI.
+  expect(await page.evaluate(async () => {
+    try { await fetch(`/api/health?offline-probe=${Date.now()}`, { cache: 'no-store' }); return true }
+    catch { return false }
+  })).toBe(false)
+  expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+  if (info.project.name === 'webkit') expect(networkLink.deniedRequests()).toBeGreaterThan(0)
   await expect.poll(async () => (await localCounts(page, raid.id)).routeMaxSequence,
     { timeout: 30_000 }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
   await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
-  await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
+  try { await expect(page.getByText(/Фото сохранено локально/)).toBeVisible() }
+  finally { await attachOfflinePhotoEvidence(page, info) }
   await page.getByRole('button', { name: 'Пометить точку', exact: true }).click()
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
   await expect(page.locator('.checkin-panel--map > .checkin-pending')).toHaveText('Локально: 2')
@@ -107,13 +133,25 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   await expect.poll(async () => {
     const counts = await localCounts(page, raid.id); return [counts.checkInPending, counts.mediaPending]
   }).toEqual([1, 1])
-  await context.setOffline(false)
+  // A temporary native read error must trigger the durable automatic retry,
+  // not require another online event, manual click or reopening the raid.
+  const savedPhoto = await failNextSavedPhotoRead(page)
+  // Capture the complete offline backlog before reconnect. The recorder keeps
+  // producing points, so require every pre-reconnect point without racing its
+  // next live sample. Do not stop/fake the recorder or ignore rejections.
+  const reconnectSequence = (await localCounts(page, raid.id)).routeMaxSequence
+  expect(reconnectSequence).toBeGreaterThanOrEqual(offlineRouteSequence)
+  await networkLink.setOffline(false)
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect.poll(async () => {
-    const counts = await localCounts(page, raid.id); return [counts.routePending, counts.checkInPending, counts.mediaPending]
-  }, { timeout: 45_000 }).toEqual([0, 0, 0])
+    const counts = await localCounts(page, raid.id, reconnectSequence)
+    return [counts.routePending, counts.routeRejected, counts.checkInPending, counts.mediaPending]
+  }, { timeout: 45_000 }).toEqual([0, 0, 0, 0])
+  await expectSavedPhotoRecovered(page, savedPhoto)
   await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(offlineRouteSequence)).requiredRouteSequenceAccepted,
+    { timeout: 45_000 }).toBe(true)
+  await expect.poll(() => fixture<RaidCounts>('inspect-raid', raid.id, String(reconnectSequence)).requiredRouteSequenceAccepted,
     { timeout: 45_000 }).toBe(true)
   await expect.poll(async () => {
     const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(page, 'GET',

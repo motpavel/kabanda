@@ -1,4 +1,5 @@
 import type { OneShotCoordinate } from './types'
+import { decodeImageSource, type DecodedImageSource } from './image-source'
 
 export const MAX_MEDIA_BYTES = 8 * 1024 * 1024
 const MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -46,26 +47,27 @@ export function validateMediaFile(file: File): string | null {
   return null
 }
 
-/** Downsample before hashing, IndexedDB and encrypted transport to bound phone memory. */
+/** Normalize only newly selected files. Previously queued bytes and their hashes
+ * never pass through this decoder again. The encoded canvas remains <=2048 px. */
 export async function prepareMediaFile(file: File): Promise<Blob> {
   if (!MEDIA_TYPES.has(file.type)) throw new Error('Выберите фото в формате JPEG, PNG или WebP. Для HEIC сохраните копию в JPEG.')
   if (file.size <= 0 || file.size > 32 * 1024 * 1024) throw new Error('Выберите фото размером до 32 МиБ.')
-  let bitmap: ImageBitmap
+  let image: DecodedImageSource
   try {
-    bitmap = await createImageBitmap(file, { resizeWidth: 2048, resizeQuality: 'high', imageOrientation: 'from-image' })
+    image = await decodeImageSource(file)
   } catch {
     throw new Error('Не удалось открыть фото. Сохраните его в JPEG и попробуйте ещё раз.')
   }
   const canvas = document.createElement('canvas')
   try {
-    const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height))
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const scale = Math.min(1, 2048 / Math.max(image.width, image.height))
+    canvas.width = Math.max(1, Math.round(image.width * scale))
+    canvas.height = Math.max(1, Math.round(image.height * scale))
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Не удалось подготовить фото. Попробуйте другой снимок.')
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    context.drawImage(image.source, 0, 0, canvas.width, canvas.height)
     const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
       (value) => value ? resolve(value) : reject(new Error('Не удалось уменьшить фото. Попробуйте другой снимок.')),
       'image/jpeg', .82,
@@ -73,7 +75,7 @@ export async function prepareMediaFile(file: File): Promise<Blob> {
     if (blob.size > MAX_MEDIA_BYTES) throw new Error('Фото слишком большое. Выберите другой снимок.')
     return blob
   } finally {
-    bitmap.close()
+    image.release()
     canvas.width = canvas.height = 1
   }
 }

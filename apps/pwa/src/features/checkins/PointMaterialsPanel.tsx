@@ -4,6 +4,7 @@ import { CachedImage, clearPrivateImageCache } from '../../lib/CachedImage'
 import { getActiveIdentityId } from '../offline/ledger'
 import { enqueueField, pumpFieldOperations, type FieldOperation } from '../raids/field-outbox'
 import { hasQuotaForMedia, prepareMediaFile, sha256Hex } from './platform'
+import { consumeSelectedFile } from './selected-file'
 import './point-materials.css'
 
 export type PointMaterial = {
@@ -133,7 +134,7 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       <label>Комментарий или подпись к фото<textarea maxLength={2000} rows={3} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
       <div><button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
         <label className="checkin-photo kb-link-button">{busy ? 'Сохраняем…' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => {
-          const file = event.target.files?.[0]; event.currentTarget.value = ''; if (file) void save(file)
+          void consumeSelectedFile(event.currentTarget, save)
         }} /></label></div>
       <p className="kb-muted">Материалы не создают новое посещение и не меняют баллы.</p>
     </div>}

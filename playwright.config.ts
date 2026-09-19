@@ -4,12 +4,13 @@ const databaseUrl = process.env.E2E_DATABASE_URL ?? ''
 
 export default defineConfig({
   testDir: './e2e',
+  outputDir: 'test-results/primary',
   fullyParallel: false,
   workers: 1,
   retries: 0,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'line',
+  reporter: process.env.CI ? [['line'], ['html', { open: 'never' }], ['json', { outputFile: 'test-results/primary-report.json' }]] : 'line',
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
@@ -18,7 +19,13 @@ export default defineConfig({
     geolocation: { latitude: 56.86, longitude: 53.21, accuracy: 8 },
     permissions: ['geolocation'],
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'webkit', use: { ...devices['iPhone 13'] },
+      testMatch: /(?:browser-photo|field-sync-server|field-retry-navigation|gallery-retention|raid-layout-regressions|result-recovery|user-trust-session|recording-navigation|offline-recovery)\.spec\.ts$/,
+    },
+  ],
   webServer: [
     {
       command: 'pnpm --filter @kabanda/api start',

@@ -7,10 +7,10 @@ import {
 } from '../../lib/diagnostics'
 import type { MediaDraftRecord } from '../offline/types'
 import { createMediaIntent, submitCheckIn, uploadMediaContent } from './api'
+import { claimPreparedPhoto } from './prepared-photo-claim'
 import {
   acquireCheckInSenderLease,
   claimNextCheckIn,
-  claimNextMediaDraft,
   rememberMediaIntent,
   replaceExpiredMediaIntent,
   retryCheckIn,
@@ -98,10 +98,12 @@ export async function replayOneCheckInOrMedia(input: {
     }
   }
 
-  const media = await claimNextMediaDraft(fence)
-  if (!media) return { kind: 'idle' }
+  const prepared = await claimPreparedPhoto(fence)
+  if (!prepared) return { kind: 'idle' }
+  const { media } = prepared
   let stage: MediaFailureStage = 'intent'
   try {
+    if (prepared.error || !prepared.uploadBlob) throw prepared.error ?? new TypeError('Saved photograph unavailable')
     const intent = await createMediaIntent(media.raidId, media.operationId, {
       sourceSha256: media.sourceSha256,
       sizeBytes: media.sizeBytes,
@@ -117,7 +119,7 @@ export async function replayOneCheckInOrMedia(input: {
       intent.intentId,
       intent.uploadCapability,
       media.sourceSha256,
-      media.blob,
+      prepared.uploadBlob,
     )
     const settled = await settleMediaDraft(fence, media.operationId, response)
     return settled
@@ -147,10 +149,12 @@ export async function replayOneIssuedMedia(input: {
   if (!input.online) return { kind: 'idle' }
   const fence = await acquireCheckInSenderLease(input.identityId, input.raidId, input.holderTabId)
   if (!fence) return { kind: 'idle' }
-  const media = await claimNextMediaDraft(fence, Date.now(), true)
-  if (!media) return { kind: 'idle' }
+  const prepared = await claimPreparedPhoto(fence, true)
+  if (!prepared) return { kind: 'idle' }
+  const { media } = prepared
   let stage: MediaFailureStage = 'intent'
   try {
+    if (prepared.error || !prepared.uploadBlob) throw prepared.error ?? new TypeError('Saved photograph unavailable')
     const intent = await createMediaIntent(media.raidId, media.operationId, {
       sourceSha256: media.sourceSha256,
       sizeBytes: media.sizeBytes,
@@ -166,7 +170,7 @@ export async function replayOneIssuedMedia(input: {
       intent.intentId,
       intent.uploadCapability,
       media.sourceSha256,
-      media.blob,
+      prepared.uploadBlob,
     )
     const settled = await settleMediaDraft(fence, media.operationId, response)
     return settled

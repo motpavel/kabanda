@@ -4,6 +4,7 @@ import { InvitePage } from '../features/kabandas/InvitePage'
 import { KabandasPage } from '../features/kabandas/KabandasPage'
 import { RaidApp } from '../features/raids/RaidApp'
 import { PwaUpdateGate } from '../features/raids/PwaUpdateGate'
+import { FieldSyncOwner } from '../features/raids/FieldSyncOwner'
 import { RecordingRuntimeProvider } from '../features/raids/recording/runtime'
 import { parseRaidRoute } from '../features/raids/routing'
 import { RiderLoader } from './RiderLoader'
@@ -29,7 +30,7 @@ export function App() {
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab/legacy')) return <OptionalScreen><CapabilityLabPage /></OptionalScreen>
   if (/\/lab(?:\/index\.html|\/)?$/.test(window.location.pathname)) return <OptionalScreen><GpsExperimentPage /></OptionalScreen>
-  return <InstallProvider><RecordingRuntimeProvider><AppRoute /><PortraitMode /><PwaUpdateGate /></RecordingRuntimeProvider></InstallProvider>
+  return <InstallProvider><RecordingRuntimeProvider><FieldSyncOwner /><AppRoute /><PortraitMode /><PwaUpdateGate /></RecordingRuntimeProvider></InstallProvider>
 }
 
 function AppRoute() {

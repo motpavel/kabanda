@@ -14,7 +14,9 @@ import {
   mediaContentUrl,
 } from './api'
 import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, prepareMediaFile } from './platform'
+import { consumeSelectedFile } from './selected-file'
 import { replayOneCheckInOrMedia } from './replay'
+import { useLegacyRetry } from './use-legacy-retry'
 import { checkInRefusalMessage } from './refusal'
 import {
   activeParticipantSelection,
@@ -299,6 +301,8 @@ export function CheckInPanel({
     }
   }, [canMutate, identityId, onCanonicalRefresh, onRefused, raid.id, refreshCanonicalExtras, refreshGallery, refreshLocal, senderTabId])
 
+  useLegacyRetry(identityId, raid.id, canMutate, sending, flush)
+
   useEffect(() => {
     void refreshLocal().then(() => void flush())
     const resume = () => {
@@ -566,7 +570,7 @@ export function CheckInPanel({
           <summary><svg className="checkin-media-details__camera" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 5 9.5 3h5L16 5h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg>Фото с остановки <span className="checkin-media-details__toggle" aria-hidden="true">+</span></summary>
           <div className="checkin-media-compose">
           <label>Подпись к фото <input maxLength={160} value={caption} onChange={(event) => setCaption(event.target.value)} /></label>
-          <label className="kb-link-button checkin-photo" aria-busy={busy === 'media' || sending}>{(busy === 'media' || sending) && <span className="checkin-upload-spinner" aria-hidden="true" />}{busy === 'media' ? 'Готовим фото…' : sending ? 'Отправляем…' : manualResponse ? 'Фото для подтверждения' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy) || sending} onChange={(event) => { void addMedia(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} /></label>
+          <label className="kb-link-button checkin-photo" aria-busy={busy === 'media' || sending}>{(busy === 'media' || sending) && <span className="checkin-upload-spinner" aria-hidden="true" />}{busy === 'media' ? 'Готовим фото…' : sending ? 'Отправляем…' : manualResponse ? 'Фото для подтверждения' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(busy) || sending} onChange={(event) => { void consumeSelectedFile(event.currentTarget, addMedia) }} /></label>
           </div>
           {presentation === 'map-sheet' && gallery}
         </details>
