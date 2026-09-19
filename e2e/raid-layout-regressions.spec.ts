@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { userSchema } from '@kabanda/contracts'
 import { readFileSync } from 'node:fs'
 import { renderRaidShareCard } from '../apps/api/src/raid-share-card.js'
 import { installYandexMapsMock } from './support.js'
@@ -9,6 +10,10 @@ const userId = '11111111-1111-4111-8111-111111111111'
 const teamId = '22222222-2222-4222-8222-222222222222'
 const raidId = '33333333-3333-4333-8333-333333333333'
 const photoId = '55555555-5555-4555-8555-555555555555'
+// Use the same contract as session verification. A malformed fixture must fail
+// here, not disguise itself as eight unrelated layout timeouts at the login screen.
+const user = userSchema.parse({ id: userId, displayName: 'Участник', username: 'layout-qa',
+  email: 'qa@example.test', identityKind: 'verified', avatarUrl: null })
 const metrics = { durationSeconds: 600, distanceMeters: 1500, uniquePoints: 1, photos: 1 }
 const base: RaidProjection = {
   id: raidId, kabandaId: teamId, title: 'Поездка на набережную', state: 'completed', version: 3,
@@ -32,7 +37,7 @@ async function prepare(page: Page, planned = false) {
     const url = new URL(route.request().url()), path = url.pathname
     if (path.endsWith('/share-card')) return route.fulfill({ contentType: 'image/png', body: card })
     if (path.endsWith('/content')) return route.fulfill({ contentType: 'image/jpeg', body: photo })
-    const body = path === '/api/me' ? { user: { id: userId, displayName: 'Участник', username: 'qa', email: 'qa@example.test', identityKind: 'verified', avatarUrl: null } }
+    const body = path === '/api/me' ? { user }
       : path === '/api/kabandas' ? { kabandas: [{ id: teamId, name: 'Проверка размеров', role: 'member', avatar: '🐗', coverImage: null, memberCount: 1, pointsCollectionId: null }] }
       : path.endsWith('/result') ? { result }
       : path.endsWith('/media') ? { media: [{ id: photoId, state: 'ready', contentType: 'image/jpeg', sizeBytes: photo.length,
