@@ -162,8 +162,8 @@ export class FieldRaidService extends DatabaseRaidService {
       evidence: input.evidence, ids, repeatVisit: !!input.repeatVisit, previousAttemptId: input.previousAttemptId ?? null,
     })).digest('hex')
     return fieldTransaction(this.fieldPool, async client => {
-      // A fixed lock order also serializes operation IDs accidentally reused
-      // across raids. The raid row coordinates v1 commands, handoff and finish.
+      // The raid row coordinates legacy commands, handoff and finish. The
+      // operation lock also serializes accidental key reuse across raids.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`field:${actorUserId}:${operationId}`])
       const access = await fieldAccess(client, actorUserId, raidId, true)
       const receipt = await client.query(
@@ -230,6 +230,13 @@ export class FieldRaidService extends DatabaseRaidService {
            SELECT id,$3,user_id,'navigator_attestation' FROM raid_point_credits
            WHERE raid_id=$1 AND point_snapshot_id=$2 AND user_id=ANY($4::uuid[])
            ON CONFLICT(evidence_attempt_id,user_id) DO NOTHING`, [raidId, point.id, attempt, ids],
+        )
+        // Only the newly committed visit clears its own reached destination.
+        // Replaying its receipt exits above and cannot erase a later target.
+        await client.query(
+          `UPDATE raids SET destination_point_id=NULL,destination_selected_at=NULL,
+             version=version+1,updated_at=clock_timestamp()
+           WHERE id=$1 AND destination_point_id=$2 AND navigator_user_id=$3`, [raidId, point.id, actorUserId],
         )
         const rows = await client.query(
           'SELECT id,user_id,point_snapshot_id,source,created_at FROM raid_point_credits WHERE raid_id=$1 AND point_snapshot_id=$2 AND user_id=ANY($3::uuid[])', [raidId, point.id, ids],
