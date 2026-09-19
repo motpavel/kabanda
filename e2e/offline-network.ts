@@ -1,50 +1,9 @@
-import http from 'node:http'
-import type { Socket } from 'node:net'
 import { test as deviceTest, expect } from './persistent-test.js'
+import { localLink } from './offline-link.mjs'
 
 type NetworkLink = { setOffline: (offline: boolean) => Promise<void>; deniedRequests: () => number }
 type Link = { server: string; offline: boolean; denied: number; disconnect: () => void; close: () => Promise<void> }
 const links = new Map<string, Link>()
-
-async function localLink(): Promise<Link> {
-  const sockets = new Set<Socket>()
-  let link: Link
-  const server = http.createServer((request, response) => {
-    if (link.offline) { link.denied++; request.socket.destroy(); return }
-    let target: URL
-    try { target = new URL(request.url ?? '') } catch { response.writeHead(400).end(); return }
-    // Test-only forwarder bound to loopback. Never proxy an arbitrary origin,
-    // credentials, production host, database or external service.
-    if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' ||
-      !['4173', '3000'].includes(target.port) || target.username || target.password) {
-      response.writeHead(403).end(); return
-    }
-    const headers = { ...request.headers, host: target.host }
-    delete headers['proxy-authorization']; delete headers['proxy-connection']
-    const upstream = http.request({ hostname: target.hostname, port: target.port, method: request.method,
-      path: target.pathname + target.search, headers, agent: false }, incoming => {
-      response.writeHead(incoming.statusCode ?? 502, incoming.headers)
-      incoming.pipe(response)
-    })
-    upstream.on('socket', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)) })
-    upstream.on('error', () => response.destroy())
-    request.on('error', () => upstream.destroy())
-    response.on('close', () => upstream.destroy())
-    request.pipe(upstream)
-  })
-  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)) })
-  server.on('clientError', (_error, socket) => socket.destroy())
-  server.on('connect', (_request, socket) => socket.destroy())
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject); server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Local test link did not bind')
-  link = { server: `http://127.0.0.1:${address.port}`, offline: false, denied: 0,
-    disconnect: () => { for (const socket of sockets) socket.destroy() },
-    close: async () => { link.disconnect(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) } }
-  return link
-}
 
 /** WebKit's global offline emulation also made native FileReader/arrayBuffer
  * unreadable in CI, for both path and in-memory chooser payloads. Disconnect
