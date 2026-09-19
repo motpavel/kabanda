@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createDatabase } from '../apps/api/src/database.js'
 import { assertE2EDatabaseGuard, prepareE2EIdentity, requireE2EDatabaseUrl } from '../apps/api/src/e2e-fixture.js'
 import { fixture, installSyntheticSession, installYandexMapsMock, type FixtureIdentity } from './support.js'
+import { createDeviceContext } from './persistent-context.js'
 
 async function operations(page: Page) {
   return page.evaluate(async () => {
@@ -48,7 +49,7 @@ test('three accounts converge after automatic retries on Home while a photograph
     await pool.query('INSERT INTO raid_navigator_leases(raid_id,navigator_user_id,generation) VALUES($1,$2,1)', [raidId, nav.userId])
     const pages: Page[] = []
     for (const [index, identity] of [owner, nav, rider].entries()) {
-      const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4173', viewport: { width: 390, height: 844 },
+      const context = await createDeviceContext(browser, { baseURL: 'http://127.0.0.1:4173', viewport: { width: 390, height: 844 },
         serviceWorkers: 'block', reducedMotion: 'reduce', permissions: ['geolocation'] })
       contexts.push(context)
       await installSyntheticSession(context, identity); await installYandexMapsMock(context)
