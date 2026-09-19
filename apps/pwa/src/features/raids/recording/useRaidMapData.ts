@@ -8,15 +8,16 @@ import type { RaidMapPoint, RouteTrackProjection } from '../types'
 import { readRaidMapCache, saveRaidMapCache } from './map-cache'
 import { RouteChangeBuffer, type RouteChangePage } from './route-changes'
 
+type MapSnapshot = RaidLiveSnapshot & { fieldVisible?: boolean }
 export function useRaidMapData(identityId: string, raidId: string, live: boolean, completed: boolean) {
   const snapshot = useLiveRaid(identityId, raidId, live)
-  const [staticSnapshot, setStaticSnapshot] = useState<RaidLiveSnapshot | null>(null)
+  const [staticSnapshot, setStaticSnapshot] = useState<MapSnapshot | null>(null)
   const [track, setTrack] = useState<RouteTrackProjection | null>(null)
   const [points, setPoints] = useState<RaidMapPoint[]>([])
   const [dataState, setDataState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const denied = useRef(false)
   const lastStored = useRef('')
-  const currentData = live ? snapshot.data : staticSnapshot
+  const currentData: MapSnapshot | null = live ? snapshot.data : staticSnapshot
   const dataRef = useRef(currentData)
   dataRef.current = currentData
 
@@ -78,8 +79,6 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
       try {
         let hasMore = false
         if (protocol) {
-          // At most eight bounded pages per turn; catch-up yields before the
-          // next turn. It does not occupy the lightweight visit/position read.
           for (let pageNumber = 0; pageNumber < 8 && active; pageNumber++) {
             const query = new URLSearchParams({ after: buffer.cursor })
             if (buffer.epoch) query.set('epoch', buffer.epoch)
@@ -110,9 +109,7 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
             void offlineDb.raidMapCache.delete(JSON.stringify([identityId, raidId])).catch(() => undefined)
           }
         }
-      } finally {
-        clearTimeout(deadline); inFlight = false; controller = null
-      }
+      } finally { clearTimeout(deadline); inFlight = false; controller = null }
     }
     void refresh()
     const interval = setInterval(() => void refresh(), live ? 5000 : 30_000)
