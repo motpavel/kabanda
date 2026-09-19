@@ -41,17 +41,30 @@ async function localCounts(page: Page, raidId: string): Promise<LocalCounts> {
   }, raidId)
 }
 
-// Keep a genuine old-server/installed-queue compatibility path. Only the new
-// capability read returns unknown-endpoint; every legacy write and receipt is
-// executed by the real API. A separate field test covers the new v2 queue.
+// Only the new capability read is synthetic. Every legacy write and receipt is
+// executed by the real API, and the production service worker remains enabled.
 test('legacy offline route, check-in and photo survive reload and replay once', async ({ context, page }) => {
   test.setTimeout(120_000)
   const identity = fixture<FixtureIdentity>('prepare')
   await installYandexMapsMock(context)
   await installSyntheticSession(context, identity)
   await installOfflineGps(context, identity.point)
-  await page.route('**/fast/live*', route => route.fulfill({ status: 404,
-    json: { error: { code: 'NOT_FOUND', message: 'Synthetic pre-field API version' } } }))
+  // page.route cannot consistently intercept service-worker-owned requests.
+  // Simulate the one absent capability before it reaches the worker, including
+  // after an offline reload. Do not mock the old API, persistence or its writes.
+  await context.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window)
+    window.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href)
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
+      if (method.toUpperCase() === 'GET' && url.origin === location.origin && /^\/api\/raids\/[^/]+\/fast\/live$/.test(url.pathname)) {
+        return Promise.resolve(new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Synthetic pre-field API version' } }), {
+          status: 404, headers: { 'content-type': 'application/json' },
+        }))
+      }
+      return originalFetch(input, init)
+    }
+  })
 
   const { kabanda } = await api<{ kabanda: { id: string } }>(page, 'POST', '/api/kabandas', {
     name: `Offline E2E ${identity.runId.slice(0, 8)}`, avatar: '🚲',
@@ -80,12 +93,11 @@ test('legacy offline route, check-in and photo survive reload and replay once', 
   const confirmation = page.getByRole('complementary', { name: 'Подтверждение точки' })
   await expect(confirmation).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Синтетическая точка E2E' })).toBeVisible()
+  await expect(confirmation.locator('.checkin-panel input[type="file"]')).toHaveCount(1)
   const serverBaseline = fixture<RaidCounts>('inspect-raid', raid.id)
   const localBaseline = await localCounts(page, raid.id)
 
   await context.setOffline(true)
-  // Real GPS works without Internet. installOfflineGps supplies fresh timestamped
-  // measurements through reload; the production recorder and its outbox are real.
   await expect.poll(async () => (await localCounts(page, raid.id)).routeMaxSequence,
     { timeout: 30_000 }).toBeGreaterThan(localBaseline.routeMaxSequence)
   const offlineRouteSequence = (await localCounts(page, raid.id)).routeMaxSequence
