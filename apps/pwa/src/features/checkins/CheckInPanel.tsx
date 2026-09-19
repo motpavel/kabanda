@@ -16,6 +16,7 @@ import {
 import { getOneShotCoordinate, hasQuotaForMedia, sha256Hex, prepareMediaFile } from './platform'
 import { consumeSelectedFile } from './selected-file'
 import { replayOneCheckInOrMedia } from './replay'
+import { useLegacyRetry } from './use-legacy-retry'
 import { checkInRefusalMessage } from './refusal'
 import {
   activeParticipantSelection,
@@ -299,6 +300,8 @@ export function CheckInPanel({
       setSending(false)
     }
   }, [canMutate, identityId, onCanonicalRefresh, onRefused, raid.id, refreshCanonicalExtras, refreshGallery, refreshLocal, senderTabId])
+
+  useLegacyRetry(identityId, raid.id, canMutate, sending, flush)
 
   useEffect(() => {
     void refreshLocal().then(() => void flush())
