@@ -20,16 +20,21 @@ const photo = (number: number) => ({ id: `44444444-4444-4444-8444-${String(numbe
 
 test.use({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', reducedMotion: 'reduce' })
 async function mockGallery(page: Page) {
-  const state = { deny: false, failLater: false, newPhoto: false, requests: 0, laterRequests: 0 }
+  const state = { deny: false, failLater: false, newPhoto: false, requests: 0, laterRequests: 0,
+    holdHead: null as Promise<void> | null, holdImages: null as Promise<void> | null }
   const image = readFileSync('apps/pwa/public/pwa-192x192.png')
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url()), path = url.pathname
-    if (path.endsWith('/content')) return route.fulfill({ contentType: 'image/png', body: image })
+    if (path.endsWith('/content')) {
+      if (state.holdImages) await state.holdImages
+      return route.fulfill({ contentType: 'image/png', body: image })
+    }
     if (path.endsWith('/share-card')) return route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE', message: 'Synthetic share-card outage' } } })
     if (path.endsWith('/media')) {
       state.requests++
       const offset = Number(url.searchParams.get('cursor') ?? 0)
       if (offset) state.laterRequests++
+      if (!offset && state.holdHead) await state.holdHead
       if (state.deny || offset && state.failLater) return route.fulfill({ status: state.deny ? 403 : 503,
         json: { error: { code: state.deny ? 'FORBIDDEN' : 'UNAVAILABLE', message: 'Synthetic gallery failure' } } })
       const images = Array.from({ length: 48 }, (_, i) => photo(i + 1))
@@ -98,4 +103,49 @@ test('access denial discards the retained gallery instead of treating it as a re
   await expect(page.locator('.result-shell')).toContainText('Результат недоступен для просмотра.')
   await expect(gallery.locator('img')).toHaveCount(0)
   await expect(page.locator('.result-share')).toHaveCount(0)
+})
+
+test('a load-more click during a background head refresh is not lost', async ({ page, context }) => {
+  await installYandexMapsMock(context)
+  const state = await mockGallery(page)
+  await page.goto(`/app?raid=${raidId}`)
+  const gallery = page.getByRole('region', { name: 'Фотографии завершённого рейда' })
+  await expect(gallery.locator('img')).toHaveCount(24)
+  const more = gallery.getByRole('button', { name: 'Показать ещё фотографии' })
+  await expect(more).toHaveAttribute('aria-busy', 'false')
+  let release!: () => void
+  state.holdHead = new Promise<void>(resolve => { release = resolve })
+  try {
+    const before = state.requests
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect.poll(() => state.requests).toBeGreaterThan(before)
+    await expect(more).toHaveAttribute('aria-busy', 'true')
+    await more.click()
+    expect(state.laterRequests).toBe(0)
+    state.holdHead = null; release()
+    await expect(gallery.locator('img')).toHaveCount(48)
+    expect(state.laterRequests).toBe(1)
+  } finally { release() }
+})
+
+test('late image bytes cannot collapse the reserved gallery geometry', async ({ page, context }) => {
+  await installYandexMapsMock(context)
+  const state = await mockGallery(page)
+  let release!: () => void
+  state.holdImages = new Promise<void>(resolve => { release = resolve })
+  try {
+    await page.goto(`/app?raid=${raidId}`)
+    const gallery = page.getByRole('region', { name: 'Фотографии завершённого рейда' })
+    const first = gallery.locator('img').first()
+    await expect(gallery.locator('img')).toHaveCount(24)
+    await first.scrollIntoViewIfNeeded()
+    const before = (await first.boundingBox())!
+    expect(before.width).toBeGreaterThan(50)
+    expect(before.height / before.width).toBeCloseTo(1, 2)
+    state.holdImages = null; release()
+    await expect.poll(() => first.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+    const after = (await first.boundingBox())!
+    expect(Math.abs(after.height - before.height)).toBeLessThan(1)
+    expect(Math.abs(after.width - before.width)).toBeLessThan(1)
+  } finally { release() }
 })
