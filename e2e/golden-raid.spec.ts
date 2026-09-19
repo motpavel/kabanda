@@ -10,8 +10,13 @@ import { installRecorderGpsProbe } from './recorder-gps-probe.js'
 
 test.use({ actionTimeout: 15_000 })
 
-test('owner completes one canonical raid and opens the next raid form', async ({ context, page }, testInfo) => {
-  test.setTimeout(150_000)
+// Preserve the full installed-v1/old-server compatibility journey. The default
+// v2 navigator flow and real three-account propagation are exercised separately
+// in field-sync-server.spec.ts; no check-in or media mutation is mocked here.
+test('legacy-server compatibility: owner completes one canonical raid and opens the next raid form', async ({ context, page }, testInfo) => {
+  test.setTimeout(180_000)
+  await page.route('**/fast/live*', route => route.fulfill({ status: 404,
+    json: { error: { code: 'NOT_FOUND', message: 'Synthetic pre-field API version' } } }))
   const identity = fixture<FixtureIdentity>('prepare')
   const pageErrors: Error[] = []
   page.on('pageerror', (error) => pageErrors.push(error))
@@ -103,8 +108,6 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByRole('heading', { name: 'Выйти в рейд' })).toBeVisible()
   await page.getByRole('button', { name: /Свободная охота/ }).click()
   await page.getByLabel('По каким точкам едем?').selectOption('attractions')
-  // Preparation now starts automatically. Inject denial before mounting it,
-  // rather than clicking readiness controls that the simplified UI removed.
   await page.evaluate(() => {
     const geo = navigator.geolocation
     const original = geo.watchPosition.bind(geo)
@@ -130,8 +133,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.getByRole('button', { name: 'Повторить проверку', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Поехали', exact: true })).toBeEnabled({ timeout: 15_000 })
   await expect(page.locator('.raid-ready-banner')).toHaveAttribute('data-ready', 'true')
-  // Exercise the current one-shot polling recorder, not the retired watchPosition loop.
-  await installRecorderGpsProbe(page, identity.point)
+  await installRecorderGpsProbe(page, identity.point, 'ride')
   await page.getByRole('button', { name: 'Поехали', exact: true }).click()
 
   await expect(page.getByLabel(/Активный рейд Свободный рейд/)).toBeVisible()
@@ -158,7 +160,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(actionsDialog).not.toBeVisible()
   await expect(actionsTrigger).toBeFocused()
   await actionsTrigger.click()
-  await page.mouse.click(20, 200) // The exposed map dismisses the sheet, not the raid.
+  await page.mouse.click(20, 200)
   await expect(actionsDialog).not.toBeVisible()
   await actionsTrigger.click()
   await expect(actionsDialog).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
@@ -179,8 +181,6 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     if (/check-in-(claims|fallbacks)/.test(request.url())) pausedCheckInRequests.push(request.url())
   }
   page.on('request', observePausedRequest)
-  // Cross the actual 5s polling interval: a hidden panel must not keep querying
-  // endpoints which reject paused raids with 409.
   await page.waitForTimeout(5_200)
   page.off('request', observePausedRequest)
   expect(pausedCheckInRequests).toEqual([])
@@ -194,32 +194,22 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByRole('button', { name: /^Дальняя точка каталога E2E\./ })).toBeVisible()
   await context.setGeolocation({ latitude: 56.86001, longitude: 53.21001, accuracy: 8 })
   await expect.poll(async () => {
-    const response = await api<{ raid: { routeStatus: { status: string } } }>(
-      page,
-      'GET',
-      `/api/raids/${raid.id}`,
-    )
+    const response = await api<{ raid: { routeStatus: { status: string } } }>(page, 'GET', `/api/raids/${raid.id}`)
     return response.raid.routeStatus.status
   }, { timeout: 30_000 }).toBe('fresh')
   await expect.poll(async () => {
-    const response = await api<{ raid: { routeStatus: { acceptedSampleCount: number } } }>(
-      page,
-      'GET',
-      `/api/raids/${raid.id}`,
-    )
+    const response = await api<{ raid: { routeStatus: { acceptedSampleCount: number } } }>(page, 'GET', `/api/raids/${raid.id}`)
     return response.raid.routeStatus.acceptedSampleCount
   }, { timeout: 30_000 }).toBeGreaterThan(0)
 
   await context.setGeolocation({ latitude: 56.86005, longitude: 53.21005, accuracy: 8 })
   await expect.poll(async () => {
-    const response = await api<{ track: { pointCount: number } }>(
-      page,
-      'GET',
-      `/api/raids/${raid.id}/route/track`,
-    )
+    const response = await api<{ track: { pointCount: number } }>(page, 'GET', `/api/raids/${raid.id}/route/track`)
     return response.track.pointCount
   }, { timeout: 30_000 }).toBeGreaterThan(1)
-  await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toHaveCount(1, { timeout: 10_000 })
+  // The legacy projection has no speed metadata. Allow its four independent
+  // five-second moving observations to establish motion after a pause.
+  await expect(page.locator('[data-yandex-polyline][data-stroke-color="#17191b"]')).toHaveCount(1, { timeout: 30_000 })
   await expect(page.getByLabel('Моё положение')).toBeVisible()
   await expect.poll(() => page.evaluate(() => (window as unknown as { qaGpsRequests: () => number }).qaGpsRequests())).toBeGreaterThan(0)
   for (const code of [2, 3, 2]) {
@@ -270,17 +260,12 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await page.locator('.checkin-panel input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
   await expect(page.getByText(/Фото сохранено локально/)).toBeVisible()
   await page.getByRole('button', { name: 'Пометить точку' }).click()
-  // A check-in requests a NEW fix; feed one after the tap, as a moving device
-  // does, rather than relying on Chromium reusing an earlier injected sample.
   await context.setGeolocation({ latitude: 56.86011, longitude: 53.21011, accuracy: 8 })
   await expect(page.getByText(/Чекин сохранён на телефоне/)).toBeVisible()
 
   await expect.poll(async () => {
-    const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(
-      page,
-      'GET',
-      `/api/raids/${raid.id}/check-ins/nearby?latitude=${identity.point.latitude}&longitude=${identity.point.longitude}`,
-    )
+    const nearby = await api<{ points: Array<{ creditedByTeam: boolean }> }>(page, 'GET',
+      `/api/raids/${raid.id}/check-ins/nearby?latitude=${identity.point.latitude}&longitude=${identity.point.longitude}`)
     return nearby.points[0]?.creditedByTeam ?? false
   }, { timeout: 30_000 }).toBe(true)
   await expect.poll(async () => {
@@ -288,8 +273,6 @@ test('owner completes one canonical raid and opens the next raid form', async ({
     return gallery.media.length
   }, { timeout: 30_000 }).toBe(1)
 
-  // A green visited point remains clickable. Only explicit free-hunt repeat adds a
-  // visit; the unique completion count in the final result stays one.
   const visitedMarker = page.getByRole('button', { name: 'Синтетическая точка E2E. Вы уже были. История посещений' })
   await expect(visitedMarker).toBeVisible({ timeout: 15_000 })
   await expect(visitedMarker).toHaveCSS('width', '18px')
@@ -320,21 +303,19 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.getByText('Разрешите геолокацию в настройках телефона или браузера.', { exact: false })).toBeVisible()
   await expect(page.getByRole('button', { name: /Включить GPS|Восстановить GPS/ })).toHaveCount(0)
   const deniedRequests = await page.evaluate(() => (window as unknown as { qaGpsRequests: () => number }).qaGpsRequests())
-  await page.waitForTimeout(4_200) // Cross writer renewal: denied permission must not auto-restart.
+  await page.waitForTimeout(4_200)
   expect(await page.evaluate(() => (window as unknown as { qaGpsRequests: () => number }).qaGpsRequests())).toBe(deniedRequests)
   await context.grantPermissions(['geolocation'])
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await context.setGeolocation({ latitude: 56.86017, longitude: 53.21017, accuracy: 8 })
   await expect(page.getByText('Маршрут записывается', { exact: true })).toBeVisible()
-  await page.reload() // A resumed free raid keeps distant points after reopening.
+  await page.reload()
   await expect(page.locator('.raid-live-point')).toHaveCount(2)
 
   await page.getByRole('button', { name: 'Действия рейда' }).click()
   await page.getByRole('button', { name: 'Завершить рейд' }).click()
   await expect(page.getByRole('heading', { name: 'Завершить рейд?' })).toBeVisible()
   await expect(page.locator('.result-finish-review--sheet')).toHaveCSS('border-width', '0px')
-  // The confirmed finish action drains pending work itself; separate manual
-  // upload/settle controls were removed by the already-integrated simplification.
   await expect(actionsDialog.getByRole('button', { name: 'Да, завершить рейд', exact: true })).toBeEnabled()
   await expect(actionsDialog.getByRole('button', { name: 'Нет, продолжить рейд', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('raid-finish-mobile.png') })
@@ -343,11 +324,7 @@ test('owner completes one canonical raid and opens the next raid form', async ({
   await expect(page.locator('.raid-completion__stats > div')).toHaveCount(4)
   await expect(page.locator('.raid-completion__art')).toBeVisible()
 
-  const result = await api<{ result: { team: { uniquePoints: number; photos: number } } }>(
-    page,
-    'GET',
-    `/api/raids/${raid.id}/result`,
-  )
+  const result = await api<{ result: { team: { uniquePoints: number; photos: number } } }>(page, 'GET', `/api/raids/${raid.id}/result`)
   expect(result.result.team).toMatchObject({ uniquePoints: 1, photos: 1 })
 
   await page.getByRole('link', { name: 'КАБАНДА — на главную' }).click()
