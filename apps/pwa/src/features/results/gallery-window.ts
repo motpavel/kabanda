@@ -13,19 +13,21 @@ function validatePage(value: RaidMediaPage): RaidMediaPage {
   return value
 }
 
-/** Rebuild cursor boundaries after new photos arrive. Publish only a complete
- * requested window: a failed later page cannot erase already displayed photos.
- * Stable photo IDs preserve mounted image elements and the user's scroll. */
+/** Publish a complete window, never a partial refresh. Keep reading through
+ * the previously displayed tail when new photos shift page boundaries. An
+ * authoritative end of list is the only reason to stop before a missing tail.
+ * Callers impose a request deadline and fence changes of identity/screen. */
 export async function loadGalleryWindow(
   depth: number,
   current: () => boolean,
   fetchPage: (cursor?: string) => Promise<RaidMediaPage>,
+  preserveThrough?: string,
 ): Promise<GalleryWindow> {
   if (!Number.isInteger(depth) || depth < 1) throw new TypeError('Invalid gallery depth')
   const result: GalleryWindow = { items: [], nextCursor: null, pageCount: 0 }
   const ids = new Set<string>(), cursors = new Set<string>()
   let cursor: string | undefined
-  for (let index = 0; index < depth; index++) {
+  for (let index = 0; index < depth || (preserveThrough !== undefined && !ids.has(preserveThrough)); index++) {
     if (!current()) throw new TypeError('Gallery read superseded')
     const response = await fetchPage(cursor)
     if (!current()) throw new TypeError('Gallery read superseded')
