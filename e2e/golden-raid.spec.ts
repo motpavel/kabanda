@@ -123,6 +123,12 @@ test('legacy-server compatibility: owner completes one canonical raid and opens 
   expect(raidId).toBeTruthy()
   const raid = { id: raidId as string }
 
+  const preparationBack = page.getByRole('link', { name: 'Назад', exact: true })
+  await expect(preparationBack).toHaveAttribute('href', `/app?kabanda=${kabanda.id}&tab=raids`)
+  await preparationBack.click()
+  await expect(page).toHaveURL(new RegExp(`/app\\?kabanda=${kabanda.id}&tab=raids$`))
+  await page.goto(`/app?raid=${raid.id}`)
+
   await expect(page.getByRole('region', { name: 'Подготовка к рейду' })).toBeVisible()
   await expect(page.getByRole('alert').filter({ hasText: /геопозици|геолокаци/ })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Поехали', exact: true })).toHaveCount(0)

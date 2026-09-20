@@ -154,7 +154,7 @@ async function deliverPosition(page: Page, index: number) {
   }), index)
 }
 
-test('map retains camera, category and selection without leaving a hidden map or repeating auto-location', async ({ page, context }) => {
+test('map retains camera, category and selection while refreshing the location marker on re-entry', async ({ page, context }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await installYandexMapsMock(context)
@@ -176,7 +176,10 @@ test('map retains camera, category and selection without leaving a hidden map or
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
   await expect(map).toBeVisible()
   expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
-  expect(await page.evaluate(() => (window as any).continuityMap.callbacks.length)).toBe(1)
+  await expect.poll(() => page.evaluate(() => (window as any).continuityMap.callbacks.length)).toBe(2)
+  await deliverPosition(page, 1)
+  await expect(page.locator('.kb-yandex-user-location')).toHaveCount(1)
+  expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
   await page.getByRole('combobox', { name: 'Категория точек' }).selectOption('attractions')
   const marker = page.getByRole('button', { name: /^Тестовая башня\./ })
   await expect(marker).toBeVisible()
@@ -194,7 +197,7 @@ test('map retains camera, category and selection without leaving a hidden map or
   expect(errors).toEqual([])
 })
 
-test('late location from a destroyed map is ignored; the explicit locate button still works', async ({ page, context }) => {
+test('late location from a destroyed map is ignored while the re-opened map locates automatically', async ({ page, context }) => {
   await installYandexMapsMock(context)
   await mockScreens(page)
   await page.goto(`/app?kabanda=${teamId}`)
@@ -206,11 +209,10 @@ test('late location from a destroyed map is ignored; the explicit locate button 
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
   await expect(page.locator('[data-kabanda-map]')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as any).continuityMap.callbacks.length)).toBe(2)
   await deliverPosition(page, 0)
   expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
   await expect(page.locator('.kb-yandex-user-location')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Показать моё местоположение', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => (window as any).continuityMap.callbacks.length)).toBe(2)
   await deliverPosition(page, 1)
   expect(await camera(page)).toEqual({ center: [56.85, 53.2], zoom: 14 })
   await expect(page.locator('.kb-yandex-user-location')).toHaveCount(1)

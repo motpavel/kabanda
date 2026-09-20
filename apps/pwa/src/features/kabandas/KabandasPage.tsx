@@ -253,7 +253,7 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
   }
 
   return (
-    <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}${activeSection === 'kabanda' || activeSection === 'home' ? ' kb-shell--team' : ''}${activeSection === 'home' ? ' kb-shell--home' : ''}`}>
+    <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}${activeSection !== 'map' ? ' kb-shell--team' : ''}${activeSection === 'home' ? ' kb-shell--home' : ''}`}>
       <header className="kb-topbar">
         <Brand />
         <button className="kb-identity kb-account-trigger" type="button" aria-current={activeSection === 'kabanda' ? 'page' : undefined} onClick={() => selectSection('kabanda')} aria-label={`Открыть раздел «Кабанда». Аккаунт: ${user.displayName ?? user.username ?? user.email ?? 'Участник'}`}>
@@ -891,6 +891,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
   const markersRef = useRef(new Map<string, { placemark: YandexPlacemark; point: MapPoint }>())
   const userMarkerRef = useRef<YandexPlacemark | null>(null)
   const locationRequestRef = useRef(0)
+  const autoLocateStartedRef = useRef(false)
   const viewRef = useRef<MapView>(memory.read())
   const [mapReady, setMapReady] = useState(false)
   const [userLocated, setUserLocated] = useState(false)
@@ -1060,9 +1061,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
   }, [updateLocation, memory])
 
   useEffect(() => {
-    if (!mapReady || !memory.beginAutoLocate()) return
+    if (!mapReady || autoLocateStartedRef.current) return
+    autoLocateStartedRef.current = true
     locateUser('fast', true)
-  }, [locateUser, mapReady, memory])
+  }, [locateUser, mapReady])
 
   return <>
     <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" onPointerDownCapture={() => memory.userInteracted()} onWheelCapture={() => memory.userInteracted()} onKeyDownCapture={() => memory.userInteracted()}>

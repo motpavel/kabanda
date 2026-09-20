@@ -14,6 +14,7 @@ import { CachedImage } from '../../lib/CachedImage'
 import { RaidModePicker, departureTitle, type DepartureMode } from './RaidModePicker'
 import './raid-departure.css'
 import { navigateApp } from '../../app/transitions'
+import { replaceAppLocation } from '../../app/navigation-history'
 import { getCurrentUser, loginWithPassword, requestMagicLink } from '../auth/api'
 import { listKabandas } from '../kabandas/api'
 import type { KabandaSummary } from '../kabandas/types'
@@ -327,9 +328,8 @@ function CreateRaidPage({ identityId, kabandaId, editing, onUpdated }: { identit
         attempt.key,
       )
       clearCreateRaidAttempt(identityId, attempt)
-      window.history.replaceState(null, '', `${appPath('app')}?raid=${encodeURIComponent(raid.id)}&edit=1`)
       fallbackAttempt.current = null
-      navigateApp(`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`)
+      replaceAppLocation(`${appPath('app')}?raid=${encodeURIComponent(raid.id)}`)
     } catch {
       setStatus('error')
     }
@@ -608,7 +608,7 @@ function RaidDetailPage({
     return <CreateRaidPage key={raid.id} identityId={user.id} kabandaId={raid.kabandaId} editing={raid} onUpdated={resource.applyRaid} />
   }
 
-  if (['draft', 'planned', 'lobby'].includes(raid.state)) return <RaidShell prestart backHref={raid.organizerUserId === user.id ? `${appPath('app')}?raid=${encodeURIComponent(raid.id)}&edit=1` : `${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
+  if (['draft', 'planned', 'lobby'].includes(raid.state)) return <RaidShell prestart backHref={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`} identityLabel={viewerParticipant?.displayName}>
     <header className="raid-preparation__heading"><p className="kb-kicker">Сбор перед поездкой</p><h1>{raid.title}</h1>{raid.meetingPlace && <p>{raid.meetingPlace}</p>}{raid.description && <p>{raid.description}</p>}</header>
     {message && <p className="kb-notice" role="status">{message}</p>}
     {resource.error && <p className="kb-error" role="alert">{resource.error}</p>}

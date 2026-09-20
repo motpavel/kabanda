@@ -77,7 +77,14 @@
 }
 
 .prd-raids > .rdp-section,
-.prd-raids > .rdp-section--history { margin-top: 0; }
+.prd-raids > .rdp-section--history {
+  margin-top: 0;
+  border: 1px solid var(--kb-line);
+  border-radius: 22px;
+  padding: 18px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(35 42 53 / 6%);
+}
 
 
 .prd-raids__issue {
@@ -578,6 +585,9 @@
 
 @media (max-width: 620px) {
   .prd-raids { gap: 16px; }
+
+  .prd-raids > .rdp-section,
+  .prd-raids > .rdp-section--history { border-radius: 18px; padding: 14px; }
 
   .prd-raids__heading { min-height: 46px; flex-wrap: nowrap; gap: 10px; }
   .prd-raids__heading h1 { font-size: 2rem; }

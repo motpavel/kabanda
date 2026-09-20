@@ -8,12 +8,10 @@ describe('workspace map viewport', () => {
     expect(memory.read()).toEqual({ center: [53.24, 56.89], zoom: 16 })
     expect(new MapViewportMemory().read()).toEqual(INITIAL_MAP_VIEW)
   })
-  it('requests automatic location only once and lets user interaction override late centering', () => {
+  it('keeps an explicit map interaction so a later automatic fix does not recenter it', () => {
     const memory = new MapViewportMemory()
-    expect(memory.beginAutoLocate()).toBe(true)
     memory.userInteracted()
     expect(memory.canAutoCenter()).toBe(false)
-    expect(memory.beginAutoLocate()).toBe(false)
   })
   it('rejects malformed camera state and returns an independent value', () => {
     const memory = new MapViewportMemory()
