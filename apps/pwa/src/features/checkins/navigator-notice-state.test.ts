@@ -1,5 +1,4 @@
-import { describe, it } from 'vitest'
-import assert from 'node:assert/strict'
+import { describe, expect, it } from 'vitest'
 import { NavigatorNoticeState } from './navigator-notice-state'
 const point = (attempt: string | null = null, extra = {}) => ({ id: 'point', visitedByMe: Boolean(attempt),
   myLastVisitAttemptId: attempt, lastAttemptId: attempt, lastVisitParticipantIds: attempt ? ['nav'] : [],
@@ -11,68 +10,68 @@ function storage() {
 describe('navigator confirmation notices', () => {
   it('does not celebrate initial history, including first load and reload', () => {
     const s = storage(), tracker = new NavigatorNoticeState('nav', 'raid', s)
-    assert.equal(tracker.observe(undefined), null)
-    assert.equal(tracker.observe([point('old')]), null)
-    assert.equal(new NavigatorNoticeState('nav', 'raid', s).observe([point('old')]), null)
+    expect(tracker.observe(undefined)).toBe(null)
+    expect(tracker.observe([point('old')])).toBe(null)
+    expect(new NavigatorNoticeState('nav', 'raid', s).observe([point('old')])).toBe(null)
   })
   it('announces only a newly confirmed personal receipt for the navigator', () => {
     const t = new NavigatorNoticeState('nav', 'raid'); t.observe([point()])
-    assert.equal(t.observe([point(null, { pending: true })]), null)
-    assert.equal(t.observe([point(null, { status: 'sending', visitedByTeam: true })]), null)
-    assert.equal(t.observe([point('accepted')])?.myLastVisitAttemptId, 'accepted')
+    expect(t.observe([point(null, { pending: true })])).toBe(null)
+    expect(t.observe([point(null, { status: 'sending', visitedByTeam: true })])).toBe(null)
+    expect(t.observe([point('accepted')])?.myLastVisitAttemptId).toBe('accepted')
   })
   it('does not create success from proximity, photo, team-only or excluded membership', () => {
     const t = new NavigatorNoticeState('nav', 'raid'); t.observe([])
-    assert.equal(t.observe([point('a', { visitedByMe: false })]), null)
-    assert.equal(t.observe([point('a', { lastVisitParticipantIds: ['other'] })]), null)
-    assert.equal(t.observe([point('old', { lastAttemptId: 'new', lastVisitParticipantIds: ['other'] })]), null)
-    assert.equal(t.observe([point(null, { photos: 2, nearby: true })]), null)
+    expect(t.observe([point('a', { visitedByMe: false })])).toBe(null)
+    expect(t.observe([point('a', { lastVisitParticipantIds: ['other'] })])).toBe(null)
+    expect(t.observe([point('old', { lastAttemptId: 'new', lastVisitParticipantIds: ['other'] })])).toBe(null)
+    expect(t.observe([point(null, { photos: 2, nearby: true })])).toBe(null)
   })
   it('never replays the same receipt on retry, poll, temporary empty list or older reads', () => {
     const t = new NavigatorNoticeState('nav', 'raid'); t.observe([point('old')])
-    assert.ok(t.observe([point('new')]))
-    for (const rows of [[point('new')], [], [point('old')], [point('new')]]) assert.equal(t.observe(rows), null)
+    expect(t.observe([point('new')])).toBeTruthy()
+    for (const rows of [[point('new')], [], [point('old')], [point('new')]]) expect(t.observe(rows)).toBe(null)
   })
   it('distinguishes a real repeat at the same point', () => {
     const t = new NavigatorNoticeState('nav', 'raid'); t.observe([])
-    assert.ok(t.observe([point('first')]))
-    assert.ok(t.observe([point('second')]))
-    assert.equal(t.observe([point('first')]), null)
+    expect(t.observe([point('first')])).toBeTruthy()
+    expect(t.observe([point('second')])).toBeTruthy()
+    expect(t.observe([point('first')])).toBe(null)
   })
   it('persists deduplication across remount even when initial response regresses', () => {
     const s = storage(), t = new NavigatorNoticeState('nav', 'raid', s); t.observe([]); t.observe([point('new')])
     const reloaded = new NavigatorNoticeState('nav', 'raid', s)
-    reloaded.observe([point('old')]); assert.equal(reloaded.observe([point('new')]), null)
-    assert.ok(reloaded.observe([point('next')]))
+    reloaded.observe([point('old')]); expect(reloaded.observe([point('new')])).toBe(null)
+    expect(reloaded.observe([point('next')])).toBeTruthy()
   })
   it('isolates users and raids without touching other storage', () => {
     const s = storage(); s.values.set('outbox', 'unchanged')
     const a = new NavigatorNoticeState('nav', 'raid-a', s); a.observe([]); a.observe([point('a')])
-    const b = new NavigatorNoticeState('nav', 'raid-b', s); b.observe([]); assert.ok(b.observe([point('a')]))
+    const b = new NavigatorNoticeState('nav', 'raid-b', s); b.observe([]); expect(b.observe([point('a')])).toBeTruthy()
     const c = new NavigatorNoticeState('other', 'raid-a', s); c.observe([])
-    assert.ok(c.observe([point('a', { lastVisitParticipantIds: ['other'] })]))
-    assert.equal(s.values.get('outbox'), 'unchanged')
+    expect(c.observe([point('a', { lastVisitParticipantIds: ['other'] })])).toBeTruthy()
+    expect(s.values.get('outbox')).toBe('unchanged')
   })
   it('tolerates corrupt/unavailable storage and never mutates frozen input', () => {
     for (const s of [{ getItem: () => '{broken', setItem: () => {} }, { getItem: () => { throw Error('denied') }, setItem: () => { throw Error('full') } }]) {
       const t = new NavigatorNoticeState('nav', 'raid', s); t.observe([])
       const rows = Object.freeze([Object.freeze(point('a'))]); const before = JSON.stringify(rows)
-      assert.ok(t.observe(rows)); assert.equal(t.observe(rows), null); assert.equal(JSON.stringify(rows), before)
+      expect(t.observe(rows)).toBeTruthy(); expect(t.observe(rows)).toBe(null); expect(JSON.stringify(rows)).toBe(before)
     }
   })
   it('resumes with a new baseline after losing navigator/active permission', () => {
     const t = new NavigatorNoticeState('nav', 'raid'); t.observe([]); t.suspend()
-    assert.equal(t.observe([point('during-suspension')]), null)
-    assert.ok(t.observe([point('after-resume')]))
+    expect(t.observe([point('during-suspension')])).toBe(null)
+    expect(t.observe([point('after-resume')])).toBeTruthy()
   })
   it('coalesces a reconnect batch without replaying the other receipts later', () => {
     const t = new NavigatorNoticeState('nav', 'raid'); t.observe([])
     const rows = [point('a'), point('b', { id: 'second', lastVisitedAt: '2026-09-21T16:01:00Z' })]
-    assert.equal(t.observe(rows)?.id, 'second'); assert.equal(t.observe(rows.reverse()), null)
+    expect(t.observe(rows)?.id).toBe('second'); expect(t.observe(rows.reverse())).toBe(null)
   })
   it('bounds the presentation journal independently of GPS and photo queues', () => {
     const s = storage(), t = new NavigatorNoticeState('nav', 'raid', s); t.observe([])
     for (let i = 0; i < 1000; i++) t.observe([point(String(i))])
-    assert.equal(JSON.parse([...s.values.values()][0]!).length, 256)
+    expect(JSON.parse([...s.values.values()][0]!).length).toBe(256)
   })
 })
