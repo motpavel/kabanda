@@ -8,6 +8,7 @@ import { updateTrackLayers, type TrackLayers } from './track-layers'
 import { useRaidMapData } from './useRaidMapData'
 import { FlockDisplay } from './flock-display'
 import { stabilizeStationarySegment } from './stationary-display'
+import { RiderMotion } from './rider-motion'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude' | 'longitude'> & Partial<Pick<RouteTrackPoint, 'capturedAt'>>)[], viewport?: { width: number; height: number }) {
@@ -50,6 +51,9 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const plannedLine = useRef<YandexPolyline | null>(null)
   const riders = useRef(new Map<string, YandexPlacemark>())
   const flock = useRef(new FlockDisplay())
+  const motion = useRef<RiderMotion | null>(null)
+  const viewerMotionId = useRef<string | null>(null)
+  const followEnabled = useRef(false)
   const viewerCoordinate = useRef<readonly [number, number] | null>(null)
   const [markerNow, setMarkerNow] = useState(Date.now)
   const onSelect = useRef(onSelectPoint)
@@ -62,8 +66,10 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
 
   useEffect(() => {
     firstView.current = false; firstLocation.current = false; flock.current.reset(); viewerCoordinate.current = null
+    motion.current?.reset(); viewerMotionId.current = null; followEnabled.current = false
     setFollowing(false)
   }, [identityId, raidId])
+  useEffect(() => { motion.current?.reset() }, [navigatorUserId])
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -84,10 +90,38 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       setProvider('ready')
     }).catch(() => { if (active) setProvider('failed') })
     return () => {
-      active = false; resize.disconnect(); mapRef.current?.destroy(); mapRef.current = null; runtimeRef.current = null
+      active = false; resize.disconnect(); motion.current?.reset(); mapRef.current?.destroy(); mapRef.current = null; runtimeRef.current = null
       trackLayers.current.clear(); endpoints.current.clear(); pointMarkers.current.clear(); riders.current.clear(); plannedLine.current = null
     }
   }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (provider !== 'ready' || !map) return
+    const animation = new RiderMotion(coordinates => {
+      if (mapRef.current !== map) return
+      for (const [id, coordinate] of coordinates) riders.current.get(id)?.geometry?.setCoordinates(coordinate)
+      const viewer = viewerMotionId.current ? coordinates.get(viewerMotionId.current) : undefined
+      viewerCoordinate.current = viewer ?? null
+      // Camera and icon consume the SAME rendered coordinate. Competing map
+      // easing towards the raw target would make the boar drift off centre.
+      if (viewer && followEnabled.current && document.visibilityState === 'visible') {
+        map.setCenter(viewer, map.getZoom(), { duration: 0 })
+      }
+    }, { now: () => performance.now(), request: callback => requestAnimationFrame(callback), cancel: handle => cancelAnimationFrame(handle) })
+    motion.current = animation
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+    const policy = () => animation.setEnabled(document.visibilityState === 'visible' && !reducedMotion.matches)
+    policy()
+    document.addEventListener('visibilitychange', policy)
+    reducedMotion.addEventListener('change', policy)
+    return () => {
+      document.removeEventListener('visibilitychange', policy)
+      reducedMotion.removeEventListener('change', policy)
+      animation.reset()
+      if (motion.current === animation) motion.current = null
+    }
+  }, [provider])
 
   useEffect(() => {
     const map = mapRef.current, runtime = runtimeRef.current
@@ -176,7 +210,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       const markerClass = `route-live-map__rider route-live-map__rider--${spec.kind}${spec.stale ? ' route-live-map__rider--stale' : ''}`
       const existing = riders.current.get(spec.id)
       if (existing) {
-        existing.geometry?.setCoordinates(coordinate); existing.properties.set('markerClass', markerClass); existing.properties.set('label', spec.label)
+        existing.properties.set('markerClass', markerClass); existing.properties.set('label', spec.label)
       } else {
         const layout = runtime.templateLayoutFactory.createClass('<span class="{{ properties.markerClass }}" role="img" aria-label="{{ properties.label }}" title="{{ properties.label }}"></span>')
         const marker = new runtime.Placemark(coordinate, { markerClass, label: spec.label }, {
@@ -186,7 +220,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       }
     }
     const viewer = markers.find(marker => marker.id === 'viewer' || marker.members.includes(identityId))
-    viewerCoordinate.current = viewer ? [viewer.point.latitude, viewer.point.longitude] : userMarkerCoordinate(location)
+    viewerMotionId.current = viewer?.id ?? null
+    motion.current?.update(markers.map(spec => ({
+      id: spec.id,
+      anchorId: spec.members.includes(identityId) ? identityId : navigatorUserId && spec.members.includes(navigatorUserId) ? navigatorUserId : spec.members[0] ?? spec.id,
+      members: spec.members, coordinate: [spec.point.latitude, spec.point.longitude] as const,
+      observedAt: Date.parse(spec.point.capturedAt), stale: spec.stale || !live,
+    })))
     if (location && !firstLocation.current && viewerCoordinate.current) {
       map.setCenter(viewerCoordinate.current, 15, { duration: firstView.current ? 260 : 0, timingFunction: 'ease-in-out' })
       firstLocation.current = true; firstView.current = true
@@ -194,12 +234,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   }, [identityId, live, location, markerNow, navigatorSampleAt, navigatorUserId, positions, provider, snapshotNavigator, track])
 
   useEffect(() => {
+    followEnabled.current = following
     const map = mapRef.current, coordinate = viewerCoordinate.current
     if (!following || provider !== 'ready' || !map || !coordinate) return
     firstLocation.current = true; firstView.current = true
-    map.setCenter(coordinate, map.getZoom(), { duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260, timingFunction: 'ease-in-out' })
-  }, [following, location, positions, provider])
-  const stopFollowing = () => { setFollowing(false); firstLocation.current = true; firstView.current = true }
+    map.setCenter(coordinate, map.getZoom(), { duration: 0 })
+  }, [following, provider])
+  const stopFollowing = () => { followEnabled.current = false; setFollowing(false); firstLocation.current = true; firstView.current = true }
   const zoom = (delta: number) => {
     const map = mapRef.current
     if (map) map.setZoom(Math.max(3, Math.min(19, map.getZoom() + delta)), { duration: 180 })
