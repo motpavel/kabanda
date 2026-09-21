@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import {
-  DatabaseRaidService, RaidError, type CheckinInput, type CheckinResponse,
+  DatabaseRaidService, RaidError, requireVisitCooldown, type CheckinInput, type CheckinResponse,
   type RaidPointPresenceRoster, type RaidProjection,
 } from './raids.js'
 
@@ -24,6 +24,8 @@ export type FastSnapshot = {
   points?: Array<{
     id: string; sourcePointId: string; name: string; latitude: number; longitude: number
     position: number; visitedByMe: boolean; visitedByTeam: boolean; lastAttemptId: string | null
+    lastVisitedAt: string | null; repeatAvailableAt: string | null
+    lastVisitParticipantIds: string[]; myLastVisitAttemptId: string | null
   }>
   claims: unknown[]; fallbacks: unknown[]
 }
@@ -55,9 +57,10 @@ export async function fieldTransaction<T>(pool: Pool, task: (client: PoolClient)
   finally { client.release() }
 }
 
-/** Additive endpoints: installed clients and already saved v1 operations retain
- * their original protocol. No historical result is recomputed here. */
+/** Accepted legacy receipts and historical results remain readable. New attendance
+ * is controlled by the navigator; participants only add point materials. */
 export class FieldRaidService extends DatabaseRaidService {
+  protected override navigatorOnlyVisits = true
   constructor(readonly fieldPool: Pool, secret: string) { super(fieldPool, secret) }
 
   async getFastSnapshot(actorUserId: string, raidId: string, knownPointsRevision?: string): Promise<FastSnapshot> {
@@ -83,15 +86,31 @@ export class FieldRaidService extends DatabaseRaidService {
              ST_X(s.location::geometry) AS longitude,s.position,
              EXISTS(SELECT 1 FROM raid_point_credits c WHERE c.raid_id=s.raid_id AND c.point_snapshot_id=s.id AND c.user_id=$2) AS mine,
              EXISTS(SELECT 1 FROM raid_point_credits c WHERE c.raid_id=s.raid_id AND c.point_snapshot_id=s.id) AS team,
-             (SELECT a.id FROM raid_checkin_attempts a WHERE a.raid_id=s.raid_id AND a.point_snapshot_id=s.id
-               AND EXISTS(SELECT 1 FROM raid_point_visit_events e WHERE e.evidence_attempt_id=a.id)
-               ORDER BY a.created_at DESC,a.id DESC LIMIT 1) AS last_attempt_id
-           FROM raid_point_snapshots s WHERE s.raid_id=$1 ORDER BY s.position,s.id LIMIT 500`, [raidId, actorUserId],
+             latest.evidence_attempt_id AS last_attempt_id, latest.visited_at AS last_visited_at,
+             latest.visited_at + interval '5 minutes' AS repeat_available_at,
+             latest.participant_ids AS last_visit_participant_ids,
+             (SELECT e.evidence_attempt_id FROM raid_point_visit_events e
+               JOIN raid_point_credits c ON c.id=e.credit_id
+               WHERE c.raid_id=s.raid_id AND c.point_snapshot_id=s.id AND e.user_id=$2
+               ORDER BY e.created_at DESC,e.evidence_attempt_id DESC LIMIT 1) AS my_last_visit_attempt_id
+           FROM raid_point_snapshots s
+           LEFT JOIN LATERAL (
+             SELECT e.evidence_attempt_id,max(e.created_at) AS visited_at,
+               array_agg(e.user_id ORDER BY e.user_id) AS participant_ids
+             FROM raid_point_visit_events e JOIN raid_point_credits c ON c.id=e.credit_id
+             WHERE c.raid_id=s.raid_id AND c.point_snapshot_id=s.id
+             GROUP BY e.evidence_attempt_id ORDER BY visited_at DESC,e.evidence_attempt_id DESC LIMIT 1
+           ) latest ON true
+           WHERE s.raid_id=$1 ORDER BY s.position,s.id LIMIT 500`, [raidId, actorUserId],
         )
         result.points = points.rows.map(row => ({
           id: row.id, sourcePointId: row.source_point_id, name: row.name,
           latitude: Number(row.latitude), longitude: Number(row.longitude), position: Number(row.position),
           visitedByMe: row.mine, visitedByTeam: row.team, lastAttemptId: row.last_attempt_id,
+          lastVisitedAt: row.last_visited_at?.toISOString() ?? null,
+          repeatAvailableAt: row.repeat_available_at?.toISOString() ?? null,
+          lastVisitParticipantIds: row.last_visit_participant_ids ?? [],
+          myLastVisitAttemptId: row.my_last_visit_attempt_id ?? null,
         }))
       }
       if (fieldVisible && ['active', 'paused'].includes(access.state)) {
@@ -194,14 +213,15 @@ export class FieldRaidService extends DatabaseRaidService {
       )).rows[0]
       if (!point) throw new RaidError('POINT_NOT_FOUND', 404, 'Точка недоступна')
       const previous = (await client.query(
-        `SELECT a.id FROM raid_checkin_attempts a WHERE a.raid_id=$1 AND a.point_snapshot_id=$2
-           AND EXISTS(SELECT 1 FROM raid_point_visit_events e WHERE e.evidence_attempt_id=a.id)
-         ORDER BY a.created_at DESC,a.id DESC LIMIT 1`, [raidId, point.id],
+        `SELECT e.evidence_attempt_id AS id FROM raid_point_visit_events e
+           JOIN raid_point_credits c ON c.id=e.credit_id WHERE c.raid_id=$1 AND c.point_snapshot_id=$2
+         GROUP BY e.evidence_attempt_id ORDER BY max(e.created_at) DESC,e.evidence_attempt_id DESC LIMIT 1`, [raidId, point.id],
       )).rows[0]?.id ?? null
       if ((!input.repeatVisit && previous) || (input.repeatVisit && (!previous || previous !== input.previousAttemptId))) {
         throw new RaidError('TEAM_VISIT_ALREADY_CONFIRMED', 409, 'Точка уже отмечена. Откройте её историю перед новым посещением.')
       }
-      const age = access.server_at.getTime() - Date.parse(input.evidence.capturedAt)
+      await requireVisitCooldown(client, raidId, point.id)
+      const age = Date.now() - Date.parse(input.evidence.capturedAt)
       const distance = Number(point.distance)
       const reason: CheckinResponse['reason'] = !Number.isFinite(age) || age > 60_000 || age < -30_000 ? 'location_expired'
         : !Number.isFinite(input.evidence.accuracyMeters) || input.evidence.accuracyMeters > 50 ? 'accuracy_insufficient'
@@ -226,8 +246,8 @@ export class FieldRaidService extends DatabaseRaidService {
            ON CONFLICT(raid_id,point_snapshot_id,user_id) DO NOTHING`, [raidId, point.id, attempt, ids],
         )
         await client.query(
-          `INSERT INTO raid_point_visit_events(credit_id,evidence_attempt_id,user_id,source)
-           SELECT id,$3,user_id,'navigator_attestation' FROM raid_point_credits
+          `INSERT INTO raid_point_visit_events(credit_id,evidence_attempt_id,user_id,source,created_at)
+           SELECT id,$3,user_id,'navigator_attestation',statement_timestamp() FROM raid_point_credits
            WHERE raid_id=$1 AND point_snapshot_id=$2 AND user_id=ANY($4::uuid[])
            ON CONFLICT(evidence_attempt_id,user_id) DO NOTHING`, [raidId, point.id, attempt, ids],
         )

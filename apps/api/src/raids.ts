@@ -25,6 +25,22 @@ export class RaidError extends Error {
   }
 }
 
+// Call only after locking the raid row. Server confirmation time, not a
+// client GPS timestamp, determines when another visit may be recorded.
+export async function requireVisitCooldown(client: PoolClient, raidId: string, pointId: string): Promise<void> {
+  const result = await client.query<{ retry_at: Date; remaining_seconds: number }>(
+    `SELECT max(e.created_at) + interval '5 minutes' AS retry_at,
+       ceil(extract(epoch FROM (max(e.created_at) + interval '5 minutes' - clock_timestamp())))::int AS remaining_seconds
+     FROM raid_point_visit_events e JOIN raid_point_credits c ON c.id=e.credit_id
+     WHERE c.raid_id=$1 AND c.point_snapshot_id=$2
+     HAVING max(e.created_at) + interval '5 minutes' > clock_timestamp()`, [raidId, pointId],
+  )
+  const blocked = result.rows[0]
+  if (blocked) throw new RaidError('TEAM_VISIT_COOLDOWN', 409,
+    'Повторно пометить точку можно через 5 минут после посещения.',
+    { retryAt: blocked.retry_at.toISOString(), retryAfterSeconds: Math.max(1, blocked.remaining_seconds) })
+}
+
 export function deriveMediaUploadCapability(
   secret: string,
   raidId: string,
@@ -560,6 +576,8 @@ export interface RaidService {
 }
 
 export class DatabaseRaidService implements RaidService {
+  // The field protocol replaces participant self-checkins with navigator attendance.
+  protected navigatorOnlyVisits = false
   constructor(
     private readonly pool: Pool,
     private readonly mediaCapabilitySecret: string,
@@ -1572,6 +1590,9 @@ export class DatabaseRaidService implements RaidService {
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
       this.requireActiveParticipant(raid)
+      if (this.navigatorOnlyVisits && raid.navigator_user_id !== actorUserId) {
+        throw new RaidError('NAVIGATOR_REQUIRED', 403, 'Участников на точке отмечает навигатор')
+      }
       if (input.organizerAttestation && raid.organizer_user_id !== actorUserId) {
         throw this.forbiddenCommand()
       }
@@ -1592,6 +1613,7 @@ export class DatabaseRaidService implements RaidService {
       )
       const point = pointResult.rows[0]
       if (!point) throw this.notFound()
+      if (this.navigatorOnlyVisits) await requireVisitCooldown(client, raid.id, point.id)
       const presentIds = [...new Set(input.presentParticipantIds)].filter(
         (id) => id !== actorUserId,
       )
@@ -1693,6 +1715,9 @@ export class DatabaseRaidService implements RaidService {
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
       this.requireFinalizationCommitParticipant(raid)
+      if (this.navigatorOnlyVisits && decision === 'confirm') {
+        throw new RaidError('NAVIGATOR_REQUIRED', 403, 'Участников на точке отмечает навигатор')
+      }
       const result = await client.query<{
         id: string
         attempt_id: string
@@ -1751,6 +1776,9 @@ export class DatabaseRaidService implements RaidService {
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
       this.requireActiveParticipant(raid)
+      if (this.navigatorOnlyVisits) {
+        throw new RaidError('NAVIGATOR_REQUIRED', 403, 'Участников на точке отмечает навигатор')
+      }
       if (input.verifierUserId === actorUserId) {
         throw new RaidError('FALLBACK_VERIFIER_INVALID', 400, 'Нужен другой участник')
       }
@@ -1853,6 +1881,9 @@ export class DatabaseRaidService implements RaidService {
       if (replay) return replay
       const raid = await this.lockRaid(client, actorUserId, raidId)
       this.requireFinalizationCommitParticipant(raid)
+      if (this.navigatorOnlyVisits && decision === 'confirm') {
+        throw new RaidError('NAVIGATOR_REQUIRED', 403, 'Участников на точке отмечает навигатор')
+      }
       const result = await client.query<{
         id: string
         attempt_id: string
@@ -3580,8 +3611,8 @@ export class DatabaseRaidService implements RaidService {
       [raidId, pointSnapshotId, attemptId, [...new Set(userIds)], source],
     )
     const visits = await client.query<{ user_id: string }>(
-      `INSERT INTO raid_point_visit_events (credit_id, evidence_attempt_id, user_id, source)
-       SELECT c.id, $3, c.user_id, $5 FROM raid_point_credits c
+      `INSERT INTO raid_point_visit_events (credit_id, evidence_attempt_id, user_id, source, created_at)
+       SELECT c.id, $3, c.user_id, $5, statement_timestamp() FROM raid_point_credits c
        JOIN raids r ON r.id = c.raid_id
        JOIN raid_checkin_attempts a ON a.id = $3 AND a.raid_id = c.raid_id
          AND a.point_snapshot_id = c.point_snapshot_id
