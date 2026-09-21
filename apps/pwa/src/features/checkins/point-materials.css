@@ -12,3 +12,19 @@
 .point-materials__compose > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .point-materials__compose > div > * { flex: 1 1 140px; min-height: 44px; text-align: center; }
 .point-materials__compose .kb-muted { font-size: 12px; line-height: 1.4; }
+
+.point-materials--compact { margin-top: 0; }
+.point-materials__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.point-materials__actions > button, .point-materials__actions > .point-materials__photo { display: flex; position: relative; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 50px; margin: 0; padding: 10px 8px; border: 1px solid #dde1e5; border-radius: 12px; color: #232a35; background: #fff; font-size: .85rem; font-weight: 650; cursor: pointer; }
+.point-materials__actions svg { flex: 0 0 22px; width: 22px; height: 22px; }
+.point-materials__actions input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.point-materials__actions > button:focus-visible, .point-materials__actions > label:has(input:focus-visible) { outline: 2px solid #c93e32; outline-offset: 3px; }
+.point-materials__actions > :has(input:disabled) { opacity: .55; }
+.point-materials__compose[hidden] { display: none; }
+.point-materials__history summary { min-height: 44px; align-content: center; color: #626b77; font-size: .8rem; cursor: pointer; }
+.point-materials__history > .kb-muted { font-size: .8rem; }
+@media (max-width: 360px) {
+  .point-materials__actions > button, .point-materials__actions > .point-materials__photo { gap: 5px; font-size: .77rem; }
+}
+
+.point-materials--compact .point-materials__compose textarea { min-height: 0; line-height: 1.4; font-size: 16px; resize: none; overflow-y: hidden; }

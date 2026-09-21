@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
 import { ApiError, requestJson } from '../../lib/http'
 import { CachedImage, clearPrivateImageCache } from '../../lib/CachedImage'
 import { getActiveIdentityId } from '../offline/ledger'
@@ -18,10 +18,13 @@ export function mergePointMaterials(current: readonly PointMaterial[], page: rea
   return combined.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true })
 }
 
-export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations }: {
+export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false }: {
   identityId: string; kabandaId: string; raidId: string; pointId: string; visible: boolean
-  canWrite: boolean; operations: readonly FieldOperation[]
+  canWrite: boolean; operations: readonly FieldOperation[]; compact?: boolean
 }) {
+  const [composerOpen, setComposerOpen] = useState(false)
+  const composerId = useId()
+  const commentRef = useRef<HTMLTextAreaElement>(null)
   const [items, setItems] = useState<PointMaterial[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +94,30 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
     return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume) }
   }, [scope, visible, accepted])
 
+  useLayoutEffect(() => {
+    const input = commentRef.current
+    if (!compact || !composerOpen || !visible || !input) return
+    const resize = () => {
+      input.style.height = 'auto'
+      input.style.height = `${input.scrollHeight + 2}px`
+    }
+    resize()
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width
+      if (width !== lastWidth) { lastWidth = width; resize() }
+    })
+    let lastWidth = input.getBoundingClientRect().width
+    observer.observe(input)
+    return () => observer.disconnect()
+  }, [compact, composerOpen, visible, text])
+
+  useLayoutEffect(() => {
+    if (compact && composerOpen && visible) {
+      commentRef.current?.focus({ preventScroll: true })
+      commentRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [compact, composerOpen, visible])
+
   const save = async (file?: File) => {
     if (busy || !canWrite || denied || (!file && !text.trim())) return
     const current = generation.current
@@ -114,8 +141,22 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       if (currentScope.current === scope && current === generation.current) setMessage(reason instanceof Error ? reason.message : 'Не удалось сохранить материал. Повторите попытку.')
     } finally { if (currentScope.current === scope && current === generation.current) setBusy(false) }
   }
-  return <section className="point-materials" aria-label="Фото и комментарии точки">
-    <h3>Фото и комментарии</h3>
+  return <section className={`point-materials${compact ? ' point-materials--compact' : ''}`} aria-label="Фото и комментарии точки">
+    {compact && canWrite && !denied && <div className="point-materials__actions">
+      <label className="checkin-photo point-materials__photo" aria-busy={busy}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M8 5 10 3h4l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg>
+        {busy ? 'Сохраняем…' : 'Добавить фото'}<input aria-label="Добавить фото" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { void consumeSelectedFile(event.currentTarget, save) }} />
+      </label>
+      <button type="button" aria-expanded={composerOpen} aria-controls={composerId} onClick={() => setComposerOpen(value => !value)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-9 9 10 10 0 0 1-4-.9L3 21l1.4-4.8A9 9 0 1 1 21 11.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>Комментарий
+      </button>
+    </div>}
+    {compact && canWrite && !denied && <div id={composerId} className="point-materials__compose" hidden={!composerOpen}>
+      <label>Комментарий<textarea ref={commentRef} maxLength={2000} rows={2} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
+      <button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
+    </div>}
+    {(!compact || items.length > 0) && <details className="point-materials__history" open={compact ? undefined : true}>
+    {compact ? <summary>Фото и комментарии{items.length > 0 ? ` · ${items.length}` : ''}</summary> : <summary>Фото и комментарии</summary>}
     {!loaded && !error && <p className="kb-muted">{navigator.onLine ? 'Загружаем материалы…' : 'Для загрузки материалов нужно соединение.'}</p>}
     {loaded && !items.length && <p className="kb-muted">Здесь пока нет фото и комментариев.</p>}
     {items.map(item => <article className="point-materials__item" key={item.id}>
@@ -125,12 +166,13 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       <small>{item.authorName || 'Участник рейда'} · {new Date(item.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
     </article>)}
     {cursor && <button type="button" disabled={loading} onClick={() => void refresh(cursor)}>Показать предыдущие материалы</button>}
+    </details>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void refresh()}>Повторить</button></p>}
     {pending.length > 0 && <ul className="point-materials__pending">{pending.map(row => <li key={row.operationId}>
       {row.kind === 'photo' ? 'Фото' : 'Комментарий'}: {row.status === 'rejected' ? 'сервер не принял, копия сохранена на телефоне'
         : row.status === 'sending' ? 'отправляется' : 'ожидает отправки'}
     </li>)}</ul>}
-    {canWrite && !denied && <div className="point-materials__compose">
+    {!compact && canWrite && !denied && <div className="point-materials__compose">
       <label>Комментарий или подпись к фото<textarea maxLength={2000} rows={3} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
       <div><button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
         <label className="checkin-photo kb-link-button">{busy ? 'Сохраняем…' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => {

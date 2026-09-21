@@ -269,3 +269,44 @@ export async function inspectE2ERaid(
     await pool.end()
   }
 }
+
+// Test-only time travel, confined to this exact synthetic owner and point
+// namespace. No HTTP route exposes it and production databases fail the guard.
+export async function ageE2EPointVisit(
+  raidId: string,
+  databaseUrl = requireE2EDatabaseUrl(),
+  runId = requireE2ERunId(),
+): Promise<{ agedVisits: number }> {
+  if (process.env.NODE_ENV !== 'test' || process.env.KABANDA_E2E !== 'true') {
+    throw new Error('Aging point visits requires the E2E test runner')
+  }
+  if (!uuidPattern.test(raidId)) throw new Error('raidId must be a UUID')
+  runId = requireE2ERunId(runId)
+  const pool = new Pool({ connectionString: requireE2EDatabaseUrl(databaseUrl), max: 1 })
+  const identity = identityFor(runId)
+  try {
+    await assertE2EDatabaseGuard(pool)
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const ownedRaid = await client.query(
+        `SELECT r.id FROM raids r JOIN kabandas k ON k.id=r.kabanda_id JOIN users u ON u.id=k.owner_id
+         WHERE r.id=$1 AND u.email=$2 AND u.display_name=$3 FOR UPDATE OF r`,
+        [raidId, identity.email, identity.displayName],
+      )
+      if (!ownedRaid.rowCount) throw new Error('Raid is not owned by this exact E2E run')
+      const changed = await client.query(
+        `UPDATE raid_point_visit_events e SET created_at=statement_timestamp()-interval '301 seconds'
+         FROM raid_point_credits c JOIN raid_point_snapshots s ON s.id=c.point_snapshot_id
+           JOIN points p ON p.id=s.source_point_id
+         WHERE e.credit_id=c.id AND c.raid_id=$1 AND s.raid_id=$1
+           AND p.source='synthetic-e2e' AND p.stable_key=ANY($2::text[])`,
+        [raidId, [`kabanda-e2e-${runId}`, `kabanda-e2e-${runId}-catalogue`]],
+      )
+      if (!changed.rowCount) throw new Error('No confirmed synthetic visits exist for this exact E2E run')
+      await client.query('COMMIT')
+      return { agedVisits: changed.rowCount }
+    } catch (error) { await client.query('ROLLBACK'); throw error }
+    finally { client.release() }
+  } finally { await pool.end() }
+}

@@ -982,7 +982,7 @@
 }
 
 .raid-arrival-sheet[hidden] { display: none; }
-.raid-arrival-sheet--checkin { max-height: min(84dvh, 760px); }
+.raid-arrival-sheet--checkin { bottom: var(--sheet-keyboard-inset, 0px); max-height: calc(var(--sheet-viewport-height, 100dvh) - 24px - env(safe-area-inset-top)); }
 
 .raid-active-map .raid-arrival-sheet__collapse {
   display: grid;
@@ -1000,26 +1000,26 @@
 .raid-arrival-sheet__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 0 0 18px; }
 .raid-arrival-sheet__heading div { min-width: 0; }
 .raid-arrival-sheet__heading small { color: #c6342d; font-size: .66rem; font-weight: 700; letter-spacing: .04em; }
-.raid-arrival-sheet__heading h2 { margin: 6px 0; font-size: 1.3rem; line-height: 1.15; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.raid-arrival-sheet__heading h2 { margin: 6px 0; font-size: 1.65rem; line-height: 1.15; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .raid-arrival-sheet__heading p { margin: 0; color: #6d7470; font-size: .78rem; line-height: 1.45; }
 .raid-arrival-sheet__distance { display: grid; place-items: center; flex: 0 0 60px; width: 60px; min-height: 60px; padding: 8px; border-radius: 18px; color: #c6342d; background: #fff0ed; font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .raid-arrival-sheet__distance small { font-size: .62rem; font-weight: 500; letter-spacing: 0; }
 .raid-arrival-sheet__waiting { margin: 0 0 12px; padding: 0; color: #5f6863; font-size: .8rem; }
 
-.checkin-panel--map { gap: .65rem; }
+.checkin-panel--map { gap: 16px; color: #232a35; }
 .checkin-panel--map > .kb-section-head { display: none; }
 .checkin-panel--map .checkin-points { display: none; }
-.checkin-panel--map .raid-primary { position: static; min-height: 48px; margin-top: 4px; }
+.checkin-panel--map .raid-primary { position: static; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 54px; margin-top: 0; border-radius: 14px; border-color: #c93e32; background: #c93e32; font-size: 1rem; }
 .checkin-panel--map .checkin-photo { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--kb-line); border-radius: 12px; padding: 10px; background: #fff; color: var(--kb-ink); }
 .checkin-participant-group { min-width: 0; }
-.checkin-panel--map .checkin-participant-group { padding: 12px; border-radius: 16px; background: #f2f5f2; }
+.checkin-panel--map .checkin-participant-group { padding: 0; background: transparent; }
 .checkin-panel--map .checkin-participants { gap: 0; }
-.checkin-panel--map .checkin-participants legend { margin-bottom: 4px; padding: 0; color: var(--kb-ink); font-size: .88rem; font-weight: 650; }
-.checkin-panel--map .checkin-participants label { display: grid; grid-template-columns: 30px minmax(0, 1fr) 22px; align-items: center; min-height: 44px; gap: 10px; margin: 0; padding: 6px 0; border: 0; border-radius: 0; background: transparent; }
-.checkin-panel--map .checkin-participants label + label { border-top: 1px solid #e0e6e1; }
-.checkin-participant__avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #202926; color: #fff; font-size: .78rem; font-weight: 600; }
-.checkin-panel--map .checkin-participants input { grid-column: 3; grid-row: 1; width: 22px; min-height: 22px; height: 22px; margin: 0; padding: 0; accent-color: #eb4136; }
-.checkin-panel--map .checkin-participant__name { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: .87rem; font-weight: 600; line-height: 1.3; }
+.checkin-panel--map .checkin-participants legend { margin-bottom: 8px; padding: 0; color: #232a35; font-size: 1.2rem; font-weight: 750; }
+.checkin-panel--map .checkin-participants label { display: grid; grid-template-columns: 40px minmax(0, 1fr) 22px 66px; align-items: center; min-height: 64px; gap: 10px; margin: 0; padding: 10px 0; border: 0; border-radius: 0; background: transparent; }
+.checkin-panel--map .checkin-participants label + label { border-top: 1px solid #e7e9ec; }
+.checkin-participant__avatar { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #f8e9e6; color: #a93029; font-size: .78rem; font-weight: 600; }
+.checkin-panel--map .checkin-participants input { grid-column: 3; grid-row: 1; width: 22px; min-height: 22px; height: 22px; margin: 0; padding: 0; accent-color: #c93e32; }
+.checkin-panel--map .checkin-participant__name { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: .95rem; font-weight: 650; line-height: 1.3; }
 .checkin-participant-hint { margin: 8px 0 0; color: var(--kb-muted); font-size: .73rem; line-height: 1.5; }
 .checkin-panel--map .checkin-attestation { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; padding: 10px 12px; border: 0; border-radius: 12px; background: #f5f6f3; }
 .checkin-panel--map .checkin-attestation input { flex: 0 0 22px; width: 22px; height: 22px; min-height: 22px; margin: 0; padding: 0; }
@@ -1200,3 +1200,34 @@
 
 .result-saving { text-align: center; }
 .result-saving .rider-loader { min-height: 136px; padding: 24px; }
+
+/* Shared point-sheet attendance rows; selection remains a native checkbox. */
+.checkin-participant__name small { display: block; margin-top: 3px; color: #626b77; font-size: .75rem; font-weight: 400; }
+.checkin-participant__presence { grid-column: 4; grid-row: 1; color: #626b77; font-size: .82rem; white-space: nowrap; }
+.checkin-participants input:checked ~ .checkin-participant__presence { color: #c93e32; }
+.checkin-panel--map .checkin-participants input:focus-visible { outline: 2px solid #c93e32; outline-offset: 4px; }
+@media (max-width: 360px) {
+  .raid-arrival-sheet { padding-inline: 16px; }
+  .checkin-panel--map .checkin-participants label { grid-template-columns: 34px minmax(0, 1fr) 22px 60px; gap: 7px; }
+  .checkin-participant__avatar { width: 34px; height: 34px; }
+  .checkin-participant__presence { font-size: .75rem; }
+}
+
+.checkin-participant__avatar { overflow: hidden; }
+.checkin-participant__avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Keep the materials composer mounted when a visit needs manual verification. */
+.raid-arrival-sheet--checkin:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+
+
+.raid-arrival-sheet__body > .point-materials { margin-top: 16px; }
+
+.raid-arrival-sheet__body { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; overflow-x: hidden; scroll-padding-block: 12px; }
+.raid-arrival-sheet--checkin > .raid-arrival-sheet__collapse,
+.raid-arrival-sheet--checkin > .raid-arrival-sheet__heading { flex-shrink: 0; }
+.raid-arrival-sheet__footer { flex-shrink: 0; padding-top: 16px; background: #fff; }
+.raid-arrival-sheet__footer:empty { display: none; }
+.raid-arrival-sheet__footer .raid-primary { position: static; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; margin: 0; border-radius: 14px; border-color: #c93e32; background: #c93e32; font-size: 1rem; }
+
+.raid-action-sheet .raid-handoff { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.raid-action-sheet .raid-handoff .kb-kicker, .raid-action-sheet .raid-handoff h2 { display: none; }

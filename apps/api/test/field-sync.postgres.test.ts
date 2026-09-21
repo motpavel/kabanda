@@ -5,6 +5,7 @@ import sharp from 'sharp'
 import { FieldRaidService, type TeamVisitInput } from '../src/field-service.js'
 import { readRouteChanges, ROUTE_CHANGES_PAGE_SIZE } from '../src/field-track.js'
 import { PointMaterialService } from '../src/point-materials.js'
+import { DatabaseRaidService } from '../src/raids.js'
 
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : null
 const suite = pool ? describe : describe.skip
@@ -78,6 +79,7 @@ suite('field synchronization through real PostgreSQL services', () => {
 
   it('requires the actual last visit for repeats without inflating unique-point credits', async () => {
     const first = await service!.createTeamVisit(nav, raid, input(), randomUUID())
+    await pool!.query("UPDATE raid_point_visit_events SET created_at=clock_timestamp()-interval '5 minutes' WHERE evidence_attempt_id=$1", [first.attemptId])
     const second = await service!.createTeamVisit(nav, raid, input({ repeatVisit: true, previousAttemptId: first.attemptId }), randomUUID())
     expect(second.attemptId).not.toBe(first.attemptId)
     expect(await count('raid_point_credits')).toBe(2)
@@ -95,13 +97,81 @@ suite('field synchronization through real PostgreSQL services', () => {
     expect(await count('raid_point_credits')).toBe(0)
   })
 
-  it('keeps legacy pending confirmations operable alongside the new protocol', async () => {
-    const legacy = await service!.createCheckin(rider, raid, { ...input(), presentParticipantIds: [owner], organizerAttestation: false }, randomUUID())
-    const teamVisit = await service!.createTeamVisit(nav, raid, input({ pointSnapshotId: pointB }), randomUUID())
-    expect(teamVisit.claims).toEqual([])
-    expect((await service!.getFastSnapshot(owner, raid)).claims).toHaveLength(1)
-    const confirmed = await service!.respondClaim(owner, raid, legacy.claims[0]!.id, 'confirm', randomUUID())
-    expect(confirmed.credit?.userId).toBe(owner)
+  it('refuses new legacy self-checkins and confirmations but replays accepted historical receipts', async () => {
+    const oldService = new DatabaseRaidService(pool!, 'field-tests-only-capability-secret-at-least-32-bytes')
+    const payload = { ...input(), presentParticipantIds: [owner], organizerAttestation: false }
+    const operation = randomUUID()
+    const legacy = await oldService.createCheckin(rider, raid, payload, operation)
+    expect(await service!.createCheckin(rider, raid, payload, operation)).toEqual(legacy)
+    await expect(service!.createCheckin(rider, raid, payload, randomUUID())).rejects.toMatchObject({ code: 'NAVIGATOR_REQUIRED' })
+    await expect(service!.createCheckin(owner, raid, { ...payload, organizerAttestation: true }, randomUUID())).rejects.toMatchObject({ code: 'NAVIGATOR_REQUIRED' })
+    await expect(service!.respondClaim(owner, raid, legacy.claims[0]!.id, 'confirm', randomUUID())).rejects.toMatchObject({ code: 'NAVIGATOR_REQUIRED' })
+    const confirmationOperation = randomUUID()
+    const confirmed = await oldService.respondClaim(owner, raid, legacy.claims[0]!.id, 'confirm', confirmationOperation)
+    expect(await service!.respondClaim(owner, raid, legacy.claims[0]!.id, 'confirm', confirmationOperation)).toEqual(confirmed)
+    await expect(service!.createFallback(rider, raid, {
+      attemptId: legacy.attemptId, mediaId: randomUUID(), verifierUserId: owner, presentParticipantIds: [], reason: 'GPS',
+    }, randomUUID())).rejects.toMatchObject({ code: 'NAVIGATOR_REQUIRED' })
+    await expect(service!.respondFallback(owner, raid, randomUUID(), 'confirm', randomUUID())).rejects.toMatchObject({ code: 'NAVIGATOR_REQUIRED' })
+  })
+
+  it('blocks repeats for five server-clock minutes without blocking receipt replay or another point', async () => {
+    const payload = input(), operation = randomUUID()
+    const first = await service!.createTeamVisit(nav, raid, payload, operation)
+    const repeat = input({ repeatVisit: true, previousAttemptId: first.attemptId })
+    await expect(service!.createTeamVisit(nav, raid, repeat, randomUUID())).rejects.toMatchObject({
+      code: 'TEAM_VISIT_COOLDOWN', statusCode: 409,
+      details: { retryAt: expect.any(String), retryAfterSeconds: expect.any(Number) },
+    })
+    expect(await service!.createTeamVisit(nav, raid, payload, operation)).toEqual(first)
+    expect(await count('raid_checkin_attempts')).toBe(1)
+    await expect(service!.createCheckin(nav, raid, { ...repeat, organizerAttestation: false }, randomUUID())).rejects.toMatchObject({ code: 'TEAM_VISIT_COOLDOWN' })
+    expect((await service!.createTeamVisit(nav, raid, input({ pointSnapshotId: pointB }), randomUUID())).outcome).toBe('accepted')
+    await pool!.query("UPDATE raid_point_visit_events SET created_at=clock_timestamp()-interval '4 minutes' WHERE evidence_attempt_id=$1", [first.attemptId])
+    await expect(service!.createTeamVisit(nav, raid, repeat, randomUUID())).rejects.toMatchObject({ code: 'TEAM_VISIT_COOLDOWN' })
+    await pool!.query('UPDATE raids SET navigator_user_id=$2,version=version+1 WHERE id=$1', [raid, other])
+    await expect(service!.createTeamVisit(other, raid, repeat, randomUUID())).rejects.toMatchObject({ code: 'TEAM_VISIT_COOLDOWN' })
+    await pool!.query("UPDATE raid_point_visit_events SET created_at=clock_timestamp()-interval '5 minutes' WHERE evidence_attempt_id=$1", [first.attemptId])
+    expect((await service!.createTeamVisit(other, raid, input({ repeatVisit: true, previousAttemptId: first.attemptId }), randomUUID())).outcome).toBe('accepted')
+  })
+
+  it('allows only one concurrent repeat and publishes personal visit identities and server timestamps', async () => {
+    const first = await service!.createTeamVisit(nav, raid, input(), randomUUID())
+    const firstSnapshot = await service!.getFastSnapshot(rider, raid)
+    const initial = firstSnapshot.points!.find(item => item.id === point)!
+    expect(initial).toMatchObject({ lastAttemptId: first.attemptId, myLastVisitAttemptId: first.attemptId,
+      lastVisitParticipantIds: [nav, rider].sort() })
+    expect(Date.parse(initial.repeatAvailableAt!) - Date.parse(initial.lastVisitedAt!)).toBe(300_000)
+    expect(firstSnapshot.points!.find(item => item.id === pointB)).toMatchObject({
+      lastVisitedAt: null, repeatAvailableAt: null, lastVisitParticipantIds: [], myLastVisitAttemptId: null,
+    })
+    await pool!.query("UPDATE raid_point_visit_events SET created_at=clock_timestamp()-interval '5 minutes' WHERE evidence_attempt_id=$1", [first.attemptId])
+    const repeat = input({ repeatVisit: true, previousAttemptId: first.attemptId, presentParticipantIds: [other] })
+    const results = await Promise.allSettled([
+      service!.createTeamVisit(nav, raid, repeat, randomUUID()), service!.createTeamVisit(nav, raid, repeat, randomUUID()),
+    ])
+    const success = results.filter(result => result.status === 'fulfilled')
+    expect(success).toHaveLength(1)
+    expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
+    const second = (success[0] as PromiseFulfilledResult<Awaited<ReturnType<FieldRaidService['createTeamVisit']>>>).value
+    const riderSnapshot = await service!.getFastSnapshot(rider, raid, firstSnapshot.pointsRevision)
+    expect(riderSnapshot.points!.find(item => item.id === point)).toMatchObject({
+      lastAttemptId: second.attemptId, myLastVisitAttemptId: first.attemptId, lastVisitParticipantIds: [nav, other].sort(),
+    })
+    expect((await service!.getFastSnapshot(other, raid)).points!.find(item => item.id === point)).toMatchObject({ myLastVisitAttemptId: second.attemptId })
+    expect(await count('raid_checkin_attempts')).toBe(2)
+  })
+
+  it('does not restart cooldown on a rejected GPS attempt or use its client timestamp', async () => {
+    const first = await service!.createTeamVisit(nav, raid, input(), randomUUID())
+    await pool!.query("UPDATE raid_point_visit_events SET created_at=clock_timestamp()-interval '5 minutes' WHERE evidence_attempt_id=$1", [first.attemptId])
+    const repeat = input({ repeatVisit: true, previousAttemptId: first.attemptId })
+    const rejected = await service!.createTeamVisit(nav, raid, { ...repeat,
+      evidence: { ...repeat.evidence, capturedAt: new Date(Date.now() - 600_000).toISOString() },
+    }, randomUUID())
+    expect(rejected).toMatchObject({ outcome: 'needs_manual_verification', reason: 'location_expired' })
+    expect((await service!.getFastSnapshot(nav, raid)).points!.find(item => item.id === point)?.lastAttemptId).toBe(first.attemptId)
+    expect((await service!.createTeamVisit(nav, raid, input({ repeatVisit: true, previousAttemptId: first.attemptId }), randomUUID())).outcome).toBe('accepted')
   })
 
   it('clears the reached shared destination only after a confirmed visit, never on a failed attempt or replay', async () => {

@@ -44,8 +44,8 @@ function ParticipantVisits({ url, userId, currentRaidId, onOpenRaid }: { url: st
   </div>
 }
 
-export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, active = true, onOpenRaid }: {
-  kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; active?: boolean; onOpenRaid?: () => void
+export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, active = true, showHeading = true, onOpenRaid }: {
+  kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; active?: boolean; showHeading?: boolean; onOpenRaid?: () => void
 }) {
   const [history, setHistory] = useState<History | null>(null)
   const [error, setError] = useState(false)
@@ -72,7 +72,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
   ] : []
 
   return <section className="point-visit-history" aria-label="История посещений точки">
-    <header><h3>Посещения</h3></header>
+    {showHeading && <header><h3>Посещения</h3></header>}
     {busy && !history && <LoadingHistory />}
     {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
     {history && !history.visitors.length && <p className="point-visit-history__empty">Ваша Кабанда здесь ещё не была</p>}

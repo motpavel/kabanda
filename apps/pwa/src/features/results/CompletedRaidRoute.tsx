@@ -3,6 +3,7 @@ import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { PointMaterialsPanel } from '../checkins/PointMaterialsPanel'
 import { getRaidMapPoints, getRaidSnapshot } from '../raids/api'
 import { RaidRouteMap } from '../raids/recording/RaidRouteMap'
+import { isVisitedRaidPoint } from '../raids/recording/completed-route-view'
 import type { FieldOperation } from '../raids/field-outbox'
 import type { RaidMapPoint, RaidProjection } from '../raids/types'
 
@@ -20,7 +21,7 @@ export function CompletedRaidRoute({ identityId, raid, operations = [], canAddMa
       const rows = snapshot.points ?? await getRaidMapPoints(raid.id)
       if (!active) return
       setFieldProtocol(snapshot.teamVisits === true)
-      setPoints(rows.filter(point => point.visitedByTeam))
+      setPoints(rows.filter(isVisitedRaidPoint))
     }).catch(() => { if (active) setFailed(true) })
     return () => { active = false }
   }, [identityId, raid.id])

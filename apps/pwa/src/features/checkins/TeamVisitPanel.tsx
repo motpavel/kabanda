@@ -1,4 +1,7 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CachedImage } from '../../lib/CachedImage'
+import { RaidControlIcon } from '../raids/RaidControlIcon'
 import type { RaidProjection } from '../raids/types'
 import type { LivePosition } from '../raids/live-feed'
 import { enqueueField, pumpFieldOperations, type FieldOperation } from '../raids/field-outbox'
@@ -12,9 +15,9 @@ import type { CheckInResponse } from './types'
 export function TeamVisitPanel(props: {
   identityId: string; raid: RaidProjection; point: StopPoint; positions: readonly LivePosition[]
   operations: readonly FieldOperation[]; visible: boolean; stale: boolean; repeat: boolean
-  onAccepted: () => void; onManual: () => void
+  onAccepted: () => void; actionContainer?: HTMLElement | null
 }) {
-  const { identityId, raid, point, positions, operations, visible, stale, repeat, onAccepted, onManual } = props
+  const { identityId, raid, point, positions, operations, visible, stale, repeat, onAccepted } = props
   const [selected, setSelected] = useState<string[]>([identityId])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -53,15 +56,15 @@ export function TeamVisitPanel(props: {
     const response = current.response as CheckInResponse | undefined
     if (response?.outcome === 'accepted') { onAccepted(); return }
     if (response?.outcome === 'needs_manual_verification') {
-      setMessage(checkInRefusalMessage(response.reason))
-      if (response.reason !== 'too_far') onManual()
+      setMessage(response.reason === 'accuracy_insufficient' ? 'Не удалось точно определить ваше положение. Дождитесь GPS-сигнала и повторите отметку.' : checkInRefusalMessage(response.reason))
       return
     }
     if (current.lastError === 'TEAM_VISIT_ALREADY_CONFIRMED') { onAccepted(); return }
     setMessage(current.lastError === 'NAVIGATOR_REQUIRED' ? 'Навигатор сменился. Посещение подтверждает новый навигатор.'
+      : current.lastError === 'TEAM_VISIT_COOLDOWN' ? 'Эту точку уже пометили. Повторная отметка доступна через 5 минут после предыдущей.'
       : current.lastError === 'ATTENDANCE_CHANGED' ? 'Состав изменился. Проверьте участников перед новой попыткой.'
         : 'Сервер не подтвердил посещение. Проверьте состав и повторите.')
-  }, [current, onAccepted, onManual])
+  }, [current, onAccepted])
 
   const submit = async () => {
     if (!visible || busy || sending || raid.state !== 'active' || raid.navigatorUserId !== identityId || !activeIds.has(identityId)) return
@@ -90,25 +93,28 @@ export function TeamVisitPanel(props: {
     } finally { if (mounted.current) setBusy(false) }
   }
 
-  return <section className="checkin-panel checkin-panel--map" aria-label="Командное посещение">
-    <fieldset className="checkin-participants"><legend>Кого отмечаем на точке?</legend>
+  const primaryButton = <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
+      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Пометить точку снова' : 'Пометить точку'}
+    </button>
+
+  return <section className="checkin-panel checkin-panel--map checkin-panel--team" aria-label="Командное посещение">
+    <fieldset className="checkin-participants"><legend>Кто сейчас здесь?</legend>
       {members.map(member => <label key={member.id}>
+        <span className="checkin-participant__avatar" aria-hidden="true">{member.avatarUrl ? <CachedImage identityId={identityId} src={member.avatarUrl} alt="" /> : member.displayName.trim().slice(0, 1).toUpperCase()}</span>
         <input type="checkbox" aria-label={member.displayName} disabled={busy || sending || member.id === identityId}
           checked={selectedIds.includes(member.id)} onChange={event => {
             const checked = event.target.checked
             choices.current.set(member.id, checked)
             setSelected(previous => checked ? [...new Set([...previous, member.id])] : previous.filter(id => id !== member.id))
           }} />
-        <span className="checkin-participant__name">{member.displayName}{member.id === identityId ? ' · вы' : ''}</span>
+        <span className="checkin-participant__name">{member.displayName}{member.id === identityId && <small>Вы · навигатор</small>}</span>
+        <span className="checkin-participant__presence" aria-hidden="true">{selectedIds.includes(member.id) ? 'Рядом' : 'Не рядом'}</span>
       </label>)}
     </fieldset>
-    <p className="checkin-participant-hint">Нажимая Пометить точку, вы подтверждаете присутствие выбранных участников. Повторять отметку на остальных телефонах не нужно.</p>
     {(message || sending) && <p className="kb-notice" role="status">{sending
       ? current?.status === 'retryable' ? 'Связь задерживается. Повторим эту же операцию автоматически.'
         : current?.status === 'sending' ? 'Ожидаем подтверждение сервера…' : 'Посещение сохранено на телефоне. Отправляем при наличии связи.'
       : message}</p>}
-    <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
-      {busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Пометить точку'}
-    </button>
+    {props.actionContainer ? createPortal(primaryButton, props.actionContainer) : primaryButton}
   </section>
 }

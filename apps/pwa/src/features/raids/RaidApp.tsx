@@ -578,6 +578,37 @@ function RaidDetailPage({
         : 'pass'
       : 'unknown'
 
+  const handoffPanel = allowed.has('handoff-navigator') && !resource.stale && handoffCandidates.length > 0 && (
+        <section className="kb-card raid-handoff">
+          <p className="kb-kicker">Передача навигации</p>
+          <h2>Сменить навигатора</h2>
+          <p className="kb-muted">
+            Дождитесь отправки маршрута со старого телефона. После передачи новый навигатор должен открыть рейд и разрешить геолокацию.
+          </p>
+          <div className="raid-assign">
+            <label htmlFor="handoff-navigator">Новый навигатор</label>
+            <select
+              id="handoff-navigator"
+              value={handoffNavigatorId}
+              onChange={(event) => setHandoffNavigatorId(event.target.value)}
+            >
+              <option value="">Выберите активного участника</option>
+              {handoffCandidates.map((participant) => (
+                <option key={participant.id} value={participant.id}>{participant.displayName}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!handoffNavigatorId || !handoffCandidates.some(member => member.id === handoffNavigatorId) || Boolean(operation) || !navigator.onLine}
+              onClick={() => window.confirm('Передать запись маршрута другому навигатору сейчас?') &&
+                applyCommand('handoff-navigator', { navigatorUserId: handoffNavigatorId })}
+            >
+              {operation === 'handoff-navigator' ? 'Передаём…' : 'Передать маршрут'}
+            </button>
+          </div>
+        </section>
+      )
+
   if (raid.state === 'active' || raid.state === 'paused') {
     return <RaidShell active>
       <ActiveRaidPanel
@@ -585,6 +616,7 @@ function RaidDetailPage({
         identityId={user.id}
         raid={raid}
         staleProjection={resource.stale}
+        navigatorControls={handoffPanel}
         serverPrimary={primary}
         operationPending={Boolean(operation)}
         onServerPrimary={() => void handlePrimary()}
@@ -665,36 +697,7 @@ function RaidDetailPage({
 
 
 
-      {allowed.has('handoff-navigator') && !resource.stale && handoffCandidates.length > 0 && (
-        <section className="kb-card raid-handoff">
-          <p className="kb-kicker">Передача навигации</p>
-          <h2>Сменить устройство и навигатора</h2>
-          <p className="kb-muted">
-            Запись продолжится на новом телефоне. Сначала дождитесь отправки точек со старого устройства.
-          </p>
-          <div className="raid-assign">
-            <label htmlFor="handoff-navigator">Новый навигатор</label>
-            <select
-              id="handoff-navigator"
-              value={handoffNavigatorId}
-              onChange={(event) => setHandoffNavigatorId(event.target.value)}
-            >
-              <option value="">Выберите активного участника</option>
-              {handoffCandidates.map((participant) => (
-                <option key={participant.id} value={participant.id}>{participant.displayName}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={!handoffNavigatorId || operation === 'handoff-navigator'}
-              onClick={() => window.confirm('Передать запись маршрута другому навигатору сейчас?') &&
-                applyCommand('handoff-navigator', { navigatorUserId: handoffNavigatorId })}
-            >
-              {operation === 'handoff-navigator' ? 'Передаём…' : 'Передать маршрут'}
-            </button>
-          </div>
-        </section>
-      )}
+      {handoffPanel}
 
       {primary && (
         <button className="kb-primary raid-primary raid-sticky" type="button" disabled={Boolean(operation) || (primary.kind === 'command' && primary.command === 'start' && (!navigator.onLine || !presenceReady))} onClick={handlePrimary}>{operation === 'readiness' ? 'Получаем свежую геопозицию…' : operation ? 'Подтверждаем…' : primary.kind === 'command' && primary.command === 'start' ? presenceReady ? 'Все здесь — начать рейд' : 'Ждём всю стаю' : primary.label}</button>
