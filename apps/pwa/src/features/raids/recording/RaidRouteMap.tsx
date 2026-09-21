@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadYandexMaps, type YandexMap, type YandexPlacemark, type YandexPolyline, type YandexMapsRuntime } from '../../kabandas/yandex-maps'
 import type { OneShotCoordinate } from '../../checkins/types'
 import type { RaidMapPoint, RouteTrackPoint } from '../types'
@@ -9,6 +9,7 @@ import { useRaidMapData } from './useRaidMapData'
 import { FlockDisplay } from './flock-display'
 import { stabilizeStationarySegment } from './stationary-display'
 import { RiderMotion } from './rider-motion'
+import { completedRouteBoundsPoints, pointsForRaidMap } from './completed-route-view'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude' | 'longitude'> & Partial<Pick<RouteTrackPoint, 'capturedAt'>>)[], viewport?: { width: number; height: number }) {
@@ -62,13 +63,14 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const [following, setFollowing] = useState(false)
   const gesture = useRef<{ id: number; x: number; y: number } | null>(null)
   const [provider, setProvider] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const { track, points, dataState, positions, snapshotNavigator } = useRaidMapData(identityId, raidId, live, completed)
+  const { track, points: allPoints, dataState, positions, snapshotNavigator } = useRaidMapData(identityId, raidId, live, completed)
+  const points = useMemo(() => pointsForRaidMap(allPoints, completed), [allPoints, completed])
 
   useEffect(() => {
     firstView.current = false; firstLocation.current = false; flock.current.reset(); viewerCoordinate.current = null
     motion.current?.reset(); viewerMotionId.current = null; followEnabled.current = false
     setFollowing(false)
-  }, [identityId, raidId])
+  }, [identityId, raidId, completed])
   useEffect(() => { motion.current?.reset() }, [navigatorUserId])
   useEffect(() => {
     const container = containerRef.current
@@ -142,7 +144,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       })
       endpoints.current.set(endpoint.kind, marker); map.geoObjects.add(marker)
     }
-    if (!firstView.current && segments.some(segment => segment.length)) {
+    if (!completed && !firstView.current && segments.some(segment => segment.length)) {
       const view = routeTrackView([...segments.flat(), ...nextEndpoints.map(endpoint => endpoint.point)], completed ? containerRef.current?.getBoundingClientRect() : undefined)
       map.setCenter(view.center, view.zoom, { duration: 0 }); firstView.current = true
     }
@@ -153,7 +155,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     if (provider !== 'ready' || !map || !runtime) return
     const ids = new Set(points.map(point => point.id))
     for (const [id, entry] of pointMarkers.current) if (!ids.has(id)) { map.geoObjects.remove(entry.marker); pointMarkers.current.delete(id) }
-    if (planned && points.length > 1) {
+    if (planned && !completed && points.length > 1) {
       const coordinates = [...points].sort((a, b) => a.position - b.position).map(point => [point.latitude, point.longitude] as const)
       if (plannedLine.current) plannedLine.current.geometry.setCoordinates(coordinates)
       else {
@@ -162,7 +164,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       }
     } else if (plannedLine.current) { map.geoObjects.remove(plannedLine.current); plannedLine.current = null }
     for (const point of points) {
-      const highlighted = point.id === highlightedPointId, destination = point.id === destinationPointId
+      const highlighted = !completed && point.id === highlightedPointId, destination = !completed && point.id === destinationPointId
       const visited = point.visitedByMe || point.visitedByTeam
       const markerClass = `raid-live-point${visited ? ' raid-live-point--visited' : ''}${highlighted && !visited ? ' raid-live-point--nearby' : ''}${destination ? ' raid-live-point--destination' : ''}`
       const ariaLabel = `${point.name}. ${destination ? 'Цель рейда. ' : ''}${point.visitedByMe ? 'Вы уже были. История посещений' : point.visitedByTeam ? 'Кабанда уже была. История посещений' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда. История посещений'}`
@@ -186,11 +188,20 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       marker.events.add('click', event => { event.stopPropagation?.(); onSelect.current(entry.point) })
       pointMarkers.current.set(point.id, entry); map.geoObjects.add(marker)
     }
-    if (!firstView.current && points.length) {
+    if (!completed && !firstView.current && points.length) {
       const view = routeTrackView(points, completed ? containerRef.current?.getBoundingClientRect() : undefined)
       map.setCenter(view.center, view.zoom, { duration: 0 }); firstView.current = true
     }
   }, [provider, points, planned, highlightedPointId, destinationPointId, completed])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!completed || provider !== 'ready' || !map || firstView.current) return
+    const overview = completedRouteBoundsPoints(track, points)
+    if (!overview.length) return
+    const view = routeTrackView(overview, containerRef.current?.getBoundingClientRect())
+    map.setCenter(view.center, view.zoom, { duration: 0 }); firstView.current = true
+  }, [completed, provider, track, points])
 
   useEffect(() => {
     if (!live) return
@@ -246,7 +257,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     if (map) map.setZoom(Math.max(3, Math.min(19, map.getZoom() + delta)), { duration: 180 })
   }
   return <div className="route-live-map-shell">
-    {(planned || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
+    {((planned && !completed) || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned && !completed ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
     <div className="route-live-map" ref={containerRef}
       onPointerDownCapture={event => {
         if (!event.isPrimary) { stopFollowing(); return }
