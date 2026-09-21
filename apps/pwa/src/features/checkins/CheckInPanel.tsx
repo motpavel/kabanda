@@ -503,7 +503,7 @@ export function CheckInPanel({
       : primaryKind === 'submit_fallback'
         ? { label: 'Отправить на ручную проверку', action: submitFallback }
         : primaryKind === 'check_in'
-          ? { label: 'Отметить точку', action: submit }
+          ? { label: 'Пометить точку', action: submit }
             : primaryKind === 'locate' && presentation !== 'map-sheet'
             ? { label: 'Найти точку рядом', action: locate }
             : null

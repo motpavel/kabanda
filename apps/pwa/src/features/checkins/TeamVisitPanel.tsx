@@ -111,7 +111,7 @@ export function TeamVisitPanel(props: {
         : current?.status === 'sending' ? 'Ожидаем подтверждение сервера…' : 'Посещение сохранено на телефоне. Отправляем при наличии связи.'
       : message}</p>}
     <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
-      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Отметить точку'}
+      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Пометить точку'}
     </button>
   </section>
 }
