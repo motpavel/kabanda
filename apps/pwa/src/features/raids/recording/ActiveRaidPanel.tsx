@@ -233,7 +233,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
     </button>}
     <aside {...arrivalSheet} className="raid-arrival-sheet raid-arrival-sheet--checkin" aria-label={activePoint ? 'Подтверждение точки' : 'Сохранённые действия'}>
       <button className="raid-arrival-sheet__collapse" data-sheet-drag="true" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
-      <div className="raid-arrival-sheet__heading" data-sheet-drag="true"><div><small>{activePoint ? destinationIsArrival ? 'ВЫ НА МЕСТЕ' : 'ТОЧКА РЯДОМ' : 'ОТМЕТКИ'}</small><h2>{activePoint?.name ?? 'Сохранённые отметки'}</h2></div>
+      <div className="raid-arrival-sheet__heading" data-sheet-drag="true"><div><h2>{activePoint?.name ?? 'Сохранённые отметки'}</h2></div>
         {activePoint && <span className="raid-arrival-sheet__distance">{Math.round(activePoint.distanceMeters)}<small>метров</small></span>}</div>
       {fieldMode && activePoint && viewerIsNavigator && !showLegacy && <TeamVisitPanel key={`${identityId}:${raid.id}:${activePoint.pointSnapshotId}:${repeatArrival ? activePoint.lastAttemptId ?? 'repeat' : 'first'}`}
         identityId={identityId} raid={raid} point={activePoint} positions={field.data?.positions ?? []} operations={queue.rows}
@@ -244,13 +244,13 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
           onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid}
           staleProjection={staleProjection} repeatVisit={!fieldMode && repeatArrival} onSaved={onCheckInSaved} />
       </div>
-      {fieldMode && activePoint && <PointMaterialsPanel key={`arrival:${identityId}:${raid.id}:${activePoint.pointSnapshotId}`}
+      {fieldMode && activePoint && <PointMaterialsPanel compact key={`arrival:${identityId}:${raid.id}:${activePoint.pointSnapshotId}`}
         identityId={identityId} kabandaId={raid.kabandaId} raidId={raid.id} pointId={activePoint.pointSnapshotId}
         visible={sheetOpen} canWrite={activeMember && !field.denied} operations={queue.rows} />}
       {fieldMode && !activePoint && totalPending > 0 && <p role="status">Сохранено на телефоне: {totalPending}. Отправка продолжится автоматически.</p>}
     </aside>
     <PointInfoSheet open={historyOpen && !actionsOpen} onClose={() => setHistoryOpen(false)} title={latestHistoryPoint?.name ?? ''}
-      kicker={latestHistoryPoint?.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : 'ТОЧКА РЕЙДА'} distance={inspectedDistanceLabel}>
+      kicker={latestHistoryPoint?.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : undefined} distance={inspectedDistanceLabel}>
       {latestHistoryPoint && <>
         <PointVisitHistory key={`${identityId}:${latestHistoryPoint.sourcePointId}:${inspectedVisited}`} identityId={identityId} kabandaId={raid.kabandaId}
           pointId={latestHistoryPoint.sourcePointId} currentRaidId={raid.id} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen} />
@@ -266,7 +266,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
             <RaidControlIcon name="pin" />{destinationBusy ? 'Выбираем цель…' : latestHistoryPoint.id === destination?.pointSnapshotId ? 'Двигаемся сюда' : 'Двигаться сюда'}
           </button>
         </div>}
-        {fieldMode && <PointMaterialsPanel key={`history:${identityId}:${raid.id}:${latestHistoryPoint.id}`} identityId={identityId} kabandaId={raid.kabandaId}
+        {fieldMode && <PointMaterialsPanel compact key={`history:${identityId}:${raid.id}:${latestHistoryPoint.id}`} identityId={identityId} kabandaId={raid.kabandaId}
           raidId={raid.id} pointId={latestHistoryPoint.id} visible={historyOpen && !actionsOpen} canWrite={activeMember && !field.denied} operations={queue.rows} />}
       </>}
     </PointInfoSheet>

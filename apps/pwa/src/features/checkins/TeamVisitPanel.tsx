@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CachedImage } from '../../lib/CachedImage'
+import { RaidControlIcon } from '../raids/RaidControlIcon'
 import type { RaidProjection } from '../raids/types'
 import type { LivePosition } from '../raids/live-feed'
 import { enqueueField, pumpFieldOperations, type FieldOperation } from '../raids/field-outbox'
@@ -90,25 +92,26 @@ export function TeamVisitPanel(props: {
     } finally { if (mounted.current) setBusy(false) }
   }
 
-  return <section className="checkin-panel checkin-panel--map" aria-label="Командное посещение">
-    <fieldset className="checkin-participants"><legend>Кого отмечаем на точке?</legend>
+  return <section className="checkin-panel checkin-panel--map checkin-panel--team" aria-label="Командное посещение">
+    <fieldset className="checkin-participants"><legend>Кто сейчас здесь?</legend>
       {members.map(member => <label key={member.id}>
+        <span className="checkin-participant__avatar" aria-hidden="true">{member.avatarUrl ? <CachedImage identityId={identityId} src={member.avatarUrl} alt="" /> : member.displayName.trim().slice(0, 1).toUpperCase()}</span>
         <input type="checkbox" aria-label={member.displayName} disabled={busy || sending || member.id === identityId}
           checked={selectedIds.includes(member.id)} onChange={event => {
             const checked = event.target.checked
             choices.current.set(member.id, checked)
             setSelected(previous => checked ? [...new Set([...previous, member.id])] : previous.filter(id => id !== member.id))
           }} />
-        <span className="checkin-participant__name">{member.displayName}{member.id === identityId ? ' · вы' : ''}</span>
+        <span className="checkin-participant__name">{member.displayName}{member.id === identityId && <small>Вы · навигатор</small>}</span>
+        <span className="checkin-participant__presence" aria-hidden="true">{selectedIds.includes(member.id) ? 'Рядом' : 'Не рядом'}</span>
       </label>)}
     </fieldset>
-    <p className="checkin-participant-hint">Нажимая Пометить точку, вы подтверждаете присутствие выбранных участников. Повторять отметку на остальных телефонах не нужно.</p>
     {(message || sending) && <p className="kb-notice" role="status">{sending
       ? current?.status === 'retryable' ? 'Связь задерживается. Повторим эту же операцию автоматически.'
         : current?.status === 'sending' ? 'Ожидаем подтверждение сервера…' : 'Посещение сохранено на телефоне. Отправляем при наличии связи.'
       : message}</p>}
     <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
-      {busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Пометить точку'}
+      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Отметить точку'}
     </button>
   </section>
 }

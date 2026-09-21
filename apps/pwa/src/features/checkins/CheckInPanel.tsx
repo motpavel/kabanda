@@ -503,7 +503,7 @@ export function CheckInPanel({
       : primaryKind === 'submit_fallback'
         ? { label: 'Отправить на ручную проверку', action: submitFallback }
         : primaryKind === 'check_in'
-          ? { label: 'Пометить точку', action: submit }
+          ? { label: 'Отметить точку', action: submit }
             : primaryKind === 'locate' && presentation !== 'map-sheet'
             ? { label: 'Найти точку рядом', action: locate }
             : null
@@ -530,18 +530,19 @@ export function CheckInPanel({
 
       {(selectedPointId || manualResponse) && (viewerIsOrganizer || presentation === 'map-sheet') && (
         <div className="checkin-participant-group">
-        <fieldset className="checkin-participants"><legend>{presentation === 'map-sheet' ? 'Кого отмечаем на точке?' : 'Кто остановился у точки'}</legend>{participants.map((participant) => (
+        <fieldset className="checkin-participants"><legend>{presentation === 'map-sheet' ? 'Кто сейчас здесь?' : 'Кто остановился у точки'}</legend>{participants.map((participant) => (
           <label key={participant.id}>
             {presentation === 'map-sheet' && <span className="checkin-participant__avatar" aria-hidden="true">{participant.displayName.trim().slice(0, 1).toUpperCase()}</span>}
             <input aria-label={participant.displayName} type="checkbox" disabled={!viewerIsOrganizer || participant.id === identityId} checked={participant.id === identityId || validSelectedParticipants.includes(participant.id)} onChange={() => toggleParticipant(participant.id)} />
             <span className="checkin-participant__name">{participant.displayName}{presentation !== 'map-sheet' && (participant.id === identityId ? ' · вы' : nearbyParticipantIds.includes(participant.id) ? ' · рядом автоматически' : '')}</span>
+            {presentation === 'map-sheet' && <span className="checkin-participant__presence" aria-hidden="true">{participant.id === identityId || validSelectedParticipants.includes(participant.id) ? 'Рядом' : 'Не рядом'}</span>}
           </label>
         ))}</fieldset>
         {viewerIsOrganizer && presentation !== 'map-sheet' && <p className="checkin-participant-hint">Участники рядом по GPS уже выбраны. Добавьте тех, кто с вами, но у кого проблемы с геолокацией.</p>}
         </div>
       )}
 
-      {!viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
+      {presentation !== 'map-sheet' && !viewerIsOrganizer && validSelectedParticipants.some((id) => id !== identityId) && !manualResponse && (
         <p className="kb-muted">Выбранные участники получат личный claim. Credit появится только после их подтверждения.</p>
       )}
 
