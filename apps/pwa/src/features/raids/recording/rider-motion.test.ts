@@ -11,7 +11,8 @@ function fixture() {
     cancel: handle => { callbacks.delete(handle) },
   })
   return { motion, callbacks, frames,
-    tick: (time: number) => { now = time; const current = [...callbacks.values()]; callbacks.clear(); current.forEach(callback => callback(time)) },
+    tick: (time: number, frameTime = time) => { now = time; const current = [...callbacks.values()]; callbacks.clear(); current.forEach(callback => callback(frameTime)) },
+    advance: (time: number) => { now = time },
     coordinate: (id = 'viewer') => frames.at(-1)?.get(id),
   }
 }
@@ -34,6 +35,17 @@ describe('rider presentation interpolation', () => {
     f.tick(2000); expect(f.coordinate()).toEqual(target(20, 3000).coordinate)
     expect(f.callbacks.size).toBe(0)
     f.tick(30_000); expect(meters(f.coordinate())).toBeCloseTo(20)
+  })
+  it('does not rewind when a RAF timestamp precedes a paint within the same frame', () => {
+    const f = fixture(); f.motion.update([target(0)]); f.motion.update([target(20, 3000)])
+    f.advance(1010); f.motion.update([target(20, 3000)])
+    const before = meters(f.coordinate())
+    f.tick(1012, 1000)
+    expect(meters(f.coordinate())).toBeGreaterThanOrEqual(before)
+    expect(meters(f.coordinate())).toBeCloseTo(10.12)
+    f.tick(2001, 1990)
+    expect(f.coordinate()).toEqual(target(20, 3000).coordinate)
+    expect(f.callbacks.size).toBe(0)
   })
   it('retargets from the currently displayed position with no rewind or overshoot', () => {
     const f = fixture(); f.motion.update([target(0)]); f.motion.update([target(20, 3000)])
