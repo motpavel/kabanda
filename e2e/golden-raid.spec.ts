@@ -108,15 +108,24 @@ test('legacy-server compatibility: owner completes one canonical raid and opens 
   await expect(page.getByRole('heading', { name: 'Выйти в рейд' })).toBeVisible()
   await page.getByRole('button', { name: /Свободная охота/ }).click()
   await page.getByLabel('По каким точкам едем?').selectOption('attractions')
-  await page.evaluate(() => {
+  // The back-link regression below opens a new document. Keep the requested
+  // denial active across that navigation, then persist the explicit recovery.
+  const denyQaLocation = () => {
+    const restoredKey = 'kabanda:qa:golden-location-restored'
+    if (sessionStorage.getItem(restoredKey) === 'true') return
     const geo = navigator.geolocation
     const original = geo.watchPosition.bind(geo)
-    Object.assign(window, { restoreQaLocation: () => { geo.watchPosition = original } })
+    Object.assign(window, { restoreQaLocation: () => {
+      sessionStorage.setItem(restoredKey, 'true')
+      geo.watchPosition = original
+    } })
     geo.watchPosition = (_success, failure) => {
       queueMicrotask(() => failure?.({ code: 1, message: 'QA denied', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 }))
       return 999999
     }
-  })
+  }
+  await page.addInitScript(denyQaLocation)
+  await page.evaluate(denyQaLocation)
   await page.getByRole('button', { name: 'К подготовке', exact: true }).click()
   await page.waitForURL(/\/app\?raid=[0-9a-f-]+$/)
   const raidId = new URL(page.url()).searchParams.get('raid')

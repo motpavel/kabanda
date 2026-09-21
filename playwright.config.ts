@@ -23,7 +23,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     {
       name: 'webkit', use: { ...devices['iPhone 13'] },
-      testMatch: /(?:browser-photo|field-sync-server|field-retry-navigation|gallery-retention|raid-layout-regressions|result-recovery|user-trust-session|recording-navigation|offline-recovery)\.spec\.ts$/,
+      testMatch: /(?:browser-photo|field-sync-server|field-retry-navigation|gallery-retention|raid-layout-regressions|result-recovery|user-trust-session|recording-navigation|offline-recovery|rider-motion|completed-route-visibility)\.spec\.ts$/,
     },
   ],
   webServer: [
