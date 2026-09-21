@@ -1228,3 +1228,6 @@
 .raid-arrival-sheet__footer { flex-shrink: 0; padding-top: 16px; background: #fff; }
 .raid-arrival-sheet__footer:empty { display: none; }
 .raid-arrival-sheet__footer .raid-primary { position: static; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; margin: 0; border-radius: 14px; border-color: #c93e32; background: #c93e32; font-size: 1rem; }
+
+.raid-action-sheet .raid-handoff { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.raid-action-sheet .raid-handoff .kb-kicker, .raid-action-sheet .raid-handoff h2 { display: none; }

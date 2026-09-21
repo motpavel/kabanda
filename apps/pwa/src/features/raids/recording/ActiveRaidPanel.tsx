@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RaidPrimaryAction } from '../state'
 import type { RaidMapPoint, RaidProjection } from '../types'
 import type { CheckInResponse } from '../../checkins/types'
@@ -23,8 +23,9 @@ import { useLiveRaid } from '../use-live-raid'
 import { useFieldQueue } from '../use-field-queue'
 
 export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrimary, operationPending,
-  onServerPrimary, onCanonicalRefresh, onApplyRaid, backHref, pageMessage, resourceError,
+  onServerPrimary, onCanonicalRefresh, onApplyRaid, backHref, pageMessage, resourceError, navigatorControls,
 }: {
+  navigatorControls?: ReactNode
   identityId: string; raid: RaidProjection; staleProjection: boolean; serverPrimary: RaidPrimaryAction | null
   operationPending: boolean; onServerPrimary: () => void; onCanonicalRefresh: () => Promise<unknown>
   onApplyRaid: (raid: RaidProjection) => Promise<unknown>; backHref: string; pageMessage: string | null; resourceError: string | null
@@ -42,6 +43,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const [checkInNotice, setCheckInNotice] = useState<{ text: string } | null>(null)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
+  const [navigatorOpen, setNavigatorOpen] = useState(false)
   const actionsTrigger = useRef<HTMLButtonElement>(null)
   const previousRaidState = useRef(raid.state)
   const [historyPoint, setHistoryPoint] = useState<RaidMapPoint | null>(null)
@@ -128,7 +130,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const serverActionAvailable = serverPrimary?.kind === 'command' || serverPrimary?.kind === 'refresh'
   const primary = selectActivePrimaryAction(recorder.phase, serverActionAvailable)
   const showRecovery = viewerIsNavigator && raid.state === 'active' && primary === 'recover' && (recorder.phase === 'standby' || recorder.phase === 'error')
-  const recoveryLabel = recorder.phase === 'standby' ? 'Записывать на этом устройстве' : 'Повторить сохранение'
+  const recoveryLabel = recorder.phase === 'standby' ? 'Продолжить запись здесь' : 'Повторить сохранение'
   const legacyAttention = Boolean(checkInAttention.actionKey)
   const showLegacy = !fieldMode || manualMode || legacyAttention
   const arrivalAvailable = raid.state === 'active' && Boolean(activePoint || checkInAttention.count || queue.pendingCount)
@@ -204,18 +206,23 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
     <header className="raid-active-map__header">
       <a aria-label="Выйти из карты рейда" href={backHref}><RaidControlIcon name="back" /></a>
       <div><small>{raid.state === 'paused' ? 'Рейд на паузе' : recorderLabel ?? 'Активный рейд'}</small><strong>{raid.title}</strong></div>
-      <button ref={actionsTrigger} aria-haspopup="dialog" aria-expanded={actionsOpen} aria-label="Действия рейда" onClick={() => { setFinishOpen(false); setActionsOpen(true) }} type="button"><RaidControlIcon name="more" /></button>
+      <button ref={actionsTrigger} aria-haspopup="dialog" aria-expanded={actionsOpen} aria-label="Действия рейда" onClick={() => { setFinishOpen(false); setNavigatorOpen(false); setActionsOpen(true) }} type="button"><RaidControlIcon name="more" /></button>
     </header>
     <dialog {...actionsSheet} className="raid-active-map__actions" aria-labelledby="raid-actions-title" onClose={() => actionsTrigger.current?.focus({ preventScroll: true })}
       onCancel={event => { event.preventDefault(); setActionsOpen(false) }} onClick={event => { if (event.target === event.currentTarget) setActionsOpen(false) }}>
       <div className="raid-action-sheet">
         <button className="raid-sheet-grip" data-sheet-drag="true" aria-label="Свернуть действия рейда" onClick={() => setActionsOpen(false)} type="button"><span /></button>
-        <header className="raid-action-sheet__header" data-sheet-drag="true"><h2 id="raid-actions-title">{finishOpen ? 'Завершить рейд?' : 'Ваш рейд'}</h2></header>
-        {finishOpen ? <>
+        <header className="raid-action-sheet__header" data-sheet-drag="true"><h2 id="raid-actions-title">{navigatorOpen ? 'Навигатор рейда' : finishOpen ? 'Завершить рейд?' : 'Ваш рейд'}</h2></header>
+        {navigatorOpen ? <>
+          {navigatorControls || <p className="raid-action-sheet__hint">{viewerIsOrganizer ? 'Для передачи нужен другой активный участник и актуальные данные рейда. Проверьте соединение и дождитесь обновления состава.' : 'Сменить навигатора может вожак рейда. Попросите его выбрать другого активного участника в меню рейда. Для передачи нужна связь с сервером.'}</p>}
+          {pageMessage && <p role="status">{pageMessage}</p>}
+          <button className="raid-action-sheet__cancel" type="button" onClick={() => setNavigatorOpen(false)}>Назад</button>
+        </> : finishOpen ? <>
           <FinishRaidPanel presentation="sheet" identityId={identityId} raid={raid} flushRoute={recorder.flush} onApplyRaid={onApplyRaid} onCanonicalRefresh={onCanonicalRefresh} />
           <button className="raid-action-sheet__cancel" type="button" onClick={() => { setFinishOpen(false); setActionsOpen(false) }}>Нет, продолжить рейд</button>
         </> : <div className="raid-action-sheet__list">
           {serverActionAvailable && serverPrimary && <button className="raid-action-sheet__item" type="button" disabled={operationPending} onClick={onServerPrimary}><RaidControlIcon name={raid.state === 'paused' ? 'play' : 'pause'} /><span>{operationPending ? 'Подтверждаем…' : serverPrimary.label}</span></button>}
+          {(viewerIsOrganizer || viewerIsNavigator) && <button className="raid-action-sheet__item" type="button" onClick={() => setNavigatorOpen(true)}><RaidControlIcon name="location" /><span>Сменить навигатора</span></button>}
           {raid.allowedActions.includes('finish') && <button className="raid-action-sheet__item raid-action-sheet__item--finish" type="button" onClick={() => setFinishOpen(true)}><RaidControlIcon name="finish" /><span>Завершить рейд</span></button>}
           {!serverActionAvailable && !raid.allowedActions.includes('finish') && <p className="raid-action-sheet__hint">Пауза и завершение доступны вожаку рейда.</p>}
         </div>}
@@ -226,8 +233,10 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       {resourceError && <p className="kb-error" role="alert">{resourceError}</p>}
       {pageMessage && <p className="kb-notice" role="status">{pageMessage}</p>}
       {queue.error && <p role="status">Не удалось проверить сохранённые действия. Не очищайте данные приложения.</p>}
-      {raid.state === 'active' && recorder.message && <p className={recorder.phase === 'waiting' ? 'raid-gps-waiting' : 'kb-error'} role={recorder.phase === 'waiting' ? 'status' : 'alert'}>{recorder.message}</p>}
-      {showRecovery && <button className="kb-primary route-recorder__secondary" type="button" onClick={recorder.recover}>{recoveryLabel}</button>}
+      {raid.state === 'active' && recorder.message && <p className={recorder.phase === 'waiting' || recorder.phase === 'standby' ? 'raid-gps-waiting' : 'kb-error'} role={recorder.phase === 'waiting' || recorder.phase === 'standby' ? 'status' : 'alert'}>{recorder.message}</p>}
+      {showRecovery && <button className="kb-primary route-recorder__secondary" type="button" onClick={() => {
+        if (recorder.phase !== 'standby' || window.confirm('Продолжить запись маршрута на этом устройстве? Запись в другом окне или на прежнем телефоне остановится. Навигатор рейда останется прежним.')) recorder.recover()
+      }}>{recoveryLabel}</button>}
     </section>}
     {arrivalAvailable && !sheetOpen && !inspectedPoint && !actionsOpen && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button"><span aria-hidden="true" />
       <span><strong>{activePoint ? 'Вы рядом с точкой' : totalPending > 0 ? 'Сохранённые действия' : 'Сохранённые отметки'}</strong><small>{activePoint ? `${activePoint.name} · ${Math.round(activePoint.distanceMeters)} м` : `${totalPending} действий ждут синхронизации`}</small></span><b>{activePoint ? 'Пометить' : 'Открыть'}</b>

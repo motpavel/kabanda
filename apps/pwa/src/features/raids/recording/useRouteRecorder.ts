@@ -134,10 +134,10 @@ export function useRouteRecorder(input: {
     } catch (error) {
       if (error instanceof ApiError && error.code === 'NAVIGATOR_LEASE_HELD') {
         setPhase('standby')
-        setMessage('Маршрут уже пишет другое устройство. Восстановление здесь завершит его lease.')
+        setMessage('Маршрут записывает другое устройство или окно под вашим аккаунтом. Если вы продолжаете на нём, ничего делать не нужно. Чтобы записывать маршрут здесь, нажмите «Продолжить запись здесь»: запись на предыдущем устройстве остановится.')
       } else {
         setPhase('error')
-        setMessage(error instanceof ApiError ? error.message : 'Не удалось подтвердить lease навигатора.')
+        setMessage(error instanceof ApiError ? error.message : 'Не удалось начать запись на этом устройстве. Проверьте соединение и повторите.')
       }
       return false
     } finally {
@@ -297,7 +297,7 @@ export function useRouteRecorder(input: {
             void emitAlphaDiagnostic({ kind: 'gps_stopped', reason: 'lease_lost' })
             setMessage(result.authRequired
               ? 'Сессия истекла. Локальные точки сохранены; войдите снова для безопасного replay.'
-              : 'Сервер завершил lease навигатора. Запись остановлена, состояние рейда обновляется.')
+              : 'Право записи передано другому устройству или навигатору. Запись здесь остановлена, обновляем состояние рейда.')
             await stopPageRecorder(true)
             updateDerivedPhase()
             if (result.authRequired) {
