@@ -134,7 +134,7 @@ export function useRouteRecorder(input: {
     } catch (error) {
       if (error instanceof ApiError && error.code === 'NAVIGATOR_LEASE_HELD') {
         setPhase('standby')
-        setMessage('Маршрут записывает другое устройство или окно под вашим аккаунтом. Если вы продолжаете на нём, ничего делать не нужно. Чтобы записывать маршрут здесь, нажмите «Продолжить запись здесь»: запись на предыдущем устройстве остановится.')
+        setMessage('Маршрут записывает другое устройство. Нажмите «Продолжить запись здесь», чтобы перенести запись на этот телефон.')
       } else {
         setPhase('error')
         setMessage(error instanceof ApiError ? error.message : 'Не удалось начать запись на этом устройстве. Проверьте соединение и повторите.')

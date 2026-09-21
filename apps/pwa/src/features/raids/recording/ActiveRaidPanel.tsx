@@ -214,7 +214,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
         <button className="raid-sheet-grip" data-sheet-drag="true" aria-label="Свернуть действия рейда" onClick={() => setActionsOpen(false)} type="button"><span /></button>
         <header className="raid-action-sheet__header" data-sheet-drag="true"><h2 id="raid-actions-title">{navigatorOpen ? 'Навигатор рейда' : finishOpen ? 'Завершить рейд?' : 'Ваш рейд'}</h2></header>
         {navigatorOpen ? <>
-          {navigatorControls || <p className="raid-action-sheet__hint">{viewerIsOrganizer ? 'Для передачи нужен другой активный участник и актуальные данные рейда. Проверьте соединение и дождитесь обновления состава.' : 'Сменить навигатора может вожак рейда. Попросите его выбрать другого активного участника в меню рейда. Для передачи нужна связь с сервером.'}</p>}
+          {navigatorControls || <p className="raid-action-sheet__hint">{viewerIsOrganizer ? 'Для передачи нужен другой активный участник и актуальные данные рейда. Проверьте соединение и дождитесь обновления состава.' : 'Сменить навигатора может вожак рейда. Попросите его выбрать другого участника в меню рейда.'}</p>}
           {pageMessage && <p role="status">{pageMessage}</p>}
           <button className="raid-action-sheet__cancel" type="button" onClick={() => setNavigatorOpen(false)}>Назад</button>
         </> : finishOpen ? <>
@@ -235,7 +235,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       {queue.error && <p role="status">Не удалось проверить сохранённые действия. Не очищайте данные приложения.</p>}
       {raid.state === 'active' && recorder.message && <p className={recorder.phase === 'waiting' || recorder.phase === 'standby' ? 'raid-gps-waiting' : 'kb-error'} role={recorder.phase === 'waiting' || recorder.phase === 'standby' ? 'status' : 'alert'}>{recorder.message}</p>}
       {showRecovery && <button className="kb-primary route-recorder__secondary" type="button" onClick={() => {
-        if (recorder.phase !== 'standby' || window.confirm('Продолжить запись маршрута на этом устройстве? Запись в другом окне или на прежнем телефоне остановится. Навигатор рейда останется прежним.')) recorder.recover()
+        if (recorder.phase !== 'standby' || window.confirm('Продолжить запись здесь? На прежнем устройстве она остановится.')) recorder.recover()
       }}>{recoveryLabel}</button>}
     </section>}
     {arrivalAvailable && !sheetOpen && !inspectedPoint && !actionsOpen && <button className="raid-arrival-pill" onClick={() => setSheetOpen(true)} type="button"><span aria-hidden="true" />
