@@ -25,3 +25,7 @@
 .point-history-disclosure[open] > summary { margin-bottom: 8px; }
 .point-repeat-wait { margin: 0 0 12px; text-align: center; color: #6d7470; font-size: .875rem; }
 @media (prefers-reduced-transparency: reduce) { .raid-active-map .visit-toast { background: #fff; backdrop-filter: none; } }
+
+.visit-toast-announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.raid-active-map:has(.visit-toast) .raid-map-controls { top: calc(184px + env(safe-area-inset-top)); }

@@ -12,6 +12,9 @@ describe('confirmed personal visit notifications', () => {
     expect(first.point?.myLastVisitAttemptId).toBe('first')
     expect(newPersonalVisit([point('second')], first.next).point?.myLastVisitAttemptId).toBe('second')
   })
+  it('announces a newly added point visited after the baseline', () => {
+    expect(newPersonalVisit([point('new')], new Map()).point?.id).toBe('point')
+  })
   it('does not duplicate unchanged snapshots or announce somebody else’s visit', () => {
     const first = newPersonalVisit([point('first')], null)
     expect(newPersonalVisit([{ ...point('first'), lastAttemptId: 'someone-else' }], first.next).point).toBeNull()

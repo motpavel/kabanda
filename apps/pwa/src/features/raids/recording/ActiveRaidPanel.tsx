@@ -219,9 +219,10 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
     <RaidRouteMap identityId={identityId} navigatorUserId={raid.navigatorUserId} navigatorSampleAt={raid.routeStatus.lastSampleAt}
       planned={Boolean(raid.routeTemplateId)} destinationPointId={destination?.pointSnapshotId ?? null}
       highlightedPointId={activePoint?.pointSnapshotId ?? null} live={raid.state === 'active'} location={proximity.coordinate} raidId={raid.id} onSelectPoint={inspectPoint} onMapTap={() => { setSheetOpen(false); setHistoryOpen(false) }} />
-    {visitNotice && !actionsOpen && !historyOpen && <section className="visit-toast" aria-label="Новая отметка">
+    <span className="visit-toast-announcement" role="status" aria-atomic="true">{visitNotice ? `Вас отметили на точке ${visitNotice.name}${visitNotice.lastVisitedAt ? `, ${new Date(visitNotice.lastVisitedAt).toLocaleTimeString('ru-RU')}` : ''}` : ''}</span>
+    {visitNotice && activeMember && !field.denied && !actionsOpen && !historyOpen && <section className="visit-toast" aria-label="Новая отметка">
       <button className="visit-toast__open" type="button" onClick={() => { inspectPoint(visitNotice); setVisitNotice(null) }}>
-        <span className="visit-toast__icon" aria-hidden="true">✓</span><span><strong role="status">Вас отметили на точке</strong><small>{visitNotice.name} · Фото и комментарий</small></span>
+        <span className="visit-toast__icon" aria-hidden="true">✓</span><span><strong>Вас отметили на точке</strong><small>{visitNotice.name} · Фото и комментарий</small></span>
       </button><button className="visit-toast__close" aria-label="Закрыть уведомление об отметке" type="button" onClick={() => setVisitNotice(null)}>×</button>
     </section>}
     <header className="raid-active-map__header">
@@ -283,11 +284,11 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       </div>
       <div className="raid-arrival-sheet__footer" ref={setArrivalActions} />
     </aside>
-    <PointInfoSheet open={historyOpen && !actionsOpen} onClose={() => setHistoryOpen(false)} title={latestHistoryPoint?.name ?? ''}
+    <PointInfoSheet open={historyOpen && !actionsOpen} onClose={() => setHistoryOpen(false)} title={latestHistoryPoint?.name ?? ''} pointKey={latestHistoryPoint?.id}
       kicker={latestHistoryPoint?.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : undefined} distance={inspectedDistanceLabel}
       footer={latestHistoryPoint && raid.state === 'active' && activeMember && viewerIsNavigator && !(raid.routeTemplateId && inspectedVisited) ? <>
         {inspectedNearby ? <>
-          {repeatWait > 0 && <p className="point-repeat-wait" role="status">Повторная отметка через {Math.floor(repeatWait / 60)}:{String(repeatWait % 60).padStart(2, '0')}</p>}
+          {repeatWait > 0 && <p className="point-repeat-wait" aria-live="off">Повторная отметка через {Math.floor(repeatWait / 60)}:{String(repeatWait % 60).padStart(2, '0')}</p>}
           <button type="button" className="kb-primary raid-primary" disabled={totalPending > 0 || repeatWait > 0} onClick={() => {
             setRepeatPointId(inspectedVisited ? latestHistoryPoint.id : null); setSelectedArrivalId(latestHistoryPoint.id)
             setStop({ point: inspectedNearby, outsideSince: null, lastOutsideFix: null }); setHistoryOpen(false); setSheetOpen(true); setManualMode(false)

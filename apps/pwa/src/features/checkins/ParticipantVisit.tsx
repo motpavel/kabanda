@@ -5,7 +5,7 @@ import './participant-visit.css'
 export function ParticipantVisit({ identityId, raid, point }: { identityId: string; raid: RaidProjection; point: RaidMapPoint }) {
   const marked = new Set(point.lastVisitParticipantIds ?? [])
   const members = raid.participants.filter(member => member.state === 'active' || marked.has(member.id))
-  const time = point.lastVisitedAt ? new Date(point.lastVisitedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : null
+  const time = point.lastVisitedAt ? new Date(point.lastVisitedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
   return <section className="participant-visit" aria-label="Отметка команды">
     <p className={`participant-visit__status${marked.has(identityId) ? ' participant-visit__status--marked' : ''}`}>
       {point.lastAttemptId ? marked.has(identityId) ? 'Вы отмечены' : 'Вас нет в последней отметке' : 'Ждём отметку навигатора'}{time && <span> · {time}</span>}
