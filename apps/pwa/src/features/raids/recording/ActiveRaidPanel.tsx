@@ -4,6 +4,7 @@ import type { RaidMapPoint, RaidProjection } from '../types'
 import type { CheckInResponse } from '../../checkins/types'
 import { PointInfoSheet } from '../../checkins/PointInfoSheet'
 import { ParticipantVisit } from '../../checkins/ParticipantVisit'
+import { NavigatorVisitNotice } from '../../checkins/NavigatorVisitNotice'
 import { newPersonalVisit } from '../../checkins/visit-notifications'
 import { PointVisitHistory } from '../../checkins/PointVisitHistory'
 import { PointMaterialsPanel } from '../../checkins/PointMaterialsPanel'
@@ -212,8 +213,12 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
 
   return <section className="raid-active-map" aria-label={`Активный рейд ${raid.title}`}>
     <RaidRouteMap identityId={identityId} navigatorUserId={raid.navigatorUserId} navigatorSampleAt={raid.routeStatus.lastSampleAt}
+      localRoutePreview={viewerIsNavigator && recorder.phase === 'fresh'}
       planned={Boolean(raid.routeTemplateId)} destinationPointId={destination?.pointSnapshotId ?? null}
       highlightedPointId={activePoint?.pointSnapshotId ?? null} live={raid.state === 'active'} location={proximity.coordinate} raidId={raid.id} onSelectPoint={inspectPoint} onMapTap={() => { setSheetOpen(false); setHistoryOpen(false) }} />
+    <NavigatorVisitNotice key={`${identityId}:${raid.id}`} identityId={identityId} raidId={raid.id}
+      points={field.data?.points} enabled={viewerIsNavigator && activeMember && !field.denied && raid.state === 'active'}
+      visible={!actionsOpen && !historyOpen && !(sheetOpen && arrivalAvailable)} onOpen={inspectPoint} />
     <span className="visit-toast-announcement" role="status" aria-atomic="true">{visitNotice ? `Вас отметили на точке ${visitNotice.name}${visitNotice.lastVisitedAt ? `, ${new Date(visitNotice.lastVisitedAt).toLocaleTimeString('ru-RU')}` : ''}` : ''}</span>
     {visitNotice && activeMember && !field.denied && !actionsOpen && !historyOpen && <section className="visit-toast" aria-label="Новая отметка">
       <button className="visit-toast__open" type="button" onClick={() => { inspectPoint(visitNotice); setVisitNotice(null) }}>

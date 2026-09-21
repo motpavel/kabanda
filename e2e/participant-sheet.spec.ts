@@ -91,3 +91,48 @@ test('navigator sees the five-minute repeat lock and map tap dismisses the sheet
  await page.locator('.route-live-map').click({position:{x:35,y:260}});
  await expect(sheet).toBeHidden();
 });
+
+// Snapshot-driven UI contract; field-sync-server separately proves the real
+// command is accepted before this notice, with its photo still uploading.
+test('navigator confirmation opens the same point and deduplicates polling, repeats and reload', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
+  const controls = await prepare(page, true)
+  const success = page.getByRole('region', { name: 'Успешная отметка навигатора' })
+  await expect(success).toHaveCount(0)
+  controls.mark('navigator-first')
+  await expect(success.getByText('Точка отмечена!', { exact: true })).toBeVisible()
+  await expect(page.getByText('Вас отметили на точке', { exact: true })).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('navigator-success.png'), animations: 'disabled' })
+  await success.getByRole('button', { name: /Точка отмечена! Лесное озеро/ }).click()
+  const sheet = page.locator('.point-info-sheet')
+  await expect(sheet.getByRole('heading', { name: 'Лесное озеро', exact: true })).toBeVisible()
+  await expect(sheet.locator('.raid-arrival-sheet__footer')).toBeInViewport()
+  await sheet.getByRole('button', { name: 'Свернуть точку' }).click()
+  controls.mark('navigator-first') // Same receipt, changed response/timestamp.
+  for (let i = 0; i < 2; i++) await page.waitForResponse(response => response.url().includes('/fast/live') && response.ok())
+  await expect(success).toHaveCount(0)
+  controls.mark('navigator-second')
+  await expect(success).toBeVisible()
+  await success.getByRole('button', { name: 'Закрыть подтверждение навигатора' }).click()
+  await page.reload()
+  for (let i = 0; i < 2; i++) await page.waitForResponse(response => response.url().includes('/fast/live') && response.ok())
+  await expect(success).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('navigator notice respects reduced motion and stays usable on a small screen', async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const controls = await prepare(page, true)
+  await page.setViewportSize({ width: 320, height: 568 })
+  controls.mark('small-screen')
+  const success = page.getByRole('region', { name: 'Успешная отметка навигатора' })
+  await expect(success).toBeVisible()
+  await expect(success).toHaveCSS('animation-name', 'none')
+  await expect(success.locator('.visit-toast__icon')).toHaveCSS('animation-name', 'none')
+  const close = success.getByRole('button', { name: 'Закрыть подтверждение навигатора' })
+  await expect(close).toBeInViewport()
+  const box = await close.boundingBox(); expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: info.outputPath('navigator-success-320-reduced.png') })
+  await close.click(); await expect(success).toHaveCount(0)
+})
