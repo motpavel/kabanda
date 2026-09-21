@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CachedImage } from '../../lib/CachedImage'
 import { RaidControlIcon } from '../raids/RaidControlIcon'
@@ -14,7 +15,7 @@ import type { CheckInResponse } from './types'
 export function TeamVisitPanel(props: {
   identityId: string; raid: RaidProjection; point: StopPoint; positions: readonly LivePosition[]
   operations: readonly FieldOperation[]; visible: boolean; stale: boolean; repeat: boolean
-  onAccepted: () => void; onManual: () => void
+  onAccepted: () => void; onManual: () => void; actionContainer?: HTMLElement | null
 }) {
   const { identityId, raid, point, positions, operations, visible, stale, repeat, onAccepted, onManual } = props
   const [selected, setSelected] = useState<string[]>([identityId])
@@ -92,6 +93,10 @@ export function TeamVisitPanel(props: {
     } finally { if (mounted.current) setBusy(false) }
   }
 
+  const primaryButton = <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
+      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Пометить точку'}
+    </button>
+
   return <section className="checkin-panel checkin-panel--map checkin-panel--team" aria-label="Командное посещение">
     <fieldset className="checkin-participants"><legend>Кто сейчас здесь?</legend>
       {members.map(member => <label key={member.id}>
@@ -110,8 +115,6 @@ export function TeamVisitPanel(props: {
       ? current?.status === 'retryable' ? 'Связь задерживается. Повторим эту же операцию автоматически.'
         : current?.status === 'sending' ? 'Ожидаем подтверждение сервера…' : 'Посещение сохранено на телефоне. Отправляем при наличии связи.'
       : message}</p>}
-    <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
-      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Пометить точку'}
-    </button>
+    {props.actionContainer ? createPortal(primaryButton, props.actionContainer) : primaryButton}
   </section>
 }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
 import { ApiError, requestJson } from '../../lib/http'
 import { CachedImage, clearPrivateImageCache } from '../../lib/CachedImage'
 import { getActiveIdentityId } from '../offline/ledger'
@@ -24,6 +24,7 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
 }) {
   const [composerOpen, setComposerOpen] = useState(false)
   const composerId = useId()
+  const commentRef = useRef<HTMLTextAreaElement>(null)
   const [items, setItems] = useState<PointMaterial[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -93,6 +94,30 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
     return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume) }
   }, [scope, visible, accepted])
 
+  useLayoutEffect(() => {
+    const input = commentRef.current
+    if (!compact || !composerOpen || !visible || !input) return
+    const resize = () => {
+      input.style.height = 'auto'
+      input.style.height = `${input.scrollHeight + 2}px`
+    }
+    resize()
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width
+      if (width !== lastWidth) { lastWidth = width; resize() }
+    })
+    let lastWidth = input.getBoundingClientRect().width
+    observer.observe(input)
+    return () => observer.disconnect()
+  }, [compact, composerOpen, visible, text])
+
+  useLayoutEffect(() => {
+    if (compact && composerOpen && visible) {
+      commentRef.current?.focus({ preventScroll: true })
+      commentRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [compact, composerOpen, visible])
+
   const save = async (file?: File) => {
     if (busy || !canWrite || denied || (!file && !text.trim())) return
     const current = generation.current
@@ -127,7 +152,7 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       </button>
     </div>}
     {compact && canWrite && !denied && <div id={composerId} className="point-materials__compose" hidden={!composerOpen}>
-      <label>Комментарий<textarea autoFocus={composerOpen} maxLength={2000} rows={3} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
+      <label>Комментарий<textarea ref={commentRef} maxLength={2000} rows={2} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
       <button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
     </div>}
     {(!compact || items.length > 0) && <details className="point-materials__history" open={compact ? undefined : true}>

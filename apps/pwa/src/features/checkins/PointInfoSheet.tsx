@@ -14,6 +14,6 @@ export function PointInfoSheet({ open, onClose, title, kicker, distance, childre
       <div>{kicker && <small>{kicker}</small>}<h2>{title}</h2></div>
       {distance && <span className="raid-arrival-sheet__distance">{distance.value}<small>{distance.unit}</small></span>}
     </div>
-    {children}
+    <div className="raid-arrival-sheet__body">{children}</div>
   </aside>
 }

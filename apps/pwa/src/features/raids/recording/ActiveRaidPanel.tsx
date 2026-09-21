@@ -38,6 +38,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const viewerIsNavigator = raid.navigatorUserId === identityId
   const viewerIsOrganizer = raid.organizerUserId === identityId
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [arrivalActions, setArrivalActions] = useState<HTMLDivElement | null>(null)
   const [checkInNotice, setCheckInNotice] = useState<{ text: string } | null>(null)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
@@ -235,19 +236,22 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       <button className="raid-arrival-sheet__collapse" data-sheet-drag="true" aria-label="Свернуть подтверждение точки" onClick={() => setSheetOpen(false)} type="button"><span /></button>
       <div className="raid-arrival-sheet__heading" data-sheet-drag="true"><div><h2>{activePoint?.name ?? 'Сохранённые отметки'}</h2></div>
         {activePoint && <span className="raid-arrival-sheet__distance">{Math.round(activePoint.distanceMeters)}<small>метров</small></span>}</div>
+      <div className="raid-arrival-sheet__body">
       {fieldMode && activePoint && viewerIsNavigator && !showLegacy && <TeamVisitPanel key={`${identityId}:${raid.id}:${activePoint.pointSnapshotId}:${repeatArrival ? activePoint.lastAttemptId ?? 'repeat' : 'first'}`}
         identityId={identityId} raid={raid} point={activePoint} positions={field.data?.positions ?? []} operations={queue.rows}
-        visible={sheetOpen} stale={staleProjection || field.denied} repeat={repeatArrival} onAccepted={onCheckInSaved} onManual={onManual} />}
+        actionContainer={arrivalActions} visible={sheetOpen} stale={staleProjection || field.denied} repeat={repeatArrival} onAccepted={onCheckInSaved} onManual={onManual} />}
       <div hidden={fieldMode && !showLegacy}>
         <CheckInPanel key={`${identityId}:${raid.id}:${legacyEpoch}`} visible={sheetOpen && showLegacy} identityId={identityId}
           nearbyPoints={!fieldMode && activePoint ? [activePoint] : []} onRefused={onCheckInRefused} onAttentionChange={setCheckInAttention}
-          onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid}
+          actionContainer={arrivalActions} onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid}
           staleProjection={staleProjection} repeatVisit={!fieldMode && repeatArrival} onSaved={onCheckInSaved} />
       </div>
       {fieldMode && activePoint && <PointMaterialsPanel compact key={`arrival:${identityId}:${raid.id}:${activePoint.pointSnapshotId}`}
         identityId={identityId} kabandaId={raid.kabandaId} raidId={raid.id} pointId={activePoint.pointSnapshotId}
         visible={sheetOpen} canWrite={activeMember && !field.denied} operations={queue.rows} />}
       {fieldMode && !activePoint && totalPending > 0 && <p role="status">Сохранено на телефоне: {totalPending}. Отправка продолжится автоматически.</p>}
+      </div>
+      <div className="raid-arrival-sheet__footer" ref={setArrivalActions} />
     </aside>
     <PointInfoSheet open={historyOpen && !actionsOpen} onClose={() => setHistoryOpen(false)} title={latestHistoryPoint?.name ?? ''}
       kicker={latestHistoryPoint?.id === destination?.pointSnapshotId ? 'ДВИГАЕМСЯ СЮДА' : undefined} distance={inspectedDistanceLabel}>

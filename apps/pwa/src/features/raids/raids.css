@@ -982,7 +982,7 @@
 }
 
 .raid-arrival-sheet[hidden] { display: none; }
-.raid-arrival-sheet--checkin { max-height: min(84dvh, 760px); }
+.raid-arrival-sheet--checkin { bottom: var(--sheet-keyboard-inset, 0px); max-height: calc(var(--sheet-viewport-height, 100dvh) - 24px - env(safe-area-inset-top)); }
 
 .raid-active-map .raid-arrival-sheet__collapse {
   display: grid;
@@ -1217,7 +1217,14 @@
 .checkin-participant__avatar img { width: 100%; height: 100%; object-fit: cover; }
 
 /* Keep the materials composer mounted when a visit needs manual verification. */
-.raid-arrival-sheet--checkin:not([hidden]) { display: flex; flex-direction: column; }
-.checkin-panel--team { display: contents; }
-.checkin-panel--team > .raid-primary { order: 2; margin-top: 16px; flex-shrink: 0; }
-.raid-arrival-sheet--checkin > .point-materials { margin-top: 16px; }
+.raid-arrival-sheet--checkin:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+
+
+.raid-arrival-sheet__body > .point-materials { margin-top: 16px; }
+
+.raid-arrival-sheet__body { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; overflow-x: hidden; scroll-padding-block: 12px; }
+.raid-arrival-sheet--checkin > .raid-arrival-sheet__collapse,
+.raid-arrival-sheet--checkin > .raid-arrival-sheet__heading { flex-shrink: 0; }
+.raid-arrival-sheet__footer { flex-shrink: 0; padding-top: 16px; background: #fff; }
+.raid-arrival-sheet__footer:empty { display: none; }
+.raid-arrival-sheet__footer .raid-primary { position: static; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 54px; margin: 0; border-radius: 14px; border-color: #c93e32; background: #c93e32; font-size: 1rem; }

@@ -51,6 +51,34 @@ export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: (
     return () => { cancelAnimationFrame(frame); window.clearTimeout(timer) }
   }, [open])
 
+  useLayoutEffect(() => {
+    const element = ref.current
+    const viewport = window.visualViewport
+    if (!element || !open || !viewport) return
+    let frame = 0
+    const fitViewport = () => {
+      // Pin the sheet above the software keyboard without reacting to pinch zoom.
+      if (viewport.scale !== 1) return
+      element.style.setProperty('--sheet-viewport-height', `${viewport.height}px`)
+      element.style.setProperty('--sheet-keyboard-inset', `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`)
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const focused = document.activeElement
+        if (focused instanceof HTMLTextAreaElement && element.contains(focused)) focused.scrollIntoView({ block: 'nearest' })
+      })
+    }
+    fitViewport()
+    viewport.addEventListener('resize', fitViewport)
+    viewport.addEventListener('scroll', fitViewport)
+    window.addEventListener('resize', fitViewport)
+    return () => {
+      cancelAnimationFrame(frame)
+      viewport.removeEventListener('resize', fitViewport)
+      viewport.removeEventListener('scroll', fitViewport)
+      window.removeEventListener('resize', fitViewport)
+    }
+  }, [open])
+
   const reset = () => {
     const element = ref.current
     if (!element) return

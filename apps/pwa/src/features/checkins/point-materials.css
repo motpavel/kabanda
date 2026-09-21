@@ -26,3 +26,5 @@
 @media (max-width: 360px) {
   .point-materials__actions > button, .point-materials__actions > .point-materials__photo { gap: 5px; font-size: .77rem; }
 }
+
+.point-materials--compact .point-materials__compose textarea { min-height: 0; line-height: 1.4; font-size: 16px; resize: none; overflow-y: hidden; }

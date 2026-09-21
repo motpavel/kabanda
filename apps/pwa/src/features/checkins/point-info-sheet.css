@@ -10,3 +10,7 @@
 .point-info-sheet .raid-arrival-sheet__heading h2 { margin: 5px 0 0; font-size: 1.2rem; line-height: 1.2; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .point-info-sheet [data-sheet-drag] { touch-action: none; user-select: none; }
 .point-info-sheet .kb-point-hours { margin: 0 0 12px; padding: 0; border: 0; }
+
+.kb-shell .point-info-sheet:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; bottom: var(--sheet-keyboard-inset, 0px); max-height: calc(var(--sheet-viewport-height, 100dvh) - 24px - env(safe-area-inset-top)); }
+.point-info-sheet > .raid-arrival-sheet__collapse,
+.point-info-sheet > .raid-arrival-sheet__heading { flex-shrink: 0; }

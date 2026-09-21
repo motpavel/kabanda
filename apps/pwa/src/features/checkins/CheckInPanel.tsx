@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { CachedImage } from '../../lib/CachedImage'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
@@ -60,6 +61,7 @@ function activeParticipants(raid: RaidProjection): RaidParticipant[] {
 }
 
 export function CheckInPanel({
+  actionContainer,
   identityId,
   raid,
   staleProjection,
@@ -81,6 +83,7 @@ export function CheckInPanel({
   onCanonicalRefresh: () => Promise<unknown>
   serverTailOnly?: boolean
   nearbyPoints?: NearbyPoint[]
+  actionContainer?: HTMLElement | null
   presentation?: 'card' | 'map-sheet'
   visible?: boolean
   onPendingChange?: (count: number) => void
@@ -510,6 +513,8 @@ export function CheckInPanel({
   const primaryRequiresOnline = Boolean(pendingClaim || pendingFallback || manualResponse || (viewerIsOrganizer && !selectedPointId))
   const gallery = media.length > 0 && <div className="checkin-gallery">{media.map((item) => <figure key={item.id}><CachedImage identityId={identityId} src={mediaContentUrl(raid.id, item.id)} alt={item.caption || 'Фото рейда'} loading="lazy" /><figcaption>{item.caption || 'Без подписи'}</figcaption></figure>)}</div>
 
+  const primaryButton = primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || (staleProjection && !(primaryKind === 'check_in' && canEnqueue)) || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>
+
   return (
     <section className={`${presentation === 'map-sheet' ? 'checkin-panel checkin-panel--map' : 'kb-card checkin-panel'}`}>
       <div className="kb-section-head">
@@ -578,7 +583,7 @@ export function CheckInPanel({
       )}
 
       {presentation !== 'map-sheet' && gallery}
-      {primary && <button className="kb-primary raid-primary" type="button" disabled={Boolean(busy) || (staleProjection && !(primaryKind === 'check_in' && canEnqueue)) || (primaryRequiresOnline && !navigator.onLine)} onClick={primary.action}>{busy ? 'Подтверждаем…' : primary.label}</button>}
+      {actionContainer ? (visible ? createPortal(primaryButton, actionContainer) : null) : primaryButton}
     </section>
   )
 }
