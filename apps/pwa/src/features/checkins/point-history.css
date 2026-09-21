@@ -1,4 +1,4 @@
-.point-visit-history { width: 100%; min-width: 0; color: #202522; font-size: .85rem; line-height: 1.45; }
+.point-visit-history { width: 100%; min-width: 0; color: #202522; font-size: 1rem; line-height: 1.45; }
 .point-visit-history > header { padding: 2px 0 14px; }
 .point-visit-history h3 { margin: 0; font-size: 1rem; font-weight: 750; letter-spacing: -.02em; }
 .point-visit-history__people { list-style: none; margin: 0; padding: 0; }
@@ -8,10 +8,10 @@
 .kb-shell .point-visit-history__person:active { background: #f0f2ef; transform: none; }
 .kb-shell .point-visit-history__person:disabled { opacity: 1; background: transparent; cursor: default; }
 .point-visit-history__person:focus-visible { outline: 2px solid #c6342d; outline-offset: 2px; }
-.point-visit-history__avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; background: #f0f2ef; color: #58635c; font-size: .8rem; font-weight: 700; }
+.point-visit-history__avatar { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border-radius: 50%; background: #f0f2ef; color: #58635c; font-size: .9375rem; font-weight: 700; }
 .point-visit-history__avatar--self { background: #fff0ed; color: #c6342d; }
 .point-visit-history__name { min-width: 0; flex: 1; overflow-wrap: anywhere; font-weight: 650; }
-.point-visit-history__total { flex-shrink: 0; color: #26734b; font-weight: 650; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.point-visit-history__total { flex-shrink: 0; color: #b9362c; font-weight: 650; font-size: .9375rem; font-variant-numeric: tabular-nums; }
 .point-visit-history__chevron { flex: 0 0 16px; color: #929a94; transition: transform 180ms ease; }
 .point-visit-history__person[aria-expanded='true'] .point-visit-history__chevron { transform: rotate(180deg); }
 .point-visit-history__person:disabled .point-visit-history__total { margin-right: 28px; }
@@ -23,7 +23,7 @@
 .point-visit-history__visits a > span { color: #929a94; font-size: 1.2rem; font-weight: 400; }
 .point-visit-history__visits a:hover { color: #b72d28; }
 .point-visit-history__visits a:focus-visible { outline: 2px solid #c6342d; outline-offset: 3px; }
-.point-visit-history__visits p { margin: 3px 0 0; color: #6d7470; font-size: .73rem; line-height: 1.55; font-variant-numeric: tabular-nums; }
+.point-visit-history__visits p { margin: 3px 0 0; color: #6d7470; font-size: .8125rem; line-height: 1.55; font-variant-numeric: tabular-nums; }
 .point-visit-history button { min-height: 44px; font: inherit; }
 .point-visit-history__more { width: 100%; margin-top: 8px; }
 .point-visit-history__loading { display: grid; gap: 12px; padding: 20px 0; }
@@ -52,9 +52,9 @@
   .raid-live-point--destination::after { animation: none; transform: translate(-50%, -50%) scale(2.6); opacity: .15; }
 }
 
-.raid-point-history-sheet .point-visit-history__people { width: calc(100% + 40px); margin-inline: -20px; }
-.raid-point-history-sheet .point-visit-history__person { padding-inline: 20px; }
-.raid-point-history-sheet .point-visit-history__detail { padding-inline: 32px 20px; }
+.raid-point-history-sheet .point-visit-history__people { width: 100%; margin: 0; }
+.raid-point-history-sheet .point-visit-history__person { padding-inline: 0; }
+.raid-point-history-sheet .point-visit-history__detail { padding-inline: 12px 0; }
 .point-visit-history__visits .point-visit-history__raid { width: 100%; min-height: 52px; }
 .point-visit-history__raid > span:first-child { min-width: 0; color: inherit; font: inherit; }
-.point-visit-history__raid time { display: block; margin-top: 4px; color: #6d7470; font-size: .73rem; font-weight: 400; line-height: 1.55; }
+.point-visit-history__raid time { display: block; margin-top: 4px; color: #6d7470; font-size: .8125rem; font-weight: 400; line-height: 1.55; }

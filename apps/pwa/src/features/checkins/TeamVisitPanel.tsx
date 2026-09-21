@@ -62,6 +62,7 @@ export function TeamVisitPanel(props: {
     }
     if (current.lastError === 'TEAM_VISIT_ALREADY_CONFIRMED') { onAccepted(); return }
     setMessage(current.lastError === 'NAVIGATOR_REQUIRED' ? 'Навигатор сменился. Посещение подтверждает новый навигатор.'
+      : current.lastError === 'TEAM_VISIT_COOLDOWN' ? 'Эту точку уже пометили. Повторная отметка доступна через 5 минут после предыдущей.'
       : current.lastError === 'ATTENDANCE_CHANGED' ? 'Состав изменился. Проверьте участников перед новой попыткой.'
         : 'Сервер не подтвердил посещение. Проверьте состав и повторите.')
   }, [current, onAccepted, onManual])
@@ -94,7 +95,7 @@ export function TeamVisitPanel(props: {
   }
 
   const primaryButton = <button type="button" className="kb-primary raid-primary" disabled={busy || sending || (repeat && !previousAttemptId.current)} onClick={() => void submit()}>
-      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Подтвердить новый визит' : 'Пометить точку'}
+      <RaidControlIcon name="finish" />{busy ? 'Проверяем координату…' : sending ? 'Отправляем посещение…' : repeat ? 'Пометить точку снова' : 'Пометить точку'}
     </button>
 
   return <section className="checkin-panel checkin-panel--map checkin-panel--team" aria-label="Командное посещение">

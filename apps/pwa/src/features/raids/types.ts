@@ -151,6 +151,11 @@ export interface RaidMapPoint {
   position: number
   visitedByMe: boolean
   visitedByTeam: boolean
+  lastAttemptId?: string | null
+  lastVisitedAt?: string | null
+  repeatAvailableAt?: string | null
+  lastVisitParticipantIds?: string[]
+  myLastVisitAttemptId?: string | null
 }
 
 export interface RaidPresenceRoster {
