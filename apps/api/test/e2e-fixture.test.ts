@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Pool } from 'pg'
 import {
   assertE2EDatabaseGuard,
+  ageE2EPointVisit,
   requireE2EDatabaseUrl,
   requireE2ERunnerEnvironment,
 } from '../src/e2e-fixture.js'
@@ -21,6 +22,21 @@ function guardPool(row: Record<string, unknown>): Pool {
 }
 
 describe('fail-closed E2E database guard', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('refuses visit time travel outside the guarded synthetic test environment', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('KABANDA_E2E', 'true')
+    await expect(ageE2EPointVisit(validEnvironment.E2E_RUN_ID, validUrl, validEnvironment.E2E_RUN_ID)).rejects.toThrow('E2E test runner')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('KABANDA_E2E', 'false')
+    await expect(ageE2EPointVisit(validEnvironment.E2E_RUN_ID, validUrl, validEnvironment.E2E_RUN_ID)).rejects.toThrow('E2E test runner')
+    vi.stubEnv('KABANDA_E2E', 'true')
+    await expect(ageE2EPointVisit('invalid', validUrl, validEnvironment.E2E_RUN_ID)).rejects.toThrow('raidId must be a UUID')
+    await expect(ageE2EPointVisit(validEnvironment.E2E_RUN_ID, validUrl, 'invalid')).rejects.toThrow('E2E_RUN_ID must be a UUID')
+    await expect(ageE2EPointVisit(validEnvironment.E2E_RUN_ID, validUrl.replace('127.0.0.1', 'db.internal'), validEnvironment.E2E_RUN_ID)).rejects.toThrow('host must be loopback')
+  })
+
   it('accepts only an exact loopback, least-privilege credential', () => {
     expect(requireE2EDatabaseUrl(validUrl)).toBe(validUrl)
     expect(() => requireE2EDatabaseUrl(validUrl.replace('127.0.0.1', 'db.internal')))

@@ -26,7 +26,7 @@ function requireRunId(): string {
 }
 
 export function fixture<T>(
-  command: 'prepare' | 'attach-point' | 'attach-catalogue' | 'inspect-raid',
+  command: 'prepare' | 'attach-point' | 'attach-catalogue' | 'inspect-raid' | 'age-point-visit',
   ...arguments_: string[]
 ): T {
   const runId = requireRunId()
