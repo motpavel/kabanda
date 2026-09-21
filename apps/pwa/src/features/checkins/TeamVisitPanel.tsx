@@ -15,9 +15,9 @@ import type { CheckInResponse } from './types'
 export function TeamVisitPanel(props: {
   identityId: string; raid: RaidProjection; point: StopPoint; positions: readonly LivePosition[]
   operations: readonly FieldOperation[]; visible: boolean; stale: boolean; repeat: boolean
-  onAccepted: () => void; onManual: () => void; actionContainer?: HTMLElement | null
+  onAccepted: () => void; actionContainer?: HTMLElement | null
 }) {
-  const { identityId, raid, point, positions, operations, visible, stale, repeat, onAccepted, onManual } = props
+  const { identityId, raid, point, positions, operations, visible, stale, repeat, onAccepted } = props
   const [selected, setSelected] = useState<string[]>([identityId])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -56,8 +56,7 @@ export function TeamVisitPanel(props: {
     const response = current.response as CheckInResponse | undefined
     if (response?.outcome === 'accepted') { onAccepted(); return }
     if (response?.outcome === 'needs_manual_verification') {
-      setMessage(checkInRefusalMessage(response.reason))
-      if (response.reason !== 'too_far') onManual()
+      setMessage(response.reason === 'accuracy_insufficient' ? 'Не удалось точно определить ваше положение. Дождитесь GPS-сигнала и повторите отметку.' : checkInRefusalMessage(response.reason))
       return
     }
     if (current.lastError === 'TEAM_VISIT_ALREADY_CONFIRMED') { onAccepted(); return }
@@ -65,7 +64,7 @@ export function TeamVisitPanel(props: {
       : current.lastError === 'TEAM_VISIT_COOLDOWN' ? 'Эту точку уже пометили. Повторная отметка доступна через 5 минут после предыдущей.'
       : current.lastError === 'ATTENDANCE_CHANGED' ? 'Состав изменился. Проверьте участников перед новой попыткой.'
         : 'Сервер не подтвердил посещение. Проверьте состав и повторите.')
-  }, [current, onAccepted, onManual])
+  }, [current, onAccepted])
 
   const submit = async () => {
     if (!visible || busy || sending || raid.state !== 'active' || raid.navigatorUserId !== identityId || !activeIds.has(identityId)) return

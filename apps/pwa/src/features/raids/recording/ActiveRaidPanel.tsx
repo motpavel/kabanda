@@ -47,7 +47,8 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   useEffect(() => {
     const key = `${identityId}:${raid.id}`
     if (visitBaseline.current.key !== key) { visitBaseline.current = { key, visits: null }; setVisitNotice(null) }
-    if (!field.data?.points || field.denied) return
+    if (field.denied || !activeMember) { setVisitNotice(null); return }
+    if (!field.data?.points) return
     const update = newPersonalVisit(field.data.points, visitBaseline.current.visits)
     visitBaseline.current.visits = update.next
     if (update.point && !viewerIsNavigator && activeMember) setVisitNotice(update.point)
@@ -66,9 +67,6 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const [selectedArrivalId, setSelectedArrivalId] = useState<string | null>(null)
   const [handledDestination, setHandledDestination] = useState('')
   const [stop, setStop] = useState<StopContext | null>(null)
-  const [manualMode, setManualMode] = useState(false)
-  const [legacyEpoch, setLegacyEpoch] = useState(0)
-  const hadLegacyAttention = useRef(false)
   const [destinationBusy, setDestinationBusy] = useState(false)
   const [destinationError, setDestinationError] = useState<string | null>(null)
   const destinationAttempt = useRef<{ pointSnapshotId: string; expectedVersion: number; operationId: string } | null>(null)
@@ -148,7 +146,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const showRecovery = viewerIsNavigator && raid.state === 'active' && primary === 'recover' && (recorder.phase === 'standby' || recorder.phase === 'error')
   const recoveryLabel = recorder.phase === 'standby' ? 'Продолжить запись здесь' : 'Повторить сохранение'
   const legacyAttention = Boolean(checkInAttention.actionKey)
-  const showLegacy = viewerIsNavigator && (!fieldMode || manualMode || legacyAttention)
+  const showLegacy = viewerIsNavigator && (!fieldMode || legacyAttention)
   const arrivalAvailable = raid.state === 'active' && Boolean(activePoint || checkInAttention.count || queue.pendingCount)
   const actionsSheet = useSlideSheet<HTMLDialogElement>(actionsOpen, () => setActionsOpen(false))
   const arrivalSheet = useSlideSheet<HTMLElement>(sheetOpen && arrivalAvailable && !inspectedPoint && !actionsOpen, () => setSheetOpen(false))
@@ -170,10 +168,8 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   useEffect(() => {
     if (!checkInAttention.actionKey) {
       lastPresentedAttention.current = ''
-      if (hadLegacyAttention.current) { setManualMode(false); hadLegacyAttention.current = false }
       return
     }
-    hadLegacyAttention.current = true
     if (checkInAttention.actionKey === lastPresentedAttention.current) return
     lastPresentedAttention.current = checkInAttention.actionKey; setSheetOpen(true)
   }, [checkInAttention.actionKey])
@@ -186,14 +182,13 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
     : Boolean(!raid.routeTemplateId && activePoint?.creditedByMe && (destinationIsArrival || repeatPointId === activePoint.pointSnapshotId))
   const onCheckInSaved = useCallback(() => {
     if (destinationIsArrival) setHandledDestination(currentDestinationKey)
-    setSelectedArrivalId(null); setRepeatPointId(null); setStop(null); setSheetOpen(false); setManualMode(false)
+    setSelectedArrivalId(null); setRepeatPointId(null); setStop(null); setSheetOpen(false)
     void field.refresh(true).catch(() => undefined)
   }, [destinationIsArrival, currentDestinationKey, field.refresh])
   const onCheckInRefused = useCallback((text: string) => {
     setCheckInNotice({ text }); setSheetOpen(false); setRepeatPointId(null); setStop(null)
     void proximity.refresh()
   }, [proximity.refresh])
-  const onManual = useCallback(() => { setManualMode(true); setLegacyEpoch(value => value + 1); setSheetOpen(true) }, [])
   const chooseDestination = async () => {
     if (!latestHistoryPoint || destinationBusy || staleProjection || !navigator.onLine || !viewerIsNavigator) return
     if (destinationAttempt.current?.pointSnapshotId !== latestHistoryPoint.id) destinationAttempt.current = {
@@ -270,9 +265,9 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       <div className="raid-arrival-sheet__body">
       {fieldMode && activePoint && viewerIsNavigator && !showLegacy && <TeamVisitPanel key={`${identityId}:${raid.id}:${activePoint.pointSnapshotId}:${repeatArrival ? activePoint.lastAttemptId ?? 'repeat' : 'first'}`}
         identityId={identityId} raid={raid} point={activePoint} positions={field.data?.positions ?? []} operations={queue.rows}
-        actionContainer={arrivalActions} visible={sheetOpen} stale={staleProjection || field.denied} repeat={repeatArrival} onAccepted={onCheckInSaved} onManual={onManual} />}
+        actionContainer={arrivalActions} visible={sheetOpen} stale={staleProjection || field.denied} repeat={repeatArrival} onAccepted={onCheckInSaved} />}
       {viewerIsNavigator && <div hidden={fieldMode && !showLegacy}>
-        <CheckInPanel key={`${identityId}:${raid.id}:${legacyEpoch}`} visible={sheetOpen && showLegacy} identityId={identityId}
+        <CheckInPanel key={`${identityId}:${raid.id}`} visible={sheetOpen && showLegacy} identityId={identityId}
           nearbyPoints={!fieldMode && activePoint ? [activePoint] : []} onRefused={onCheckInRefused} onAttentionChange={setCheckInAttention}
           actionContainer={arrivalActions} onCanonicalRefresh={refreshAfterCheckIn} onPendingChange={setPendingCheckIns} presentation="map-sheet" raid={raid}
           staleProjection={staleProjection} repeatVisit={!fieldMode && repeatArrival} onSaved={onCheckInSaved} />
@@ -291,7 +286,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
           {repeatWait > 0 && <p className="point-repeat-wait" aria-live="off">Повторная отметка через {Math.floor(repeatWait / 60)}:{String(repeatWait % 60).padStart(2, '0')}</p>}
           <button type="button" className="kb-primary raid-primary" disabled={totalPending > 0 || repeatWait > 0} onClick={() => {
             setRepeatPointId(inspectedVisited ? latestHistoryPoint.id : null); setSelectedArrivalId(latestHistoryPoint.id)
-            setStop({ point: inspectedNearby, outsideSince: null, lastOutsideFix: null }); setHistoryOpen(false); setSheetOpen(true); setManualMode(false)
+            setStop({ point: inspectedNearby, outsideSince: null, lastOutsideFix: null }); setHistoryOpen(false); setSheetOpen(true)
           }}>{inspectedVisited ? 'Пометить точку снова' : 'Пометить точку'}</button>
         </> : <>
           {destinationError && <p className="kb-error" role="alert">{destinationError}</p>}
@@ -307,7 +302,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
         <details key={`visits:${latestHistoryPoint.id}:${viewerIsNavigator}`} className="point-history-disclosure" open={viewerIsNavigator || undefined}>
           <summary>История посещений</summary>
           <PointVisitHistory key={`${identityId}:${latestHistoryPoint.sourcePointId}:${latestHistoryPoint.lastAttemptId ?? inspectedVisited}`} identityId={identityId} kabandaId={raid.kabandaId}
-            pointId={latestHistoryPoint.sourcePointId} currentRaidId={raid.id} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen} />
+            pointId={latestHistoryPoint.sourcePointId} currentRaidId={raid.id} showHeading={false} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen} />
         </details>
       </>}
     </PointInfoSheet>
