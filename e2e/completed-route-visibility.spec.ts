@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { installYandexMapsMock } from './support.js'
+import type { PointVisitHistory } from '../packages/contracts/src/index.js'
 import type { RaidMapPoint, RaidProjection, RouteTrackProjection } from '../apps/pwa/src/features/raids/types.js'
 
 const userId = '11111111-1111-4111-8111-111111111111'
@@ -34,11 +35,22 @@ const points: RaidMapPoint[] = [
   latitude: Number(latitude), longitude: Number(longitude), position: index,
 }))
 const metrics = { durationSeconds: 120, distanceMeters: 1000, uniquePoints: 3, photos: 0 }
+const history: PointVisitHistory = {
+  visitors: [{ userId: navigatorId, displayName: 'Навигатор', count: 1 }],
+  personalCount: 0, nextOffset: null,
+  entries: [{ id: '77777777-7777-4777-8777-777777777777', raidId, title: base.title, state: 'completed',
+    visitedAt: at, mine: false, personalVisits: 0,
+    visits: [{ id: '88888888-8888-4888-8888-888888888888', userId: navigatorId,
+      displayName: 'Навигатор', visitedAt: at, source: 'raid' }],
+    participants: [{ userId: navigatorId, displayName: 'Навигатор' }] }],
+}
 type Camera = { center: number[]; zoom: number }
 
 test.use({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', serviceWorkers: 'block' })
 
 async function prepare(page: Page, options: { active?: boolean; emptyVisits?: boolean; delayedTrack?: boolean } = {}) {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
   await installYandexMapsMock(page.context())
   // Record actual camera calls at the provider boundary. Either order of the
   // context/page init scripts is supported; no production state is replaced.
@@ -79,6 +91,7 @@ async function prepare(page: Page, options: { active?: boolean; emptyVisits?: bo
           participants: [{ userId, displayName: 'Участник', metrics }] } }
       : path.endsWith('/live') || path === `/api/raids/${raidId}` ? { raid, points: rows,
           teamVisits: false, fieldVisible: true, ...(options.delayedTrack ? {} : { track }) }
+      : path.startsWith(`/api/kabandas/${teamId}/points/`) && path.endsWith('/history') ? history
       : path.endsWith('/map-points') ? { points: rows }
       : path.endsWith('/media') ? { media: [], nextCursor: null }
       : path.endsWith('/check-ins/nearby') ? { policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 }, points: [] }
@@ -92,7 +105,7 @@ async function prepare(page: Page, options: { active?: boolean; emptyVisits?: bo
     return route.fulfill({ json: body })
   })
   await page.goto(`/app?raid=${raidId}`)
-  return { release, requestedTrack: () => requestedTrack }
+  return { release, requestedTrack: () => requestedTrack, errors }
 }
 const cameras = (page: Page) => page.evaluate(() => (window as unknown as { __overviewCameras: Camera[] }).__overviewCameras)
 
@@ -103,7 +116,7 @@ async function expectRouteOverview(page: Page) {
 }
 
 test('completed map and list keep only green visits, including team-only, with compact route bounds', async ({ page }, info) => {
-  await prepare(page)
+  const control = await prepare(page)
   const map = page.locator('.result-route__map')
   await expect(map.locator('.raid-live-point')).toHaveCount(3)
   await expect(map.locator('.raid-live-point--visited')).toHaveCount(3)
@@ -111,7 +124,9 @@ test('completed map and list keep only green visits, including team-only, with c
   await expect(page.locator('.result-route__points li')).toHaveCount(3)
   await expectRouteOverview(page)
   await map.getByRole('button', { name: /^Только команда\./ }).click()
-  await expect(page.locator('.result-route__history h3')).toHaveText('Только команда')
+  await expect(page.locator('.result-route__history').getByRole('heading', { name: 'Только команда', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'История посещений точки' })).toContainText('Навигатор')
+  expect(control.errors).toEqual([])
   await page.screenshot({ path: info.outputPath('completed-visited-only.png'), fullPage: true })
 })
 
