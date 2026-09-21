@@ -199,7 +199,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   return <section className="raid-active-map" aria-label={`Активный рейд ${raid.title}`}>
     <RaidRouteMap identityId={identityId} navigatorUserId={raid.navigatorUserId} navigatorSampleAt={raid.routeStatus.lastSampleAt}
       planned={Boolean(raid.routeTemplateId)} destinationPointId={destination?.pointSnapshotId ?? null}
-      highlightedPointId={activePoint?.pointSnapshotId ?? null} live={raid.state === 'active'} location={proximity.coordinate} raidId={raid.id} onSelectPoint={inspectPoint} />
+      highlightedPointId={activePoint?.pointSnapshotId ?? null} live={raid.state === 'active'} location={proximity.coordinate} raidId={raid.id} onSelectPoint={inspectPoint} onMapTap={() => { setSheetOpen(false); setHistoryOpen(false) }} />
     <header className="raid-active-map__header">
       <a aria-label="Выйти из карты рейда" href={backHref}><RaidControlIcon name="back" /></a>
       <div><small>{raid.state === 'paused' ? 'Рейд на паузе' : recorderLabel ?? 'Активный рейд'}</small><strong>{raid.title}</strong></div>

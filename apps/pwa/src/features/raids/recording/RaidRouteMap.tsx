@@ -35,11 +35,11 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
 }
 
 export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSampleAt = null, planned = false,
-  completed = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint,
+  completed = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
 }: {
   identityId: string; navigatorUserId?: string | null; navigatorSampleAt?: string | null; planned?: boolean
   completed?: boolean; raidId: string; live: boolean; location: OneShotCoordinate | null
-  highlightedPointId: string | null; destinationPointId?: string | null; onSelectPoint: (point: RaidMapPoint) => void
+  highlightedPointId: string | null; destinationPointId?: string | null; onSelectPoint: (point: RaidMapPoint) => void; onMapTap?: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<YandexMap | null>(null)
@@ -56,7 +56,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   onSelect.current = onSelectPoint
   const firstView = useRef(false), firstLocation = useRef(false)
   const [following, setFollowing] = useState(false)
-  const gesture = useRef<{ id: number; x: number; y: number } | null>(null)
+  const gesture = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
   const [provider, setProvider] = useState<'loading' | 'ready' | 'failed'>('loading')
   const { track, points, dataState, positions, snapshotNavigator } = useRaidMapData(identityId, raidId, live, completed)
 
@@ -208,11 +208,15 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     {(planned || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
     <div className="route-live-map" ref={containerRef}
       onPointerDownCapture={event => {
-        if (!event.isPrimary) { stopFollowing(); return }
-        if (event.button === 0) gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+        if (!event.isPrimary) { gesture.current = null; stopFollowing(); return }
+        if (event.button === 0) gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
       }}
-      onPointerMoveCapture={event => { const start = gesture.current; if (start?.id === event.pointerId && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) stopFollowing() }}
-      onPointerUpCapture={() => { gesture.current = null }}
+      onPointerMoveCapture={event => { const start = gesture.current; if (start?.id === event.pointerId && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) { start.moved = true; stopFollowing() } }}
+      onPointerUpCapture={event => {
+        const start = gesture.current
+        gesture.current = null
+        if (start?.id === event.pointerId && !start.moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 6) onMapTap?.()
+      }}
       onPointerCancelCapture={() => { if (gesture.current) stopFollowing(); gesture.current = null }}
       onWheelCapture={stopFollowing} onDoubleClickCapture={stopFollowing}
       onKeyDownCapture={event => { if (event.key.startsWith('Arrow')) stopFollowing() }} />
