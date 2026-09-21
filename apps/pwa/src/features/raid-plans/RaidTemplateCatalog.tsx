@@ -72,8 +72,8 @@ export function RaidTemplateCatalog({ kabandaId, identityId, active = true }: { 
 export function RaidTemplateGrid({ templates, kabandaId, identityId, disabled = false, id }: { templates: readonly RaidTemplateSummary[]; kabandaId?: string; identityId?: string; disabled?: boolean; id?: string }) {
   const chronological = selectCatalogRoutes(templates, true)
   return <div id={id} className="prd-template-grid">
-    {chronological.map((template) => <a className="prd-template-card" key={template.id} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} href={disabled ? undefined : `${appPath('app')}?routeTemplate=${encodeURIComponent(template.id)}&kabanda=${encodeURIComponent(kabandaId ?? template.kabandaId)}`}>
-      {identityId ? <CachedImage identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading="lazy" width="1792" height="896" src={template.cover.url} /> : <img alt="" decoding="async" loading="lazy" width="1792" height="896" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
+    {chronological.map((template, index) => <a className="prd-template-card" key={template.id} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined} href={disabled ? undefined : `${appPath('app')}?routeTemplate=${encodeURIComponent(template.id)}&kabanda=${encodeURIComponent(kabandaId ?? template.kabandaId)}`}>
+      {identityId ? <CachedImage persistAuthorizedCover identityId={identityId} revision={template.cover.sha256} alt="" decoding="async" loading={index < 2 ? "eager" : "lazy"} width="1792" height="896" src={template.cover.url} /> : <img alt="" decoding="async" loading={index < 2 ? "eager" : "lazy"} width="1792" height="896" src={isPrivateCover(template.cover.url) ? undefined : template.cover.url} />}
       <div>
         <h3>{template.title}</h3>
         <p><span>{template.pointCount} {pointWord(template.pointCount)}</span><span aria-hidden="true">·</span><span>≈ {formatPlanDistance(template.estimate.distanceMeters)}</span></p>
