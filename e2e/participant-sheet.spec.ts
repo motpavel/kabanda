@@ -88,6 +88,6 @@ test('navigator sees the five-minute repeat lock and map tap dismisses the sheet
  await expect(sheet.getByText(/Повторная отметка через/)).toBeVisible();
  await expect(sheet.locator('.raid-arrival-sheet__footer')).toBeInViewport();
  await page.screenshot({animations:'disabled',path:'output/playwright/navigator-cooldown.png'});
- await page.locator('.route-live-map').click({position:{x:35,y:160}});
+ await page.locator('.route-live-map').click({position:{x:35,y:260}});
  await expect(sheet).toBeHidden();
 });
