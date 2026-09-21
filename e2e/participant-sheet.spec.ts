@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 import { installYandexMapsMock } from './support.js'
+
+// This suite supplies synthetic identities through page.route, not real API
+// cookies. An activated SW can bypass that interception after reload and send
+// the synthetic user to the real API (401). Keep this UI fixture deterministic;
+// real SW/auth/offline recovery remains covered by its separate existing suites.
+test.use({ serviceWorkers: 'block' })
 async function prepare(page: Page, navigatorView = false) {
  let attempt: string | null = null; let visitedAt: string | null = null;
  const context = page.context();
@@ -115,6 +121,8 @@ test('navigator confirmation opens the same point and deduplicates polling, repe
   await expect(success).toBeVisible()
   await success.getByRole('button', { name: 'Закрыть подтверждение навигатора' }).click()
   await page.reload()
+  await expect(page.locator('.raid-active-map')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Лесное озеро. Вы уже были. История посещений' })).toBeVisible()
   for (let i = 0; i < 2; i++) await page.waitForResponse(response => response.url().includes('/fast/live') && response.ok())
   await expect(success).toHaveCount(0)
   expect(errors).toEqual([])
