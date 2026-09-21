@@ -128,10 +128,12 @@ export class RiderMotion {
     if (!moving) { this.cancel(); return }
     if (this.frame !== null) return
     const generation = this.generation
-    this.frame = this.clock.request(time => {
+    this.frame = this.clock.request(() => {
       if (generation !== this.generation) return
       this.frame = null
-      this.paint(time)
+      // RAF timestamps mark the frame start and may precede a synchronous
+      // update() in that frame. Use one monotonic clock for both paint paths.
+      this.paint(this.clock.now())
       this.schedule()
     })
   }
