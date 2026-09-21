@@ -252,6 +252,8 @@ function AuthenticatedKabandas({ user, onLoggedOut, active }: { user: User; onLo
     }
   }
 
+  if (loading && !selected && !error) return <main className="kb-shell kb-center"><RiderLoader label="Загружаем Кабанду" /></main>
+
   return (
     <main className={`kb-shell kb-shell--tabs${activeSection === 'map' ? ' kb-shell--map' : ''}${activeSection !== 'map' ? ' kb-shell--team' : ''}${activeSection === 'home' ? ' kb-shell--home' : ''}`}>
       <header className="kb-topbar">
