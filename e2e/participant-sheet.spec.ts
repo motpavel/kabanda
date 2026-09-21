@@ -141,6 +141,13 @@ test('navigator notice respects reduced motion and stays usable on a small scree
   await expect(close).toBeInViewport()
   const box = await close.boundingBox(); expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  const recovery = page.getByRole('region', { name: 'Состояние активного рейда' })
+  await expect(recovery).toBeVisible()
+  const toastBox = (await success.boundingBox())!, recoveryBox = (await recovery.boundingBox())!
+  const controlsBox = (await page.getByRole('navigation', { name: 'Управление картой' }).boundingBox())!
+  expect(recoveryBox.y).toBeGreaterThanOrEqual(toastBox.y + toastBox.height + 8)
+  expect(controlsBox.y).toBeGreaterThanOrEqual(toastBox.y + toastBox.height + 8)
+  await expect(recovery.getByRole('button', { name: 'Продолжить запись здесь' })).toBeInViewport()
   await page.screenshot({ path: info.outputPath('navigator-success-320-reduced.png') })
   await close.click(); await expect(success).toHaveCount(0)
 })

@@ -7,3 +7,10 @@
 @media (prefers-reduced-motion: reduce) {
   .navigator-visit-toast, .navigator-visit-toast .visit-toast__icon { animation: none; }
 }
+
+/* Both controls and a recovery/error card start after the actual toast, including
+   wrapped labels and larger text. A fixed 184px offset is insufficient there. */
+.raid-active-map:has(.visit-toast.navigator-visit-toast) .raid-map-controls,
+.raid-active-map:has(.visit-toast.navigator-visit-toast) .raid-active-map__notice {
+  top: calc(94px + env(safe-area-inset-top) + var(--navigator-toast-height, 120px));
+}

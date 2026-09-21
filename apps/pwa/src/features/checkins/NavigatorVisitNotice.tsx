@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { RaidMapPoint } from '../raids/types'
 import { NavigatorNoticeState } from './navigator-notice-state'
 import './participant-visit.css'
@@ -15,6 +15,7 @@ export function NavigatorVisitNotice({ identityId, raidId, points, enabled, visi
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible')
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
+  const element = useRef<HTMLElement>(null)
   const scope = JSON.stringify([identityId, raidId])
   useEffect(() => {
     if (state.current?.key !== scope) {
@@ -33,6 +34,20 @@ export function NavigatorVisitNotice({ identityId, raidId, points, enabled, visi
     return () => document.removeEventListener('visibilitychange', update)
   }, [])
   const shown = notice?.scope === scope && enabled && visible && pageVisible ? notice : null
+  // A recovery/error notice is allowed at the same time. Reserve the actual
+  // toast height so neither its text nor the map controls cover that action.
+  // Only layout changes trigger this observer, never the map animation frames.
+  useLayoutEffect(() => {
+    const node = element.current
+    const root = node?.closest<HTMLElement>('.raid-active-map')
+    if (!shown || !node || !root) return
+    const measure = () => root.style.setProperty('--navigator-toast-height', `${node.offsetHeight}px`)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => { observer.disconnect(); root.style.removeProperty('--navigator-toast-height') }
+  }, [shown])
+  useEffect(() => { if (!shown) { setHovered(false); setFocused(false) } }, [shown])
   useEffect(() => {
     if (!shown || hovered || focused) return
     const timer = setTimeout(() => setNotice(current => current === shown ? null : current), 8000)
@@ -40,7 +55,7 @@ export function NavigatorVisitNotice({ identityId, raidId, points, enabled, visi
   }, [shown, hovered, focused])
   return <>
     <span className="visit-toast-announcement" role="status" aria-atomic="true">{shown ? `Точка отмечена! ${shown.point.name}. Отличная остановка!` : ''}</span>
-    {shown && <section key={shown.point.myLastVisitAttemptId} className="visit-toast navigator-visit-toast" aria-label="Успешная отметка навигатора"
+    {shown && <section ref={element} key={shown.point.myLastVisitAttemptId} className="visit-toast navigator-visit-toast" aria-label="Успешная отметка навигатора"
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)} onBlurCapture={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
