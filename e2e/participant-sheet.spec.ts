@@ -6,7 +6,7 @@ import { installYandexMapsMock } from './support.js'
 // the synthetic user to the real API (401). Keep this UI fixture deterministic;
 // real SW/auth/offline recovery remains covered by its separate existing suites.
 test.use({ serviceWorkers: 'block' })
-async function prepare(page: Page, navigatorView = false) {
+async function prepare(page: Page, navigatorView = false, includeViewer = true) {
  let attempt: string | null = null; let visitedAt: string | null = null;
  const context = page.context();
  await installYandexMapsMock(context);
@@ -21,17 +21,18 @@ async function prepare(page: Page, navigatorView = false) {
  await page.setViewportSize({width:390,height:844});
  const ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444'];
  const raidId='55555555-5555-4555-8555-555555555555',teamId='66666666-6666-4666-8666-666666666666',pointId='77777777-7777-4777-8777-777777777777';
+ const viewerId=navigatorView?ids[0]:ids[1];
  const members=ids.map((id,i)=>({id,displayName:['Павел','Илья','Егор','Лена'][i],avatarUrl:null,state:'active'}));
  const raid={id:raidId,kabandaId:teamId,title:'Лесной маршрут',state:'active',version:3,scheduledAt:null,description:null,organizerUserId:ids[0],navigatorUserId:ids[0],navigatorReady:true,navigatorBlockers:[],navigatorWarnings:[],navigatorLease:null,finalization:null,participants:members,allowedActions:[],routeStatus:{status:'awaiting_lease',acceptedSampleCount:0,missingSequenceCount:0,lastSampleAt:null,lastReceivedAt:null}};
  await page.route('**/api/**',async route=>{
  const path=route.request().url().replace(/^https?:\/\/[^/]+/, '').split('?')[0],now=new Date().toISOString();
  if(path.includes('/route/lease/'))return route.fulfill({status:409,json:{error:{code:'NAVIGATOR_LEASE_HELD',message:'Synthetic device'}}});
- const point={id:pointId,sourcePointId:pointId,name:'Лесное озеро',latitude:56.86012,longitude:53.21,position:0,visitedByMe:Boolean(attempt),visitedByTeam:Boolean(attempt),lastAttemptId:attempt,myLastVisitAttemptId:attempt,lastVisitedAt:visitedAt,repeatAvailableAt:visitedAt ? new Date(Date.parse(visitedAt)+300000).toISOString():null,lastVisitParticipantIds:attempt?ids.slice(0,3):[]};
- const body=path==='/api/me'?{user:{id:navigatorView?ids[0]:ids[1],displayName:navigatorView?'Павел':'Илья',username:'pavel',email:'pavel@example.test',identityKind:'verified',avatarUrl:null}}
+ const point={id:pointId,sourcePointId:pointId,name:'Лесное озеро',latitude:56.86012,longitude:53.21,position:0,visitedByMe:Boolean(attempt)&&includeViewer,visitedByTeam:Boolean(attempt),lastAttemptId:attempt,myLastVisitAttemptId:includeViewer?attempt:null,lastVisitedAt:visitedAt,repeatAvailableAt:visitedAt ? new Date(Date.parse(visitedAt)+300000).toISOString():null,lastVisitParticipantIds:attempt?ids.slice(0,3).filter(id=>includeViewer||id!==viewerId):[]};
+ const body=path==='/api/me'?{user:{id:viewerId,displayName:navigatorView?'Павел':'Илья',username:'pavel',email:'pavel@example.test',identityKind:'verified',avatarUrl:null}}
  :path==='/api/kabandas'?{kabandas:[{id:teamId,name:'Кабанда',role:'member',avatar:'🐗',coverImage:null,memberCount:4,pointsCollectionId:null}]}
  :path.endsWith('/live')?{raid,serverAt:now,teamVisits:true,positions:ids.slice(0,3).map(userId=>({userId,latitude:56.86,longitude:53.21,accuracyMeters:8,capturedAt:now})),points:[point],claims:[],fallbacks:[],track:{segments:[],pointCount:0,truncated:false,updatedAt:null,serverAt:now}}
- :path.endsWith('/history')?{personalCount:2,visitors:[{userId:ids[0],displayName:'Павел',count:3},{userId:ids[1],displayName:'Илья',count:2}],entries:[],nextOffset:null}
- :path.endsWith('/materials')?{materials:[],nextCursor:null}
+ :path.endsWith('/history')?{personalCount:includeViewer?2:0,visitors:[{userId:ids[0],displayName:'Павел',count:3},{userId:ids[1],displayName:'Илья',count:2}],entries:[],nextOffset:null}
+ :path.endsWith('/materials')?{materials:[],nextCursor:null,canWrite:Boolean(attempt)&&includeViewer}
  :path.endsWith('/check-ins/nearby')?{policy:{version:'v1',radiusMeters:50,maxAgeSeconds:60,maxAccuracyMeters:50},points:[{...point,pointSnapshotId:pointId,distanceMeters:13,creditedByMe:false,creditedByTeam:false}]}
  :path.endsWith('/presence/me')?{radiusMeters:50,maxAgeSeconds:30,allReady:false,participants:[],serverAt:now}
  :path.endsWith('/media')?{media:[],nextCursor:null}
@@ -42,9 +43,9 @@ async function prepare(page: Page, navigatorView = false) {
  return route.fulfill({json:body});
  });
  await page.goto(`/app?raid=${raidId}`);
- await expect(page.locator(".raid-active-map")).toBeVisible();
- await page.waitForResponse(response => response.url().includes("/live"));
- return { mark: (id: string) => { attempt=id; visitedAt=new Date().toISOString() } };
+ await expect(page.locator('.raid-active-map')).toBeVisible();
+ await page.waitForResponse(response => response.url().includes('/live'));
+ return { raidId, pointId, viewerId, mark: (id: string) => { attempt=id; visitedAt=new Date().toISOString() } };
 }
 
 test('participant notification opens read-only attendance and comment without losing sheet chrome', async ({page}) => {
@@ -114,7 +115,7 @@ test('navigator confirmation opens the same point and deduplicates polling, repe
   await expect(sheet.getByRole('heading', { name: 'Лесное озеро', exact: true })).toBeVisible()
   await expect(sheet.locator('.raid-arrival-sheet__footer')).toBeInViewport()
   await sheet.getByRole('button', { name: 'Свернуть точку' }).click()
-  controls.mark('navigator-first') // Same receipt, changed response/timestamp.
+  controls.mark('navigator-first')
   for (let i = 0; i < 2; i++) await page.waitForResponse(response => response.url().includes('/fast/live') && response.ok())
   await expect(success).toHaveCount(0)
   controls.mark('navigator-second')
@@ -150,4 +151,105 @@ test('navigator notice respects reduced motion and stays usable on a small scree
   await expect(recovery.getByRole('button', { name: 'Продолжить запись здесь' })).toBeInViewport()
   await page.screenshot({ path: info.outputPath('navigator-success-320-reduced.png') })
   await close.click(); await expect(success).toHaveCount(0)
+})
+
+test('comment text appears immediately without disclosure or saved notice and survives delayed list reconciliation', async ({ page }, info) => {
+  const controls = await prepare(page)
+  const path = `/api/raids/${controls.raidId}/points/${controls.pointId}/materials`
+  const body = 'Здесь отличный вид.\nВернёмся всей командой!'
+  const item = { id: '88888888-8888-4888-8888-888888888888', pointSnapshotId: controls.pointId,
+    authorUserId: controls.viewerId, authorName: 'Илья', kind: 'comment', body, ready: true,
+    width: null, height: null, createdAt: new Date().toISOString() }
+  let release!: () => void, started = false, listed = false, requests = 0
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route(`**${path}*`, async route => {
+    if (route.request().method() === 'POST') {
+      requests++; started = true
+      expect(route.request().postDataJSON()).toEqual({ kind: 'comment', body })
+      expect(route.request().headers()['idempotency-key']).toBeTruthy()
+      await gate
+      return route.fulfill({ status: 201, json: { material: item } })
+    }
+    return route.fulfill({ json: { materials: listed ? [item] : [], nextCursor: null, canWrite: true } })
+  })
+  try {
+    controls.mark('included')
+    await page.locator('.visit-toast__open').click()
+    const sheet = page.locator('.point-info-sheet')
+    await sheet.getByRole('button', { name: 'Комментарий', exact: true }).click()
+    await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).fill(body)
+    await sheet.getByRole('button', { name: 'Добавить комментарий', exact: true }).click()
+    await expect.poll(() => started).toBe(true)
+    const comments = sheet.getByRole('region', { name: 'Комментарии точки', exact: true })
+    await expect(comments).toBeVisible()
+    await expect(comments.locator('.point-materials__item')).toHaveCount(1)
+    await expect(comments.locator('p')).toHaveText(`Комментарий: ${body}`)
+    await expect(comments.locator('.point-materials__item')).toHaveAttribute('data-comment-state', 'sending')
+    await expect(sheet.locator('details.point-materials__history')).toHaveCount(0)
+    await expect(sheet.getByRole('textbox', { name: 'Комментарий', exact: true })).toBeVisible()
+    await expect(sheet.getByRole('textbox', { name: 'Комментарий', exact: true })).toHaveValue('')
+    await expect(sheet.getByText(/Комментарий сохранён/)).toHaveCount(0)
+    release()
+    await expect(comments.locator('.point-materials__item')).toHaveAttribute('data-comment-state', 'confirmed')
+    // The durable accepted row cannot disappear while the list still returns []
+    await expect(comments.locator('p')).toHaveText(`Комментарий: ${body}`)
+    listed = true
+    await page.waitForResponse(response => response.url().includes(path) && response.request().method() === 'GET')
+    await expect(comments.locator('.point-materials__item')).toHaveCount(1)
+    await expect(comments.getByText(/Илья/)).toBeVisible()
+    expect(requests).toBe(1)
+    await page.setViewportSize({ width: 320, height: 568 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: info.outputPath('inline-comment-320.png'), animations: 'disabled' })
+    await page.reload()
+    await page.getByRole('button', { name: /^Лесное озеро\./ }).click()
+    await expect(page.getByRole('region', { name: 'Комментарии точки' }).locator('.point-materials__item')).toHaveCount(1)
+    await expect(page.getByRole('region', { name: 'Комментарии точки' }).locator('p')).toHaveText(`Комментарий: ${body}`)
+    expect(requests).toBe(1)
+  } finally { release() }
+})
+
+test('team-only visit does not expose photo or comment actions, even though history is readable', async ({ page }, info) => {
+  const controls = await prepare(page, false, false)
+  controls.mark('team-only')
+  await expect(page.getByRole('button', { name: /^Лесное озеро\./ })).toHaveClass(/raid-live-point--visited/)
+  await page.getByRole('button', { name: /^Лесное озеро\./ }).click()
+  const sheet = page.locator('.point-info-sheet')
+  await expect(sheet.getByText('Фото и комментарии можно добавить после вашей подтверждённой отметки на этой точке в рейде.')).toBeVisible()
+  await expect(sheet.getByRole('button', { name: 'Комментарий', exact: true })).toHaveCount(0)
+  await expect(sheet.locator('input[type=file]')).toHaveCount(0)
+  await expect(sheet.getByRole('button', { name: /Пометить/ })).toHaveCount(0)
+  await expect(page.locator('.visit-toast')).toHaveCount(0)
+  await sheet.getByText('История посещений', { exact: true }).click()
+  await expect(sheet.getByText('3 раза', { exact: true })).toBeVisible()
+  await page.screenshot({ path: info.outputPath('unvisited-read-only.png'), animations: 'disabled' })
+})
+
+test('a refused queued comment keeps its actual text without a false success message', async ({ page }) => {
+  const controls = await prepare(page)
+  const path = `/api/raids/${controls.raidId}/points/${controls.pointId}/materials`
+  let posts = 0
+  await page.route(`**${path}*`, route => {
+    if (route.request().method() === 'POST') {
+      posts++
+      return route.fulfill({ status: 403, json: { error: { code: 'POINT_VISIT_REQUIRED', message: 'Нет личного посещения' } } })
+    }
+    return route.fulfill({ json: { materials: [], nextCursor: null, canWrite: true } })
+  })
+  controls.mark('stale-permission')
+  await page.locator('.visit-toast__open').click()
+  const sheet = page.locator('.point-info-sheet')
+  await sheet.getByRole('button', { name: 'Комментарий', exact: true }).click()
+  await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Мой текст не должен исчезнуть')
+  await sheet.getByRole('button', { name: 'Добавить комментарий', exact: true }).click()
+  const row = sheet.locator('.point-materials__item')
+  await expect(row).toHaveAttribute('data-comment-state', 'rejected')
+  await expect(row.locator('p')).toHaveText('Комментарий: Мой текст не должен исчезнуть')
+  await expect(row.getByText(/Не отправлен/)).toBeVisible()
+  await expect(sheet.getByText(/Комментарий сохранён/)).toHaveCount(0)
+  await page.reload()
+  await page.getByRole('button', { name: /^Лесное озеро\./ }).click()
+  await expect(page.locator('.point-materials__item')).toHaveAttribute('data-comment-state', 'rejected')
+  await expect(page.locator('.point-materials__item p')).toHaveText('Комментарий: Мой текст не должен исчезнуть')
+  expect(posts).toBe(1)
 })
