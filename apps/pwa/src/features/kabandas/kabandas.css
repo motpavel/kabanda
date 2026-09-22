@@ -312,7 +312,9 @@
 .kb-nav-icon--home { mask-position: 0 0; -webkit-mask-position: 0 0; }
 .kb-nav-icon--map { mask-position: 100% 0; -webkit-mask-position: 100% 0; }
 .kb-nav-icon--raids { mask-position: 0 100%; -webkit-mask-position: 0 100%; }
-.kb-nav-icon--kabanda { mask-position: 100% 100%; -webkit-mask-position: 100% 100%; }
+.kb-nav-icon--kabanda { mask-size: contain; -webkit-mask-size: contain; mask-position: center; -webkit-mask-position: center; }
+.kb-team-members-heading { display: flex; align-items: center; gap: 10px; }
+.kb-team-members-heading .kb-nav-icon { width: 30px; height: 30px; color: #c6342d; }
 .kb-app-tabbar a[aria-current="page"] .kb-nav-icon { color: #f42d29; }
 
 .kb-auth-shell { width: min(100%, 1400px); padding-block: max(18px, env(safe-area-inset-top)); overflow-x: hidden; }

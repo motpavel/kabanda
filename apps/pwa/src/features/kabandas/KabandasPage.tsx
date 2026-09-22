@@ -7,7 +7,7 @@ import { ApiError } from '../../lib/http'
 import { PointInfoSheet } from '../checkins/PointInfoSheet'
 import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
-import { AppTabBar } from '../../app/AppTabBar'
+import { AppTabBar, TabIcon } from '../../app/AppTabBar'
 import { navigateApp } from '../../app/transitions'
 import { replaceAppLocation } from '../../app/navigation-history'
 import { useScreenScroll } from '../../app/screen-scroll'
@@ -649,7 +649,7 @@ function KabandaWorkspace({
 
         <section className="kb-team-panel kb-team-members-panel">
           <div className="kb-team-panel-head">
-            <h2>Состав Кабанды</h2>
+            <h2 className="kb-team-members-heading"><TabIcon section="kabanda" />Состав Кабанды</h2>
           </div>
           {members.length ? (
             <ul className="kb-team-members">
