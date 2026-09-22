@@ -21,7 +21,8 @@ export function pointCommentRows(items: readonly PointMaterial[], operations: re
   const local = new Map(operations.map(operation => [operation.operationId, operation]))
   for (const operation of local.values()) {
     if (operation.identityId !== scope.identityId || operation.raidId !== scope.raidId ||
-      operation.pointId !== scope.pointId || operation.kind !== 'comment' || operation.payload.kind !== 'comment') continue
+      operation.pointId !== scope.pointId || operation.kind !== 'comment' ||
+      !('kind' in operation.payload) || operation.payload.kind !== 'comment') continue
     if (operation.serverId && serverIds.has(operation.serverId)) continue
     rows.push({ id: `local:${operation.operationId}`, body: operation.payload.body, authorName: 'Вы',
       createdAt: operation.createdAt, state: operation.status === 'accepted' ? 'confirmed' : operation.status })
