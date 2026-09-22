@@ -10,6 +10,8 @@ import { FlockDisplay } from './flock-display'
 import { stabilizeStationarySegment } from './stationary-display'
 import { RiderMotion } from './rider-motion'
 import { completedRouteBoundsPoints, pointsForRaidMap } from './completed-route-view'
+import { LiveRouteTail, navigatorMotionMarker, type TailCoordinate, type TailFix } from './live-route-tail'
+import { LiveRouteLayers } from './live-route-layers'
 
 const IZHEVSK_CENTER = [56.8528, 53.2045] as const
 export function routeTrackView(points: readonly (Pick<RouteTrackPoint, 'latitude' | 'longitude'> & Partial<Pick<RouteTrackPoint, 'capturedAt'>>)[], viewport?: { width: number; height: number }) {
@@ -37,10 +39,10 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
 }
 
 export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSampleAt = null, planned = false,
-  completed = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
+  completed = false, localRoutePreview = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
 }: {
   identityId: string; navigatorUserId?: string | null; navigatorSampleAt?: string | null; planned?: boolean
-  completed?: boolean; raidId: string; live: boolean; location: OneShotCoordinate | null
+  completed?: boolean; localRoutePreview?: boolean; raidId: string; live: boolean; location: OneShotCoordinate | null
   highlightedPointId: string | null; destinationPointId?: string | null; onSelectPoint: (point: RaidMapPoint) => void; onMapTap?: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -54,6 +56,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const flock = useRef(new FlockDisplay())
   const motion = useRef<RiderMotion | null>(null)
   const viewerMotionId = useRef<string | null>(null)
+  const navigatorMotionId = useRef<string | null>(null)
+  const previewStarted = useRef(false)
+  const renderedRiders = useRef<ReadonlyMap<string, TailCoordinate>>(new Map())
+  const drawnTrackAnchor = useRef<TailFix | null>(null)
+  const previewLayers = useRef<LiveRouteLayers | null>(null)
+  const preview = useRef<LiveRouteTail | null>(null)
+  if (!preview.current) preview.current = new LiveRouteTail(frame => previewLayers.current?.update(frame))
   const followEnabled = useRef(false)
   const viewerCoordinate = useRef<readonly [number, number] | null>(null)
   const [markerNow, setMarkerNow] = useState(Date.now)
@@ -63,15 +72,22 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const [following, setFollowing] = useState(false)
   const gesture = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
   const [provider, setProvider] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const { track, points: allPoints, dataState, positions, snapshotNavigator } = useRaidMapData(identityId, raidId, live, completed)
+  const { track, points: allPoints, dataState, positions, snapshotNavigator, routePreviewScope, routePreviewIssuedAt } = useRaidMapData(identityId, raidId, live, completed)
   const points = useMemo(() => pointsForRaidMap(allPoints, completed), [allPoints, completed])
 
   useEffect(() => {
     firstView.current = false; firstLocation.current = false; flock.current.reset(); viewerCoordinate.current = null
     motion.current?.reset(); viewerMotionId.current = null; followEnabled.current = false
+    preview.current?.reset(); previewStarted.current = false; navigatorMotionId.current = null; renderedRiders.current = new Map(); drawnTrackAnchor.current = null
     setFollowing(false)
   }, [identityId, raidId, completed])
-  useEffect(() => { motion.current?.reset() }, [navigatorUserId])
+  useEffect(() => {
+    motion.current?.reset(); renderedRiders.current = new Map()
+    navigatorMotionId.current = null
+    if (!previewStarted.current && routePreviewScope && (identityId !== navigatorUserId || localRoutePreview)) {
+      preview.current?.reset(); previewStarted.current = true
+    } else preview.current?.interrupt(Date.now())
+  }, [identityId, navigatorUserId, routePreviewScope, localRoutePreview])
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -89,10 +105,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       runtimeRef.current = runtime
       mapRef.current = new runtime.Map(container, { center: IZHEVSK_CENTER, zoom: 12, controls: [],
         behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, { suppressMapOpenBlock: true })
+      previewLayers.current = new LiveRouteLayers(mapRef.current, runtime)
       setProvider('ready')
     }).catch(() => { if (active) setProvider('failed') })
     return () => {
-      active = false; resize.disconnect(); motion.current?.reset(); mapRef.current?.destroy(); mapRef.current = null; runtimeRef.current = null
+      active = false; resize.disconnect(); motion.current?.reset(); preview.current?.reset()
+      previewLayers.current?.clear(); previewLayers.current = null
+      mapRef.current?.destroy(); mapRef.current = null; runtimeRef.current = null
       trackLayers.current.clear(); endpoints.current.clear(); pointMarkers.current.clear(); riders.current.clear(); plannedLine.current = null
     }
   }, [])
@@ -102,7 +121,10 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     if (provider !== 'ready' || !map) return
     const animation = new RiderMotion(coordinates => {
       if (mapRef.current !== map) return
+      renderedRiders.current = coordinates
       for (const [id, coordinate] of coordinates) riders.current.get(id)?.geometry?.setCoordinates(coordinate)
+      const navigator = navigatorMotionId.current ? coordinates.get(navigatorMotionId.current) : undefined
+      if (navigator) preview.current?.paint(navigator)
       const viewer = viewerMotionId.current ? coordinates.get(viewerMotionId.current) : undefined
       viewerCoordinate.current = viewer ?? null
       // Camera and icon consume the SAME rendered coordinate. Competing map
@@ -113,7 +135,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     }, { now: () => performance.now(), request: callback => requestAnimationFrame(callback), cancel: handle => cancelAnimationFrame(handle) })
     motion.current = animation
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
-    const policy = () => animation.setEnabled(document.visibilityState === 'visible' && !reducedMotion.matches)
+    const policy = () => {
+      if (document.visibilityState !== 'visible') {
+        preview.current?.interrupt(Date.now()); animation.reset(); renderedRiders.current = new Map()
+      }
+      animation.setEnabled(document.visibilityState === 'visible' && !reducedMotion.matches)
+      if (document.visibilityState === 'visible') setMarkerNow(Date.now())
+    }
     policy()
     document.addEventListener('visibilitychange', policy)
     reducedMotion.addEventListener('change', policy)
@@ -130,6 +158,10 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     if (provider !== 'ready' || !map || !runtime) return
     const segments = track?.segments.map(stabilizeStationarySegment) ?? []
     updateTrackLayers(map, runtime, trackLayers.current, segments)
+    // Install canonical geometry first. A lastSampleAt in the fast feed is not
+    // proof that the corresponding route page is already drawn.
+    const drawnEnd = track && !track.truncated ? segments.filter(segment => segment.length).at(-1)?.at(-1) : null
+    drawnTrackAnchor.current = drawnEnd ? { coordinate: [drawnEnd.latitude, drawnEnd.longitude], observedAt: Date.parse(drawnEnd.capturedAt) } : null
     const nextEndpoints = track ? trackEndpoints(track, completed) : []
     for (const [kind, marker] of endpoints.current) if (!nextEndpoints.some(endpoint => endpoint.kind === kind)) {
       map.geoObjects.remove(marker); endpoints.current.delete(kind)
@@ -232,17 +264,41 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     }
     const viewer = markers.find(marker => marker.id === 'viewer' || marker.members.includes(identityId))
     viewerMotionId.current = viewer?.id ?? null
+    const navigatorMarker = navigatorMotionMarker(markers, identityId, navigatorUserId)
+    const rawNavigator = identityId === navigatorUserId ? location : positions?.find(point => point.userId === navigatorUserId)
+    const rawAge = rawNavigator ? Date.now() - Date.parse(rawNavigator.capturedAt) : Infinity
+    const previewAllowed = Boolean(routePreviewScope && live && !completed && document.visibilityState === 'visible' &&
+      snapshotNavigator?.userId === navigatorUserId && (identityId !== navigatorUserId || localRoutePreview) &&
+      navigatorMarker && rawNavigator && Number.isFinite(rawNavigator.accuracyMeters) &&
+      rawNavigator.accuracyMeters >= 0 && rawNavigator.accuracyMeters <= 50 && rawAge >= -5000 && rawAge <= 10_000 &&
+      Date.parse(navigatorMarker.point.capturedAt) >= routePreviewIssuedAt)
+    if (previewAllowed && !navigatorMotionId.current) {
+      // The first usable fix after a pause/hidden interval/group change starts
+      // a new visible fragment, not a tween from an ineligible old location.
+      motion.current?.reset(); renderedRiders.current = new Map()
+    }
+    navigatorMotionId.current = previewAllowed ? navigatorMarker!.id : null
+    if (previewAllowed) {
+      const point = navigatorMarker!.point
+      const anchor = drawnTrackAnchor.current
+      preview.current?.update(routePreviewScope!, { coordinate: [point.latitude, point.longitude], observedAt: Date.parse(point.capturedAt) },
+        anchor && anchor.observedAt >= routePreviewIssuedAt ? anchor : null, Date.now())
+    } else preview.current?.interrupt(Date.now())
     motion.current?.update(markers.map(spec => ({
       id: spec.id,
       anchorId: spec.members.includes(identityId) ? identityId : navigatorUserId && spec.members.includes(navigatorUserId) ? navigatorUserId : spec.members[0] ?? spec.id,
       members: spec.members, coordinate: [spec.point.latitude, spec.point.longitude] as const,
       observedAt: Date.parse(spec.point.capturedAt), stale: spec.stale || !live,
     })))
+    // Duplicated snapshots need no RiderMotion frame, but a newly drawn route
+    // page may still retire a temporary preview. Never depend on another GPS fix.
+    const renderedNavigator = navigatorMotionId.current ? renderedRiders.current.get(navigatorMotionId.current) : undefined
+    if (renderedNavigator) preview.current?.paint(renderedNavigator)
     if (location && !firstLocation.current && viewerCoordinate.current) {
       map.setCenter(viewerCoordinate.current, 15, { duration: firstView.current ? 260 : 0, timingFunction: 'ease-in-out' })
       firstLocation.current = true; firstView.current = true
     }
-  }, [identityId, live, location, markerNow, navigatorSampleAt, navigatorUserId, positions, provider, snapshotNavigator, track])
+  }, [identityId, live, completed, localRoutePreview, location, markerNow, navigatorSampleAt, navigatorUserId, positions, provider, snapshotNavigator, track, routePreviewScope, routePreviewIssuedAt])
 
   useEffect(() => {
     followEnabled.current = following
