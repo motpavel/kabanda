@@ -97,6 +97,8 @@ def allowed_file(key: str, release_sha: str) -> bool:
         return True
     if key == f"sw-build-{release_sha[:12]}.js" or re.fullmatch(r"workbox-[A-Za-z0-9_-]{6,}\.js", key):
         return True
+    if re.fullmatch(r"brand/result-icons/(route|analytics|photos|pack|boar)-v[1-9][0-9]*\.png", key):
+        return True
     if key.startswith("assets/"):
         return bool(HASHED.fullmatch(key.removeprefix("assets/"))) and Path(key).suffix in MIME
     return bool(re.fullmatch(r"brand/[A-Za-z0-9][A-Za-z0-9_.-]{0,120}\.(png|jpe?g|webp|svg)", key))
