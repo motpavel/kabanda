@@ -117,7 +117,7 @@ function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
         <div className="result-metrics__head" role="row"><span>Метрика</span><strong>Лично</strong><strong>Команда</strong></div>
         {rows.map(row => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}
       </div></section>}
-      {result && <section className="result-people" key="participants"><ResultSectionHeading icon="pack">Состав стаи</ResultSectionHeading>
+      {result && <section className="result-people" key="participants"><ResultSectionHeading icon="pack">Состав кабанды</ResultSectionHeading>
         <table className="result-people__table"><thead><tr><th scope="col">Участник</th><th scope="col">Точки</th><th scope="col">Фото</th></tr></thead>
           <tbody>{result.participants.map(participant => <tr key={participant.userId}><th scope="row">{participant.displayName}</th><td>{participant.metrics.uniquePoints}</td><td>{participant.metrics.photos}</td></tr>)}</tbody>
         </table></section>}
