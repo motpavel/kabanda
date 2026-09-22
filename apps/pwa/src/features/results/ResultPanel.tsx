@@ -121,7 +121,7 @@ function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
           <tbody>{result.participants.map(participant => <tr key={participant.userId}><th scope="row">{participant.displayName}</th><td>{participant.metrics.uniquePoints}</td><td>{participant.metrics.photos}</td></tr>)}</tbody>
         </table></section>}
       <CompletedRaidGallery key="gallery" identityId={identityId} raidId={raid.id} enabled={!denied && !staleOnly} refreshKey={queue.rows.filter(row => row.kind === 'photo' && row.status === 'accepted').map(row => row.operationId).join(':')} onAccessDenied={() => entry.deny()} />
-      {card && canUseResult && <section className="kb-card result-share" key="share"><img src={card.url} width="1080" height="1350" alt="Карточка с итогами рейда" /><button className="result-share__button" type="button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Открываем меню…' : 'Поделиться карточкой'}</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
+      {card && canUseResult && <section className="kb-card result-share" key="share"><img src={card.url} width="1080" height="1350" alt="Карточка с итогами рейда" /><div className="result-share__actions"><button className="result-share__button" type="button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Открываем меню…' : 'Поделиться карточкой'}</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</div></section>}
       {cardError && canUseResult && <div className="kb-notice" role="status" key="share-error">Карточку для друзей не удалось подготовить. <button type="button" onClick={() => setCardRetry(value => value + 1)}>Повторить подготовку карточки</button></div>}
 
     </section>

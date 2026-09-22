@@ -63,3 +63,8 @@ html:has(.result-shell), body:has(.result-shell) { background: #f7f7f5; }
 
 .kb-shell .result-analytics h2 { margin: 0 0 12px; font-size: 18px; }
 .kb-shell .result-analytics .result-metrics { border: 0; border-radius: 0; box-shadow: none; }
+
+.kb-shell .result-shell > .result-share { padding: 0; gap: 0; overflow: hidden; }
+.kb-shell .result-share > img { width: 100%; max-width: none; height: auto; aspect-ratio: auto; border-radius: 0; }
+.result-share__actions { display: grid; gap: 12px; padding: 16px 20px 20px; }
+.result-share__actions p { margin: 0; }
