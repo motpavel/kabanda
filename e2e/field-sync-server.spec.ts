@@ -178,7 +178,7 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(photoViewer.getByRole('img', { name: 'Фото точки' })).toBeVisible()
     await photoViewer.getByRole('button', { name: 'Закрыть фото' }).click()
     await materials.getByRole('button', { name: 'Комментарий', exact: true }).click()
-    await materials.getByLabel('Комментарий или подпись к фото').fill('Добавлено после финиша')
+    await materials.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Добавлено после финиша')
     await materials.getByRole('button', { name: 'Добавить комментарий' }).click()
     await expect(materials.getByText('Добавлено после финиша', { exact: true })).toBeVisible()
     expect((await pool.query('SELECT result_json,share_sha256 FROM raid_results WHERE raid_id=$1', [raidId])).rows[0]).toEqual(before)
