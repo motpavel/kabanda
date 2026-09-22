@@ -281,7 +281,7 @@ export async function registerRaidRoutes(
     const user = await currentUser(request, dependencies)
     if (!user) return authRequired(reply)
     const raidId = resourceIdSchema.parse((request.params as { raidId: string }).raidId)
-    const input = commandSchema.extend({ pointSnapshotId: z.uuid() }).strict().parse(request.body)
+    const input = commandSchema.extend({ pointSnapshotId: z.uuid().nullable() }).strict().parse(request.body)
     return dependencies.raids.setDestination(user.id, raidId, input, operationId(request))
   })
 

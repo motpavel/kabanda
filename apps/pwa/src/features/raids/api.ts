@@ -68,7 +68,7 @@ export function reportReadiness(raidId: string,input: ReadinessReportInput,idemp
     method: 'POST',headers: { 'Idempotency-Key': idempotencyKey },body: JSON.stringify(input),
   })
 }
-export async function setRaidDestination(raidId: string, input: { expectedVersion: number; pointSnapshotId: string }, operationId: string): Promise<RaidProjection> {
+export async function setRaidDestination(raidId: string, input: { expectedVersion: number; pointSnapshotId: string | null }, operationId: string): Promise<RaidProjection> {
   const response = await requestJson<{ raid: RaidProjection }>(`/api/raids/${encodeURIComponent(raidId)}/destination`, {
     method: 'PUT', headers: { 'Idempotency-Key': operationId }, body: JSON.stringify(input),
   })

@@ -51,6 +51,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [retry, setRetry] = useState(0)
+  const [openedIds, setOpenedIds] = useState<Set<string>>(() => new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const url = `/api/kabandas/${encodeURIComponent(kabandaId)}/points/${encodeURIComponent(pointId)}/history`
   useEffect(() => {
@@ -69,24 +70,24 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
     { userId: identityId, displayName: 'Вы', count: history.personalCount },
     ...history.visitors.filter((visitor) => visitor.userId !== identityId)
       .sort((left, right) => right.count - left.count || left.displayName.localeCompare(right.displayName, 'ru')),
-  ] : []
+  ].filter((visitor) => visitor.count > 0) : []
 
   return <section className="point-visit-history" aria-label="История посещений точки">
     {showHeading && <header><h3>Посещения</h3></header>}
     {busy && !history && <LoadingHistory />}
     {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
-    {history && !history.visitors.length && <p className="point-visit-history__empty">Ваша Кабанда здесь ещё не была</p>}
+    {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша Кабанда здесь ещё не была</p></div>}
     <ul className="point-visit-history__people">{visitors.map((visitor) => {
       const expanded = expandedId === visitor.userId
       const detailId = `point-visits-${pointId}-${visitor.userId}`
       return <li key={visitor.userId}>
-        <button className="point-visit-history__person" type="button" aria-expanded={visitor.count ? expanded : undefined} aria-controls={visitor.count ? detailId : undefined} disabled={!visitor.count} onClick={() => setExpandedId(expanded ? null : visitor.userId)}>
+        <button className="point-visit-history__person" type="button" aria-expanded={visitor.count ? expanded : undefined} aria-controls={visitor.count ? detailId : undefined} disabled={!visitor.count} onClick={() => { setOpenedIds(previous => new Set(previous).add(visitor.userId)); setExpandedId(expanded ? null : visitor.userId) }}>
           <span className={`point-visit-history__avatar${visitor.userId === identityId ? ' point-visit-history__avatar--self' : ''}`} aria-hidden="true">{visitor.userId === identityId ? 'Я' : visitor.displayName.trim().slice(0, 1).toUpperCase()}</span>
           <span className="point-visit-history__name">{visitor.displayName}</span>
           <span className="point-visit-history__total">{formatVisitCount(visitor.count)}</span>
           {visitor.count > 0 && <svg className="point-visit-history__chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
         </button>
-        <div id={detailId} hidden={!expanded}>{expanded && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div>
+        <div id={detailId} className="point-visit-history__reveal" data-expanded={expanded} inert={!expanded} aria-hidden={!expanded}><div>{openedIds.has(visitor.userId) && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div></div>
       </li>
     })}</ul>
   </section>

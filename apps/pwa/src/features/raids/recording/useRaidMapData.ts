@@ -135,6 +135,14 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
     lastStored.current = signature
     void saveRaidMapCache(identityId, raidId, points, track).catch(() => undefined)
   }, [identityId, raidId, track, points])
+  const lease = currentData?.raid.navigatorLease
+  // A temporary visible leg must belong to this active navigator lease. Cached
+  // catalogue/track alone, another raid or an explicit access denial is not enough.
+  const routePreviewScope = live && !completed && !snapshot.denied && !denied.current &&
+    currentData?.raid.id === raidId && currentData.raid.state === 'active' && currentData.fieldVisible !== false &&
+    currentData.raid.navigatorUserId && lease && Number.isFinite(Date.parse(lease.issuedAt))
+    ? JSON.stringify([identityId, raidId, currentData.raid.navigatorUserId, lease.id, lease.generation]) : null
   return { track, points, dataState, positions: currentData?.positions,
+    routePreviewScope, routePreviewIssuedAt: lease ? Date.parse(lease.issuedAt) : Infinity,
     snapshotNavigator: currentData ? { userId: currentData.raid.navigatorUserId, sampleAt: currentData.raid.routeStatus.lastSampleAt } : null }
 }

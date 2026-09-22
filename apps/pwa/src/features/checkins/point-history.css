@@ -4,7 +4,9 @@
 .point-visit-history__people { list-style: none; margin: 0; padding: 0; }
 .point-visit-history__people > li { border-top: 1px solid #eceeeb; }
 .kb-shell .point-visit-history__person { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; box-shadow: none; transform: none; }
+@media (hover: hover) and (pointer: fine) {
 .kb-shell .point-visit-history__person:hover { background: #f8f9f7; border: 0; transform: none; }
+}
 .kb-shell .point-visit-history__person:active { background: #f0f2ef; transform: none; }
 .kb-shell .point-visit-history__person:disabled { opacity: 1; background: transparent; cursor: default; }
 .point-visit-history__person:focus-visible { outline: 2px solid #c6342d; outline-offset: 2px; }
@@ -21,7 +23,9 @@
 .point-visit-history__visits > li::marker { color: #929a94; font-size: .75rem; font-variant-numeric: tabular-nums; }
 .point-visit-history__visits a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; color: inherit; font-weight: 650; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; }
 .point-visit-history__visits a > span { color: #929a94; font-size: 1.2rem; font-weight: 400; }
+@media (hover: hover) and (pointer: fine) {
 .point-visit-history__visits a:hover { color: #b72d28; }
+}
 .point-visit-history__visits a:focus-visible { outline: 2px solid #c6342d; outline-offset: 3px; }
 .point-visit-history__visits p { margin: 3px 0 0; color: #6d7470; font-size: .8125rem; line-height: 1.55; font-variant-numeric: tabular-nums; }
 .point-visit-history button { min-height: 44px; font: inherit; }
@@ -33,15 +37,18 @@
 .raid-point-history-sheet__action { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); padding: 16px 0 calc(18px + env(safe-area-inset-bottom)); margin-bottom: calc(-18px - env(safe-area-inset-bottom)); background: #fff; }
 @media (prefers-reduced-motion: reduce) { .point-visit-history__chevron { transition: none; } }
 
-.point-visit-history__empty { margin: 0 0 16px; color: #6d7470; line-height: 1.5; }
+.point-visit-history__empty { display: flex; align-items: center; gap: 12px; margin: 0; padding: 16px; border-radius: 18px; background: #f7f7f5; color: #626762; font-size: .9375rem; line-height: 1.5; }
+.point-visit-history__empty > svg { flex: 0 0 24px; color: #b9362c; }
+.point-visit-history__empty > p { margin: 0; }
 .kb-shell .raid-destination-action { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; padding: 12px 16px; border: 1.5px solid #d63830; border-radius: 12px; background: #fff; color: #c6342d; font: inherit; font-weight: 700; box-shadow: none; }
+@media (hover: hover) and (pointer: fine) {
 .kb-shell .raid-destination-action:hover { background: #fff5f3; border-color: #c6342d; }
+}
 .kb-shell .raid-destination-action:disabled { opacity: 1; background: #fff7f5; color: #ad4c44; border-color: #e5afa9; cursor: default; }
 .raid-destination-action .raid-control-icon { width: 21px; height: 21px; }
 .raid-active-map .raid-destination-pill { border-color: #efd0cc; }
 .raid-destination-pill > .raid-control-icon { width: 22px; height: 26px; color: #c6342d; }
 .raid-active-map .raid-live-point.raid-live-point--destination,
-.raid-active-map .raid-live-point.raid-live-point--destination:hover,
 .raid-active-map .raid-live-point.raid-live-point--destination:active { --raid-point-border: #ea3e35; width: 18px; height: 18px; border-width: 5px; background: #fff; opacity: 1; animation: none; }
 .raid-live-point--destination::before,
 .raid-live-point--destination::after { content: ''; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; box-sizing: border-box; background: radial-gradient(circle, rgb(234 62 53 / 30%) 0%, rgb(234 62 53 / 15%) 42%, rgb(234 62 53 / 0%) 78%); mask-image: radial-gradient(circle, transparent 0 4px, #000 5px); border: 1px solid var(--raid-point-border, #ea3e35); border-radius: 50%; pointer-events: none; animation: raid-destination-pulse 2.4s linear infinite; }
@@ -58,3 +65,33 @@
 .point-visit-history__visits .point-visit-history__raid { width: 100%; min-height: 52px; }
 .point-visit-history__raid > span:first-child { min-width: 0; color: inherit; font: inherit; }
 .point-visit-history__raid time { display: block; margin-top: 4px; color: #6d7470; font-size: .8125rem; font-weight: 400; line-height: 1.55; }
+
+/* Separate raid entries within each participant’s visit history. */
+.point-history-section .point-visit-history__people:not(:empty) { border: 0; border-radius: 0; background: transparent; }
+.point-history-section .point-visit-history__people > li { position: relative; border: 0; }
+.point-history-section .point-visit-history__people > li + li::before { content: ''; display: block; margin-left: 64px; margin-right: 14px; border-top: 1px solid #e9e7e5; }
+.kb-shell .point-history-section .point-visit-history__person { gap: 10px; padding: 12px 14px; min-height: 68px; border-radius: 16px; }
+.point-history-section .point-visit-history__avatar { flex-basis: 38px; height: 38px; background: #eeedeb; font-size: .875rem; }
+.point-history-section .point-visit-history__avatar--self { background: #fbe9e6; color: #b9362c; }
+.point-history-section .point-visit-history__name { font-size: .9375rem; font-weight: 600; }
+.point-history-section .point-visit-history__total { padding: 4px 9px; border-radius: 8px; background: #fff; color: #a9362e; font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.point-history-section .point-visit-history__chevron { flex-basis: 14px; width: 14px; }
+.point-history-section .point-visit-history__detail { padding: 0 14px 14px; }
+.point-history-section .point-visit-history__visits { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.point-history-section .point-visit-history__visits > li { padding: 8px 12px; border: 1px solid #eeecea; border-radius: 12px; background: #fff; box-shadow: 0 2px 5px rgb(32 37 34 / 5%), 0 6px 16px rgb(32 37 34 / 7%); }
+.point-history-section .point-visit-history__visits strong { font-size: .875rem; font-weight: 600; }
+.point-history-section .point-visit-history__raid time { margin-top: 2px; font-size: .75rem; }
+.point-history-section .point-visit-history__person:focus-visible { outline-offset: -3px; }
+
+.point-visit-history__reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 260ms cubic-bezier(.22, 1, .36, 1), opacity 180ms ease; }
+.point-visit-history__reveal[data-expanded="true"] { grid-template-rows: 1fr; opacity: 1; }
+.point-visit-history__reveal > div { min-height: 0; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .point-visit-history__reveal { transition: none; } }
+
+.point-history-section .point-visit-history__visits { padding: 4px 5px 12px; margin-inline: -5px; gap: 12px; }
+
+.point-history-section .point-visit-history__visits .point-visit-history__raid { min-height: 0; padding-block: 0; }
+
+@media (hover: hover) and (pointer: fine) {
+.raid-active-map .raid-live-point.raid-live-point--destination:hover { --raid-point-border: #ea3e35; width: 18px; height: 18px; border-width: 5px; background: #fff; opacity: 1; animation: none; }
+}

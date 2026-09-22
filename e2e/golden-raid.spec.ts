@@ -314,14 +314,23 @@ test('legacy-server compatibility: owner completes one canonical raid and opens 
   await expect(historySheet.getByRole('button', { name: 'Вы 2 раза', exact: true })).toBeVisible()
   await historySheet.getByRole('button', { name: 'Свернуть точку' }).click()
 
+  // grantPermissions is additive: an empty list does not revoke the earlier
+  // geolocation grant. Clear it first and prove the real browser permission,
+  // otherwise the recorder is right to auto-resume after our one-shot failure.
+  await context.clearPermissions()
   await context.grantPermissions([])
+  const gpsPermission = () => page.evaluate(async () => (await navigator.permissions.query({ name: 'geolocation' })).state)
+  await expect.poll(gpsPermission).toBe('denied')
   await page.evaluate(() => (window as unknown as { qaGpsFailure: (code: number) => void }).qaGpsFailure(1))
   await expect(page.getByText('Разрешите геолокацию в настройках телефона или браузера.', { exact: false })).toBeVisible()
   await expect(page.getByRole('button', { name: /Включить GPS|Восстановить GPS/ })).toHaveCount(0)
   const deniedRequests = await page.evaluate(() => (window as unknown as { qaGpsRequests: () => number }).qaGpsRequests())
-  await page.waitForTimeout(4_200)
+  // Cover both a GPS poll interval and the ten-second permission recheck.
+  await page.waitForTimeout(11_000)
+  expect(await gpsPermission()).toBe('denied')
   expect(await page.evaluate(() => (window as unknown as { qaGpsRequests: () => number }).qaGpsRequests())).toBe(deniedRequests)
   await context.grantPermissions(['geolocation'])
+  await expect.poll(gpsPermission).toBe('granted')
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await context.setGeolocation({ latitude: 56.86017, longitude: 53.21017, accuracy: 8 })
   await expect(page.getByText('Маршрут записывается', { exact: true })).toBeVisible()

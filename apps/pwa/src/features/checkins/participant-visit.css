@@ -20,12 +20,12 @@
 .visit-toast small { display: block; font-size: .875rem; color: #626762; overflow-wrap: anywhere; margin-top: 3px; }
 .kb-shell .visit-toast__close { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; margin-right: 4px; border: 0; background: transparent; color: #626762; font-size: 24px; box-shadow: none; }
 .visit-toast button:focus-visible { outline: 2px solid #c93e32; outline-offset: -3px; }
-.point-history-disclosure { margin-top: 18px; border-top: 1px solid #eeeae8; }
-.point-history-disclosure > summary { min-height: 52px; padding: 15px 0; color: #b9362c; font-weight: 650; cursor: pointer; }
-.point-history-disclosure[open] > summary { margin-bottom: 8px; }
 .point-repeat-wait { margin: 0 0 12px; text-align: center; color: #6d7470; font-size: .875rem; }
 @media (prefers-reduced-transparency: reduce) { .raid-active-map .visit-toast { background: #fff; backdrop-filter: none; } }
 
 .visit-toast-announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .raid-active-map:has(.visit-toast) .raid-map-controls { top: calc(184px + env(safe-area-inset-top)); }
+
+.point-history-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #eeeae8; }
+.point-history-section > h3 { margin: 0 0 12px; color: #202522; font-size: 1.0625rem; font-weight: 650; line-height: 1.3; letter-spacing: -.015em; }

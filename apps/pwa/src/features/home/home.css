@@ -49,7 +49,9 @@
 .kb-home-raid-status { display: inline-block; font-size: .73rem; font-weight: 700; color: var(--home-action); }
 .kb-home-raid-description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
 .kb-home .raid-primary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 14px; border-color: var(--home-action); background: var(--home-action); color: #fff; box-shadow: none; font-size: .86rem; }
+@media (hover: hover) and (pointer: fine) {
 .kb-home .raid-primary:hover { background: #b92521; border-color: #b92521; }
+}
 .kb-home-no-raid { padding-top: 2px; }
 .kb-home-no-raid > svg { width: 42px; height: 42px; margin-bottom: 10px; color: var(--home-action); }
 .kb-home-no-raid h3 { margin-bottom: 7px; font-size: 1.16rem; }

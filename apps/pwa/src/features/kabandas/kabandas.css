@@ -69,10 +69,12 @@
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
+@media (hover: hover) and (pointer: fine) {
 .kb-shell button:hover,
 .kb-link-button:hover {
   border-color: #aaa69e;
   transform: translateY(-1px);
+}
 }
 
 .kb-shell button:active,
@@ -99,10 +101,12 @@
   box-shadow: 0 5px 12px rgb(116 44 32 / 14%);
 }
 
+@media (hover: hover) and (pointer: fine) {
 .kb-shell .kb-primary:hover {
   border-color: var(--kb-brand-hover);
   background: var(--kb-brand-hover);
   box-shadow: 0 6px 15px rgb(116 44 32 / 18%);
+}
 }
 
 .kb-shell input,
@@ -118,8 +122,10 @@
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
+@media (hover: hover) and (pointer: fine) {
 .kb-shell input:hover,
 .kb-shell textarea:hover { border-color: var(--kb-ink-soft); }
+}
 
 .kb-shell label {
   display: block;
@@ -554,7 +560,9 @@
 }
 .kb-yandex-zoom button { display: grid; width: 42px; min-height: 42px; place-items: center; border: 0; border-radius: 0; padding: 0; color: var(--kb-ink); background: transparent; font: 400 27px/1 Arial, sans-serif; }
 .kb-yandex-zoom button + button { border-top: 1px solid var(--kb-line); }
+@media (hover: hover) and (pointer: fine) {
 .kb-yandex-zoom button:hover { transform: none; background: rgb(35 42 53 / 6%); }
+}
 .kb-yandex-zoom button:disabled { color: rgb(35 42 53 / 28%); }
 .kb-yandex-zoom .kb-yandex-locate { color: #1677ff; }
 .kb-yandex-locate svg { width: 21px; height: 21px; fill: currentcolor; }
@@ -607,7 +615,9 @@
 .kb-map-view-switch { padding: 4px; }
 
 .kb-map-view-switch button { min-width: 68px; min-height: 40px; font-size: .78rem; }
+@media (hover: hover) and (pointer: fine) {
 .kb-map-view-switch button:hover { transform: none; }
+}
 
 .kb-map-loading,
 .kb-map-notices {
@@ -694,7 +704,9 @@
   font-weight: 500;
   line-height: 1;
 }
+@media (hover: hover) and (pointer: fine) {
 .kb-shell .kb-point-sheet-close:hover { border: 0; transform: none; }
+}
 
 @keyframes kb-sheet-in {
   from { opacity: 0; transform: translateY(16px); }

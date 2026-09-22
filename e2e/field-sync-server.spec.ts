@@ -20,6 +20,10 @@ test('navigator visit reaches three open phones independently of a photo and sur
   let releaseUpload!: () => void
   const uploadGate = new Promise<void>(resolve => { releaseUpload = resolve })
   let uploadStarted = false
+  let releaseVisit!: () => void, releaseTrack!: () => void
+  const visitGate = new Promise<void>(resolve => { releaseVisit = resolve })
+  const trackGate = new Promise<void>(resolve => { releaseTrack = resolve })
+  let visitStarted = false
   try {
     await pool.query("INSERT INTO kabandas(id,name,owner_id,create_idempotency_key) VALUES($1,'Field E2E',$2,$1::uuid::text)", [teamId, owner.userId])
     await pool.query("INSERT INTO kabanda_memberships(kabanda_id,user_id,role) VALUES($1,$2,'owner'),($1,$3,'member'),($1,$4,'member')", [teamId, owner.userId, nav.userId, rider.userId])
@@ -42,10 +46,12 @@ test('navigator visit reaches three open phones independently of a photo and sur
       await installSyntheticSession(context, identity)
       await installYandexMapsMock(context)
       await context.addInitScript(({ latitude, longitude }) => {
-        let next = 0
+        let next = 0, north = 0, east = 0
+        Object.assign(window, { fieldGpsMove: (n: number, e: number) => { north = n; east = e } })
         const watches = new Map<number, ReturnType<typeof setInterval>>()
-        const position = () => ({ coords: { latitude, longitude, accuracy: 8, altitude: null,
-          altitudeAccuracy: null, heading: null, speed: 0 }, timestamp: Date.now() })
+        const position = () => ({ coords: { latitude: latitude + north / 111195,
+          longitude: longitude + east / (111195 * Math.cos(latitude * Math.PI / 180)), accuracy: 8, altitude: null,
+          altitudeAccuracy: null, heading: null, speed: north || east ? 5 : 0 }, timestamp: Date.now() })
         Object.defineProperty(navigator.geolocation, 'getCurrentPosition', { configurable: true,
           value: (success: PositionCallback) => queueMicrotask(() => success(position() as GeolocationPosition)) })
         Object.defineProperty(navigator.geolocation, 'watchPosition', { configurable: true, value: (success: PositionCallback) => {
@@ -72,10 +78,28 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(navPage.getByRole('checkbox', { name: rider.displayName, exact: true })).toBeChecked()
     await expect(navPage.getByRole('checkbox', { name: owner.displayName, exact: true })).toBeChecked()
     await navPage.getByRole('checkbox', { name: owner.displayName, exact: true }).uncheck()
-    await navPage.locator('.point-materials input[type="file"]').first().setInputFiles('apps/pwa/public/pwa-192x192.png')
+    await navPage.locator('input[type="file"][aria-label="Добавить фото"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
     await expect.poll(() => uploadStarted).toBe(true)
+    await navPage.route(new RegExp(`/api/raids/${raidId}/check-ins/team$`), async route => {
+      visitStarted = true
+      await visitGate
+      await route.continue()
+    })
+    const success = navPage.getByRole('region', { name: 'Успешная отметка навигатора' })
+    await expect(success).toHaveCount(0)
     const start = Date.now()
     await navPage.getByRole('complementary', { name: 'Подтверждение точки' }).getByRole('button', { name: 'Пометить точку', exact: true }).click()
+    await expect.poll(() => visitStarted).toBe(true)
+    // A saved/sending command is not a confirmation. Photo is held too.
+    await expect(success).toHaveCount(0)
+    expect((await pool.query('SELECT count(*)::int AS n FROM raid_checkin_attempts WHERE raid_id=$1', [raidId])).rows[0]!.n).toBe(0)
+    releaseVisit()
+    await expect(success).toBeVisible({ timeout: 8000 })
+    await expect(success.getByText('Точка отмечена!', { exact: true })).toBeVisible()
+    await navPage.screenshot({ path: info.outputPath('navigator-confirmed-toast.png') })
+    await success.getByRole('button', { name: 'Закрыть подтверждение навигатора' }).click()
+    await expect(success).toHaveCount(0)
+    await expect(ownerPage.locator('.visit-toast')).toHaveCount(0)
     for (const page of pages) await expect(page.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/, { timeout: 8000 })
     const propagationMs = Date.now() - start
     expect(propagationMs).toBeLessThan(8000)
@@ -96,6 +120,43 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await riderPage.evaluate(userId => window.dispatchEvent(new CustomEvent('kabanda:identity-changed', { detail: { userId } })), rider.userId)
     await liveAfterRenewal
     await expect(riderPage.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/)
+    await expect(navPage.locator('.raid-active-map__header small')).toHaveText('Маршрут записывается')
+    // Instrument only future polylines at the existing map provider boundary.
+    // The recorder, IDB, route uploads and canonical PostgreSQL rows remain real.
+    await navPage.evaluate(() => {
+      type Line = { geometry: { setCoordinates: (points: readonly (readonly number[])[]) => void } }
+      type Constructor = new (points: readonly (readonly number[])[], properties?: Record<string, unknown>, options?: Record<string, unknown>) => Line
+      const scope = window as unknown as { ymaps: { Polyline: Constructor }; fieldTailFrames: Array<{ part: string; points: number[][] }> }
+      scope.fieldTailFrames = []
+      const Original = scope.ymaps.Polyline
+      scope.ymaps.Polyline = class extends Original {
+        constructor(points: readonly (readonly number[])[], properties: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
+          super(points, properties, options)
+          const observe = (next: readonly (readonly number[])[]) => {
+            if (properties.routePreview === true) scope.fieldTailFrames.push({ part: String(properties.routePreviewPart), points: next.map(point => [...point]) })
+          }
+          observe(points)
+          const originalSet = this.geometry.setCoordinates.bind(this.geometry)
+          this.geometry.setCoordinates = next => { originalSet(next); observe(next) }
+        }
+      }
+    })
+    await navPage.route(new RegExp(`/api/raids/${raidId}/route/changes\?`), async route => { await trackGate; await route.continue() })
+    const frames = () => navPage.evaluate(() => (window as unknown as { fieldTailFrames: Array<{ part: string; points: number[][] }> }).fieldTailFrames)
+    const movedLatitude = 56.86003 + 80 / 111195
+    const movedLongitude = 53.21 + 80 / (111195 * Math.cos(56.86003 * Math.PI / 180))
+    await navPage.evaluate(() => (window as unknown as { fieldGpsMove: (n: number, e: number) => void }).fieldGpsMove(80, 0))
+    await expect.poll(async () => (await frames()).filter(frame => frame.part === 'tip').at(-1)?.points.at(-1)?.[0]).toBeCloseTo(movedLatitude, 7)
+    await navPage.evaluate(() => (window as unknown as { fieldGpsMove: (n: number, e: number) => void }).fieldGpsMove(80, 80))
+    await expect.poll(async () => (await frames()).filter(frame => frame.part === 'tip').at(-1)?.points.at(-1)?.[1]).toBeCloseTo(movedLongitude, 7)
+    expect((await frames()).some(frame => frame.part === 'history' && frame.points.some(point => Math.abs(point[0]! - movedLatitude) < 1e-7 && Math.abs(point[1]! - 53.21) < 1e-7))).toBe(true)
+    await expect(success).toHaveCount(0)
+    // Server route writes continue while its display reads and photo upload wait.
+    await expect.poll(async () => (await pool.query(`SELECT count(*)::int AS n FROM raid_route_samples
+      WHERE raid_id=$1 AND abs(ST_Y(geom::geometry)-$2)<0.0000001 AND abs(ST_X(geom::geometry)-$3)<0.0000001`,
+      [raidId, movedLatitude, movedLongitude])).rows[0]!.n).toBeGreaterThan(0)
+    await info.attach('local-recorder-live-tail', { body: JSON.stringify({ realRecorderAndDatabase: true, delayedRouteReads: true, frames: await frames() }), contentType: 'application/json' })
+    releaseTrack()
     releaseUpload()
     await expect.poll(async () => (await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(true)
     const pending = (await pool.query('SELECT request_fingerprint FROM raid_feature_receipts WHERE raid_id=$1 AND command=$2', [raidId, 'team-visit-v1'])).rows
@@ -110,7 +171,12 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(navPage.getByRole('heading', { name: 'Итоги рейда' })).toBeAttached()
     await navPage.locator('.result-route__points button').filter({ hasText: 'Общая остановка' }).click()
     const materials = navPage.getByRole('region', { name: 'Фото и комментарии точки' })
-    await expect(materials.getByRole('img', { name: 'Фото точки' })).toBeVisible()
+    const photoButton = materials.getByRole('button', { name: 'Открыть фото на весь экран' })
+    await expect(photoButton).toBeVisible()
+    await photoButton.click({ force: true })
+    const photoViewer = navPage.getByRole('dialog', { name: 'Просмотр фото' })
+    await expect(photoViewer.getByRole('img', { name: 'Фото точки' })).toBeVisible()
+    await photoViewer.getByRole('button', { name: 'Закрыть фото' }).click()
     await materials.getByLabel('Комментарий или подпись к фото').fill('Добавлено после финиша')
     await materials.getByRole('button', { name: 'Добавить комментарий' }).click()
     await expect(materials.getByText('Добавлено после финиша', { exact: true })).toBeVisible()
@@ -119,7 +185,7 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await navPage.screenshot({ path: info.outputPath('completed-point-materials.png'), fullPage: true })
     await info.attach('propagation-measurement', { body: JSON.stringify({ syntheticDirectApi: true, propagationMs, phones: 3, uploadHeldUntilVisit: true }), contentType: 'application/json' })
   } finally {
-    releaseUpload()
+    releaseVisit(); releaseTrack(); releaseUpload()
     await Promise.all(contexts.map(context => context.close()))
     await pool.end()
   }

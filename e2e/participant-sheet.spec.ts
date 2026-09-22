@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 import { installYandexMapsMock } from './support.js'
+
+// This suite supplies synthetic identities through page.route, not real API
+// cookies. An activated SW can bypass that interception after reload and send
+// the synthetic user to the real API (401). Keep this UI fixture deterministic;
+// real SW/auth/offline recovery remains covered by its separate existing suites.
+test.use({ serviceWorkers: 'block' })
 async function prepare(page: Page, navigatorView = false) {
  let attempt: string | null = null; let visitedAt: string | null = null;
  const context = page.context();
@@ -91,3 +97,57 @@ test('navigator sees the five-minute repeat lock and map tap dismisses the sheet
  await page.locator('.route-live-map').click({position:{x:35,y:260}});
  await expect(sheet).toBeHidden();
 });
+
+// Snapshot-driven UI contract; field-sync-server separately proves the real
+// command is accepted before this notice, with its photo still uploading.
+test('navigator confirmation opens the same point and deduplicates polling, repeats and reload', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
+  const controls = await prepare(page, true)
+  const success = page.getByRole('region', { name: 'Успешная отметка навигатора' })
+  await expect(success).toHaveCount(0)
+  controls.mark('navigator-first')
+  await expect(success.getByText('Точка отмечена!', { exact: true })).toBeVisible()
+  await expect(page.getByText('Вас отметили на точке', { exact: true })).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('navigator-success.png'), animations: 'disabled' })
+  await success.getByRole('button', { name: /Точка отмечена! Лесное озеро/ }).click()
+  const sheet = page.locator('.point-info-sheet')
+  await expect(sheet.getByRole('heading', { name: 'Лесное озеро', exact: true })).toBeVisible()
+  await expect(sheet.locator('.raid-arrival-sheet__footer')).toBeInViewport()
+  await sheet.getByRole('button', { name: 'Свернуть точку' }).click()
+  controls.mark('navigator-first') // Same receipt, changed response/timestamp.
+  for (let i = 0; i < 2; i++) await page.waitForResponse(response => response.url().includes('/fast/live') && response.ok())
+  await expect(success).toHaveCount(0)
+  controls.mark('navigator-second')
+  await expect(success).toBeVisible()
+  await success.getByRole('button', { name: 'Закрыть подтверждение навигатора' }).click()
+  await page.reload()
+  await expect(page.locator('.raid-active-map')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Лесное озеро. Вы уже были. История посещений' })).toBeVisible()
+  for (let i = 0; i < 2; i++) await page.waitForResponse(response => response.url().includes('/fast/live') && response.ok())
+  await expect(success).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('navigator notice respects reduced motion and stays usable on a small screen', async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const controls = await prepare(page, true)
+  await page.setViewportSize({ width: 320, height: 568 })
+  controls.mark('small-screen')
+  const success = page.getByRole('region', { name: 'Успешная отметка навигатора' })
+  await expect(success).toBeVisible()
+  await expect(success).toHaveCSS('animation-name', 'none')
+  await expect(success.locator('.visit-toast__icon')).toHaveCSS('animation-name', 'none')
+  const close = success.getByRole('button', { name: 'Закрыть подтверждение навигатора' })
+  await expect(close).toBeInViewport()
+  const box = await close.boundingBox(); expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  const recovery = page.getByRole('region', { name: 'Состояние активного рейда' })
+  await expect(recovery).toBeVisible()
+  const toastBox = (await success.boundingBox())!, recoveryBox = (await recovery.boundingBox())!
+  const controlsBox = (await page.getByRole('navigation', { name: 'Управление картой' }).boundingBox())!
+  expect(recoveryBox.y).toBeGreaterThanOrEqual(toastBox.y + toastBox.height + 8)
+  expect(controlsBox.y).toBeGreaterThanOrEqual(toastBox.y + toastBox.height + 8)
+  await expect(recovery.getByRole('button', { name: 'Продолжить запись здесь' })).toBeInViewport()
+  await page.screenshot({ path: info.outputPath('navigator-success-320-reduced.png') })
+  await close.click(); await expect(success).toHaveCount(0)
+})
