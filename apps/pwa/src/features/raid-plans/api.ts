@@ -9,6 +9,8 @@ import type {
 export async function listRaidTemplates(kabandaId: string): Promise<RaidTemplateSummary[]> {
   const response = await requestJson<{ templates: RaidTemplateSummary[] }>(
     `/api/kabandas/${encodeURIComponent(kabandaId)}/raid-templates`,
+    undefined,
+    { maxAgeMs: 30_000 },
   )
   return response.templates
 }

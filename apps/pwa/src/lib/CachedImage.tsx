@@ -1,3 +1,4 @@
+import { clearRouteCovers, readRouteCover, saveRouteCover } from './route-cover-store'
 import { requestApi } from './api-transport'
 import { useEffect, useRef, useState, type ImgHTMLAttributes } from 'react'
 import { IDENTITY_CHANGED_EVENT } from '../features/offline/ledger'
@@ -50,7 +51,8 @@ export function observeImageVisibility(element: Element, load: () => void): () =
   return () => observer.disconnect()
 }
 
-export function clearPrivateImageCache() {
+export function clearPrivateImageCache(clearPersistent = true) {
+  if (clearPersistent) void clearRouteCovers()
   generation += 1
   for (const controller of downloadControllers) controller.abort(new Error('Image identity changed'))
   downloadControllers.clear()
@@ -62,8 +64,9 @@ export function clearPrivateImageCache() {
 
 export function setPrivateImageIdentity(next: string | null) {
   if (next !== identity) {
+    const initialLogin = identity === null && next !== null
     identity = next
-    clearPrivateImageCache()
+    clearPrivateImageCache(!initialLogin)
   }
 }
 
@@ -77,8 +80,8 @@ export function isPrivateCover(src: string): boolean {
 
 function keyFor(identityId: string, src: string, revision: string) { return JSON.stringify([identityId, src, revision]) }
 
-/** Session memory only: never put permission-protected media into the service worker cache. */
-export async function loadPrivateCover(identityId: string, src: string, revision = ''): Promise<string> {
+/** Media stays in memory; authorized catalog covers may reuse account-scoped IndexedDB bytes. */
+export async function loadPrivateCover(identityId: string, src: string, revision = '', persistAuthorizedCover = false): Promise<string> {
   if (!isPrivateCover(src)) return src
   if (identity !== identityId) throw new Error('Image identity changed')
   const key = keyFor(identityId, src, revision)
@@ -89,13 +92,20 @@ export async function loadPrivateCover(identityId: string, src: string, revision
   const started = generation
   const controller = new AbortController()
   downloadControllers.add(controller)
+  const mayPersist = persistAuthorizedCover && Boolean(revision) && /^\/(?:kabanda\/)?api\/raid-templates\/[^/?#]+\/cover$/.test(src)
+  const valid = () => started === generation && identity === identityId
   const task = withDownloadSlot(controller.signal, async () => {
-    const response = await requestApi(src, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-    if (!response.ok) {
-      if ([401, 403, 404].includes(response.status)) clearPrivateImageCache()
-      throw new Error('Cover unavailable')
+    let blob = mayPersist ? await readRouteCover(key) : undefined
+    if (!valid()) throw new Error('Image identity changed')
+    if (!blob) {
+      const response = await requestApi(src, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      if (!response.ok) {
+        if ([401, 403, 404].includes(response.status)) clearPrivateImageCache()
+        throw new Error('Cover unavailable')
+      }
+      blob = await response.blob()
+      if (mayPersist && blob.type.startsWith('image/')) await saveRouteCover(key, blob, valid)
     }
-    const blob = await response.blob()
     if (started !== generation || identity !== identityId) throw new Error('Image identity changed')
     if (!blob.type.startsWith('image/') || blob.size > MAX_BYTES) throw new Error('Unsupported cover')
     let bytes = [...covers.values()].reduce((sum, entry) => sum + entry.bytes, 0)
@@ -113,7 +123,7 @@ export async function loadPrivateCover(identityId: string, src: string, revision
   try { return await task } finally { downloadControllers.delete(controller); if (pending.get(key) === task) pending.delete(key) }
 }
 
-export function CachedImage({ identityId, src, revision = '', fallbackSrc, ...props }: ImgHTMLAttributes<HTMLImageElement> & { identityId: string; src: string; revision?: string; fallbackSrc?: string }) {
+export function CachedImage({ identityId, src, revision = '', persistAuthorizedCover = false, fallbackSrc, ...props }: ImgHTMLAttributes<HTMLImageElement> & { identityId: string; src: string; revision?: string; persistAuthorizedCover?: boolean; fallbackSrc?: string }) {
   const privateCover = isPrivateCover(src)
   const key = keyFor(identityId, src, revision)
   const imageRef = useRef<HTMLImageElement>(null)
@@ -132,10 +142,10 @@ export function CachedImage({ identityId, src, revision = '', fallbackSrc, ...pr
     let active = true
     const invalidate = () => { if (active) setLoaded(null) }
     window.addEventListener(CACHE_CHANGED, invalidate)
-    void loadPrivateCover(identityId, src, revision).then((url) => {
+    void loadPrivateCover(identityId, src, revision, persistAuthorizedCover).then((url) => {
       if (active) setLoaded({ key, url })
     }).catch(() => { if (active) setLoaded(fallbackSrc ? { key, url: fallbackSrc } : null) })
     return () => { active = false; window.removeEventListener(CACHE_CHANGED, invalidate) }
-  }, [fallbackSrc, identityId, key, mayLoad, privateCover, revision, src])
+  }, [fallbackSrc, identityId, key, mayLoad, persistAuthorizedCover, privateCover, revision, src])
   return <img {...props} ref={imageRef} src={privateCover ? (loaded?.key === key ? loaded.url : undefined) : src} />
 }
