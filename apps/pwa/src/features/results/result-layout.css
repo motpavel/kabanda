@@ -44,3 +44,12 @@
 .result-route__chevron { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms ease; }
 .result-route__point[aria-expanded='true'] .result-route__chevron { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .result-route__chevron { transition: none; } }
+
+.kb-shell .result-shell { background: transparent; gap: 16px; }
+.kb-shell .result-shell > .kb-card,
+.kb-shell .result-people { padding: 20px; border: 1px solid var(--kb-line); border-radius: 22px; background: #fff; box-shadow: 0 10px 30px rgb(35 42 53 / 6%); }
+.kb-shell .result-shell > .result-metrics { border-radius: 22px; box-shadow: 0 10px 30px rgb(35 42 53 / 6%); }
+.kb-shell .result-share__button,
+.kb-shell .result-share__button:hover { transform: none; border-color: #d63830; color: #c6342d; background: #fff; box-shadow: none; transition: none; }
+.kb-shell .result-gallery__photo,
+.kb-shell .result-gallery__photo:hover { display: block; width: 100%; padding: 0; margin: 0; overflow: hidden; border: 0; border-radius: 12px; background: #efefeb; box-shadow: none; transform: none; }

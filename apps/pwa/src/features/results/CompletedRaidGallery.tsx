@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import { ApiError, requestJson } from '../../lib/http'
+import { FullscreenPhoto } from '../checkins/FullscreenPhoto'
 import { CachedImage } from '../../lib/CachedImage'
 import { offlineDb } from '../offline/db'
 import { getActiveIdentityId } from '../offline/ledger'
@@ -10,6 +11,7 @@ import { GALLERY_PAGE_SIZE, loadGalleryWindow } from './gallery-window'
 import './result-layout.css'
 
 function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
+  const [viewing, setViewing] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     const next = URL.createObjectURL(draft.blob)
@@ -17,7 +19,8 @@ function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
     return () => URL.revokeObjectURL(next)
   }, [draft.blob])
   return <figure className="result-gallery__local">
-    {url && <img src={url} alt={draft.caption || 'Фото, сохранённое на этом телефоне'} />}
+    {url && <button className="result-gallery__photo" type="button" aria-label="Открыть фото на весь экран" onClick={() => setViewing(true)}><img src={url} alt="Фото на этом телефоне" /></button>}
+    {viewing && url && <FullscreenPhoto createdAt={draft.createdAt} onClose={() => setViewing(false)}><img src={url} alt="Фото на этом телефоне" /></FullscreenPhoto>}
     <figcaption>Сохранено на этом телефоне. Отправка на сервер не подтверждена.</figcaption>
   </figure>
 }
@@ -28,6 +31,7 @@ function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
 export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDenied, refreshKey = '' }: {
   identityId: string; raidId: string; enabled: boolean; refreshKey?: string; onAccessDenied: () => void
 }) {
+  const [selected, setSelected] = useState<RaidMedia | null>(null)
   const [items, setItems] = useState<RaidMedia[]>([])
   const [drafts, setDrafts] = useState<MediaDraftRecord[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -83,7 +87,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     } catch (reason) {
       if (current !== generation.current) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
-        setItems([]); setDrafts([]); setCursor(null); visibleTail.current = undefined
+        setSelected(null); setItems([]); setDrafts([]); setCursor(null); visibleTail.current = undefined
         successfulDepth.current = 1; requestedDepth.current = 1
         denied.current()
       }
@@ -108,7 +112,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     refreshQueued.current = false
     flight.current?.abort(); flight.current = null
     successfulDepth.current = 1; requestedDepth.current = 1; activeDepth.current = 0; queuedDepth.current = null; visibleTail.current = undefined
-    setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
+    setSelected(null); setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
     if (!enabled) return
     let active = true
     const subscription = liveQuery(async () => {
@@ -136,9 +140,10 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const local = drafts.filter(draft => !acceptedIds.has(draft.mediaId ?? draft.intentId ?? ''))
   return <section className="kb-card result-gallery" aria-label="Фотографии завершённого рейда">
     <h2>Фотографии рейда</h2>
+    {selected && <FullscreenPhoto createdAt={selected.createdAt} onClose={() => setSelected(null)}><CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(selected.id)}/content`} width={selected.width} height={selected.height} alt="Фото рейда" draggable={false} /></FullscreenPhoto>}
     {items.length > 0 && <div className="result-gallery__grid">{items.map(item => <figure key={item.id}>
-      <CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}
-        width={item.width} height={item.height} loading="lazy" alt={item.caption || 'Фото рейда'} />
+      <button className="result-gallery__photo" type="button" aria-label="Открыть фото на весь экран" onClick={() => setSelected(item)}><CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}
+        width={item.width} height={item.height} loading="lazy" alt={item.caption || 'Фото рейда'} /></button>
     </figure>)}</div>}
     {loaded && !items.length && !error && <p className="kb-muted">В этом рейде пока нет фотографий.</p>}
     {!loaded && !error && <p className="kb-muted" role="status">{navigator.onLine ? 'Загружаем фотографии…' : 'Для общей галереи нужно соединение.'}</p>}
