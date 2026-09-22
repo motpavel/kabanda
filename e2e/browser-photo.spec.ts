@@ -60,7 +60,7 @@ test('selected PNG reaches the durable photo queue through the real browser deco
   })
   await page.goto(`/app?raid=${raidId}`)
   await page.getByRole('button', { name: /^Остановка\./ }).click()
-  const photoInput = page.getByLabel('Добавить фото')
+  const photoInput = page.locator('input[type="file"][aria-label="Добавить фото"]')
   try {
     await expect(photoInput).toBeAttached()
     await expect(photoInput).toBeEnabled()

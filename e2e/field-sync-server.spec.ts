@@ -78,7 +78,7 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(navPage.getByRole('checkbox', { name: rider.displayName, exact: true })).toBeChecked()
     await expect(navPage.getByRole('checkbox', { name: owner.displayName, exact: true })).toBeChecked()
     await navPage.getByRole('checkbox', { name: owner.displayName, exact: true }).uncheck()
-    await navPage.getByLabel('Добавить фото').setInputFiles('apps/pwa/public/pwa-192x192.png')
+    await navPage.locator('input[type="file"][aria-label="Добавить фото"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
     await expect.poll(() => uploadStarted).toBe(true)
     await navPage.route(new RegExp(`/api/raids/${raidId}/check-ins/team$`), async route => {
       visitStarted = true
