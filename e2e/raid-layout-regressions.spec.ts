@@ -81,7 +81,7 @@ for (const width of [320, 390, 430, 1024]) {
     const imageBox = (await image.boundingBox())!
     expect(imageBox.y - cardBox.y).toBeLessThanOrEqual(30)
     expect(imageBox.height / imageBox.width).toBeCloseTo(1.25, 1)
-    expect(imageBox.height).toBeLessThanOrEqual(526)
+    expect(Math.abs(imageBox.width - (cardBox.width - 2))).toBeLessThanOrEqual(2)
     expect((await photo.boundingBox())!.height).toBeLessThanOrEqual(360)
     const layout = await page.locator('.result-shell').evaluate(shell => {
       const children = [...shell.children].map(element => ({ name: element.className, rect: element.getBoundingClientRect() })).filter(item => item.rect.height > 0)
