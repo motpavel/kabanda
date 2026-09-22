@@ -18,16 +18,23 @@ const pool = {} as Pool
 function metadataQueries() {
   return fixture.query.mock.calls.map(call => String(call[0])).filter(sql => sql.includes('raid_point_materials'))
 }
+// These are metadata/headroom tests for a confirmed personal visitor. Actual
+// attendance and access denial use real PostgreSQL in point-material-access.
+function membershipQuery(sql: string) {
+  return sql.includes('raid_point_snapshots') || sql.includes('raid_point_credits')
+}
 // Returning mockReset() would register the mock itself as cleanup, causing a
 // spurious SQL call with no arguments after each otherwise successful test.
 beforeEach(() => { fixture.query.mockReset() })
 
 describe('point material metadata does not fetch photo contents', () => {
   it('lists 24 records and the exact cursor without selecting the binary column', async () => {
-    fixture.query.mockImplementation(async (sql: string) => sql.includes('raid_point_snapshots') ? { rowCount: 1 } : {
+    fixture.query.mockImplementation(async (sql: string) => membershipQuery(sql) ? { rowCount: 1 } : {
       rows: Array.from({ length: 25 }, (_, i) => ({ ...row, id: `photo-${i}`, ordinal: String(100 - i), author_name: 'Автор' })),
     })
     const page = await new PointMaterialService(pool).list('user', 'raid', 'point')
+    expect(page.canWrite).toBe(true)
+    expect(fixture.query.mock.calls.find(call => String(call[0]).includes('raid_point_credits'))?.[1]).toEqual(['raid', 'point', 'user'])
     expect(page.materials).toHaveLength(24)
     expect(page.nextCursor).toBe('77')
     expect(page.materials[0]).toMatchObject({ authorName: 'Автор', width: 64, height: 48 })
@@ -39,7 +46,7 @@ describe('point material metadata does not fetch photo contents', () => {
   })
 
   it('replays a completed upload using metadata without decoding or reading stored image bytes', async () => {
-    fixture.query.mockImplementation(async (sql: string) => sql.includes('raid_point_snapshots') ? { rowCount: 1 } : { rows: [row] })
+    fixture.query.mockImplementation(async (sql: string) => membershipQuery(sql) ? { rowCount: 1 } : { rows: [row] })
     const processor = vi.fn()
     const result = await new PointMaterialService(pool, processor).upload('user', 'raid', 'point', 'photo', bytes, sha)
     expect(result.material).toMatchObject({ id: 'photo', ready: true })
@@ -50,13 +57,14 @@ describe('point material metadata does not fetch photo contents', () => {
 
   it('writes processed bytes once but returns only metadata after rechecking ownership', async () => {
     fixture.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('raid_point_snapshots')) return { rowCount: 1 }
+      if (membershipQuery(sql)) return { rowCount: 1 }
       return { rows: [{ ...row, ready: sql.startsWith('UPDATE') }] }
     })
     const processed = Buffer.from('processed image')
     const processor = vi.fn(async () => ({ data: processed, info: { width: 64, height: 48, channels: 3 as const, format: 'jpeg', size: processed.length, premultiplied: false } }))
     await new PointMaterialService(pool, processor).upload('user', 'raid', 'point', 'photo', bytes, sha)
     expect(processor).toHaveBeenCalledTimes(1)
+    expect(fixture.query.mock.calls.filter(call => String(call[0]).includes('raid_point_credits'))).toHaveLength(2)
     const queries = metadataQueries()
     for (const sql of queries.filter(sql => sql.startsWith('SELECT'))) expect(sql.split(/FROM/i)[0]).not.toMatch(/\*|content_bytes/)
     const update = queries.find(sql => sql.startsWith('UPDATE'))!
@@ -66,7 +74,7 @@ describe('point material metadata does not fetch photo contents', () => {
   })
 
   it('keeps idempotency checks on the original photo metadata', async () => {
-    fixture.query.mockImplementation(async (sql: string) => sql.includes('raid_point_snapshots') ? { rowCount: 1 } : { rows: [row] })
+    fixture.query.mockImplementation(async (sql: string) => membershipQuery(sql) ? { rowCount: 1 } : { rows: [row] })
     const service = new PointMaterialService(pool)
     const input = { kind: 'photo' as const, body: row.body, sourceSha256: sha, contentType: 'image/jpeg' as const, sizeBytes: bytes.length }
     await expect(service.create('user', 'raid', 'point', 'operation', input)).resolves.toMatchObject({ material: { id: 'photo' } })
@@ -75,7 +83,7 @@ describe('point material metadata does not fetch photo contents', () => {
   })
 
   it('the authorized content endpoint still reads the exact stored bytes', async () => {
-    fixture.query.mockImplementation(async (sql: string) => sql.includes('raid_point_snapshots') ? { rowCount: 1 } : { rows: [{ content_bytes: bytes }] })
+    fixture.query.mockImplementation(async (sql: string) => membershipQuery(sql) ? { rowCount: 1 } : { rows: [{ content_bytes: bytes }] })
     await expect(new PointMaterialService(pool).read('user', 'raid', 'point', 'photo')).resolves.toEqual(bytes)
     expect(metadataQueries()[0]).toContain('SELECT content_bytes')
   })
