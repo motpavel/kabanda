@@ -92,9 +92,10 @@ async function prepare(page: Page, options: { active?: boolean; emptyVisits?: bo
       : path.endsWith('/live') || path === `/api/raids/${raidId}` ? { raid, points: rows,
           teamVisits: !options.delayedTrack, fieldVisible: true, ...(options.delayedTrack ? {} : { track }) }
       : path.startsWith(`/api/kabandas/${teamId}/points/`) && path.endsWith('/history') ? history
-      : path.endsWith('/materials') ? { materials: [{ id: 'photo', pointSnapshotId: path.split('/')[5], kind: 'photo', body: 'Фото с точки', authorName: 'Павел', authorUserId: userId, ready: true, width: 192, height: 192, createdAt: at }, { id: 'comment', pointSnapshotId: path.split('/')[5], kind: 'comment', body: 'С кабаном Максом посетили', authorName: 'Павел', authorUserId: userId, ready: true, width: null, height: null, createdAt: at }], nextCursor: null }
+      : path.endsWith('/materials') ? { materials: [{ id: 'photo', pointSnapshotId: path.split('/')[5], kind: 'photo', body: 'Фото с точки', authorName: 'Павел', authorUserId: navigatorId, ready: true, width: 192, height: 192, createdAt: at }, { id: 'comment', pointSnapshotId: path.split('/')[5], kind: 'comment', body: 'С кабаном Максом посетили', authorName: 'Павел', authorUserId: navigatorId, ready: true, width: null, height: null, createdAt: at }], nextCursor: null,
+          canWrite: rows.find(point => point.id === path.split('/')[5])?.visitedByMe === true }
       : path.endsWith('/map-points') ? { points: rows }
-      : path.endsWith('/media') ? { media: [{ id: 'photo', state: 'ready', contentType: 'image/jpeg', sizeBytes: 100, width: 192, height: 192, caption: 'Фото с точки', purpose: 'gallery', createdAt: at, uploaderUserId: userId }], nextCursor: null }
+      : path.endsWith('/media') ? { media: [{ id: 'photo', state: 'ready', contentType: 'image/jpeg', sizeBytes: 100, width: 192, height: 192, caption: 'Фото с точки', purpose: 'gallery', createdAt: at, uploaderUserId: navigatorId }], nextCursor: null }
       : path.endsWith('/check-ins/nearby') ? { policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 }, points: [] }
       : path.endsWith('/presence/me') ? { radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: at }
       : path.endsWith('/raids/history/page') ? { schemaVersion: 2, scope: url.searchParams.get('scope') ?? 'all', raids: [], nextCursor: null }
@@ -127,12 +128,14 @@ test('completed map and list keep only green visits, including team-only, with c
   await map.getByRole('button', { name: /^Только команда\./ }).click()
   const detail = page.locator('.result-route__history')
   await expect(detail).toContainText('Посетили')
-  await expect(detail.getByRole('heading', { name: /Комментарии/ })).toBeVisible()
+  await expect(detail.getByRole('region', { name: 'Комментарии точки', exact: true })).toBeVisible()
+  await expect(detail.locator('details.point-materials__history')).toHaveCount(0)
   await expect(detail.locator('a')).toHaveCount(0)
-  await expect(detail.getByRole('button', { name: 'Комментарий', exact: true })).toBeVisible()
-  await expect(detail).toContainText('С кабаном Максом посетили')
-  await detail.getByRole('button', { name: 'Комментарий', exact: true }).click()
-  await expect(detail.getByRole('textbox', { name: 'Комментарий', exact: true })).toBeFocused()
+  // Team-only remains a visible green stop, but no longer permits contributing.
+  await expect(detail.getByRole('button', { name: 'Комментарий', exact: true })).toHaveCount(0)
+  await expect(detail.locator('input[type=file]')).toHaveCount(0)
+  await expect(detail).toContainText('Фото и комментарии можно добавить после вашей подтверждённой отметки')
+  await expect(detail.locator('.point-materials__item p')).toHaveText('Комментарий: С кабаном Максом посетили')
   await expect(page.getByText('Запланировать следующий рейд', { exact: true })).toHaveCount(0)
   await expect(page.getByText('К завершённым рейдам', { exact: true })).toHaveCount(0)
   await expect(page.locator('.result-people__table')).toContainText('Участник')
@@ -147,6 +150,12 @@ test('completed map and list keep only green visits, including team-only, with c
   await expect(page.getByRole('dialog', { name: 'Просмотр фото' })).toBeVisible()
   await page.getByRole('button', { name: 'Закрыть фото' }).click()
   await expect(page.getByRole('dialog', { name: 'Просмотр фото' })).toHaveCount(0)
+  // A different personally visited stop keeps its composer and photo action.
+  await page.locator('.result-route__points').getByRole('button', { name: /1 Личная и командная/ }).click()
+  await expect(detail.getByRole('button', { name: 'Комментарий', exact: true })).toBeVisible()
+  await expect(detail.locator('input[type=file]')).toBeEnabled()
+  await detail.getByRole('button', { name: 'Комментарий', exact: true }).click()
+  await expect(detail.getByRole('textbox', { name: 'Комментарий', exact: true })).toBeFocused()
   await expect(page.locator('.result-shell > :last-child').getByRole('button', { name: 'Поделиться карточкой' })).toBeVisible()
   await page.setViewportSize({ width: 320, height: 760 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -171,7 +180,6 @@ test('late route geometry sets the completed overview instead of freezing the ea
   try {
     await expect.poll(control.requestedTrack).toBe(true)
     await expect(page.locator('.result-route__map .raid-live-point')).toHaveCount(3)
-    // No partial catalogue fit while the real route is still in flight.
     expect((await cameras(page)).every(camera => camera.zoom === 12)).toBe(true)
     control.release()
     await expectRouteOverview(page)

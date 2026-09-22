@@ -183,7 +183,9 @@ test('navigator visit reaches three open phones, unlocks personal materials and 
     const photoViewer = navPage.getByRole('dialog', { name: 'Просмотр фото' })
     await expect(photoViewer.getByRole('img', { name: 'Фото точки' })).toBeVisible()
     await photoViewer.getByRole('button', { name: 'Закрыть фото' }).click()
-    await materials.getByLabel('Комментарий или подпись к фото').fill('Добавлено после финиша')
+    // Results now reuse the compact point composer introduced by #80.
+    await materials.getByRole('button', { name: 'Комментарий', exact: true }).click()
+    await materials.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Добавлено после финиша')
     await materials.getByRole('button', { name: 'Добавить комментарий' }).click()
     await expect(materials.locator('.point-materials__item p')).toHaveText('Комментарий: Добавлено после финиша')
     await expect(materials.locator('.point-materials__item')).toHaveAttribute('data-comment-state', 'confirmed')
