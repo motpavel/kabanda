@@ -26,9 +26,9 @@ export function mergePointMaterials(current: readonly PointMaterial[], page: rea
   return combined.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true })
 }
 
-export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false, actionsAtEnd = false, actionContainer }: {
+export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false, actionsAtEnd = false, commentsExpanded = false, actionContainer }: {
   identityId: string; kabandaId: string; raidId: string; pointId: string; visible: boolean
-  canWrite: boolean; operations: readonly FieldOperation[]; compact?: boolean; actionsAtEnd?: boolean; actionContainer?: HTMLElement | null
+  canWrite: boolean; operations: readonly FieldOperation[]; compact?: boolean; actionsAtEnd?: boolean; commentsExpanded?: boolean; actionContainer?: HTMLElement | null
 }) {
   const [composerOpen, setComposerOpen] = useState(false)
   const composerId = useId()
@@ -290,19 +290,22 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       <label>Комментарий<textarea ref={commentRef} maxLength={2000} rows={2} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
       <button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
     </div>
-  return <section className={`point-materials${compact ? ' point-materials--compact' : ''}`} aria-label="Фото и комментарии точки">
-    {actionContainer ? createPortal(actions, actionContainer) : !actionsAtEnd && actions}
-    {!actionsAtEnd && composer}
-
-    {photoGallery}
-    {(!compact || comments.length > 0) && <details className="point-materials__history" open={compact ? undefined : true}>
-    {compact ? <summary>Комментарии{comments.length > 0 ? ` · ${comments.length}` : ''}</summary> : <summary>Комментарии</summary>}
+  const commentItems = <>
     {!loaded && !error && <p className="kb-muted">{navigator.onLine ? 'Загружаем материалы…' : 'Для загрузки материалов нужно соединение.'}</p>}
     {loaded && !items.length && <p className="kb-muted">Здесь пока нет фото и комментариев.</p>}
     {comments.map(item => <article className="point-materials__item" key={item.id}>
       {item.body && <p>{item.body}</p>}
       <small>{item.authorName || 'Участник рейда'} · {new Date(item.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
     </article>)}
+  </>
+  return <section className={`point-materials${compact ? ' point-materials--compact' : ''}`} aria-label="Фото и комментарии точки">
+    {actionContainer ? createPortal(actions, actionContainer) : !actionsAtEnd && actions}
+    {!actionsAtEnd && composer}
+
+    {photoGallery}
+    {commentsExpanded && comments.length > 0 ? <section className="point-materials__history"><h3>Комментарии · {comments.length}</h3>{commentItems}</section> : (!commentsExpanded && (!compact || comments.length > 0)) && <details className="point-materials__history" open={compact ? undefined : true}>
+    {compact ? <summary>Комментарии{comments.length > 0 ? ` · ${comments.length}` : ''}</summary> : <summary>Комментарии</summary>}
+    {commentItems}
     </details>}
     {cursor && <button type="button" disabled={loading} onClick={() => void refresh(cursor)}>Показать предыдущие материалы</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void refresh()}>Повторить</button></p>}

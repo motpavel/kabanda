@@ -36,13 +36,13 @@ export function CompletedRaidRoute({ identityId, raid, operations = [], canAddMa
         const expanded = selected?.id === point.id
         return <li key={point.id}>
           <button className="result-route__point" type="button" aria-expanded={expanded} aria-controls={`result-point-${point.id}`} onClick={() => setSelected(expanded ? null : point)}>
-            <span className="result-route__number">{index + 1}</span><strong>{point.name}</strong><span aria-hidden="true">{expanded ? '⌄' : '›'}</span>
+            <span className="result-route__number">{index + 1}</span><strong>{point.name}</strong><svg className="result-route__chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
           </button>
           {expanded && <div id={`result-point-${point.id}`} className="result-route__history">
             {point.lastVisitedAt && <p className="result-route__time">Посетили <time dateTime={point.lastVisitedAt}>{new Date(point.lastVisitedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</time></p>}
             {fieldProtocol && <PointMaterialsPanel key={JSON.stringify([identityId, raid.id, point.id])}
               identityId={identityId} kabandaId={raid.kabandaId} raidId={raid.id} pointId={point.id}
-              visible compact actionsAtEnd canWrite={canAddMaterials} operations={operations} />}
+              visible compact actionsAtEnd commentsExpanded canWrite={canAddMaterials} operations={operations} />}
           </div>}
         </li>
       })}</ol>

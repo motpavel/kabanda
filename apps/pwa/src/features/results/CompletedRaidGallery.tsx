@@ -18,7 +18,7 @@ function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
   }, [draft.blob])
   return <figure className="result-gallery__local">
     {url && <img src={url} alt={draft.caption || 'Фото, сохранённое на этом телефоне'} />}
-    <figcaption>{draft.caption && <strong>{draft.caption}</strong>}Сохранено на этом телефоне. Отправка на сервер не подтверждена.</figcaption>
+    <figcaption>Сохранено на этом телефоне. Отправка на сервер не подтверждена.</figcaption>
   </figure>
 }
 
@@ -138,8 +138,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     <h2>Фотографии рейда</h2>
     {items.length > 0 && <div className="result-gallery__grid">{items.map(item => <figure key={item.id}>
       <CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}
-        width={item.width} height={item.height} style={{ aspectRatio: `${item.width} / ${item.height}` }} loading="lazy" alt={item.caption || 'Фото рейда'} />
-      {item.caption && <figcaption>{item.caption}</figcaption>}
+        width={item.width} height={item.height} loading="lazy" alt={item.caption || 'Фото рейда'} />
     </figure>)}</div>}
     {loaded && !items.length && !error && <p className="kb-muted">В этом рейде пока нет фотографий.</p>}
     {!loaded && !error && <p className="kb-muted" role="status">{navigator.onLine ? 'Загружаем фотографии…' : 'Для общей галереи нужно соединение.'}</p>}

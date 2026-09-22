@@ -13,7 +13,7 @@
 .kb-shell .result-gallery p { margin: 0; }
 .result-gallery__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; }
 .result-gallery__grid figure { margin: 0; min-width: 0; }
-.result-gallery__grid img { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 12px; background: #efefeb; }
+.result-gallery__grid img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; object-position: center; border-radius: 12px; background: #efefeb; }
 .result-gallery__grid figcaption { margin-top: 6px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
 .result-gallery__local figcaption { color: var(--kb-muted); }
 .result-gallery__local strong { display: block; font-weight: 600; }
@@ -27,7 +27,7 @@
 .kb-shell .result-route__time { margin: 0; font-size: 13px; color: var(--kb-muted); }
 .kb-shell .result-route__history .point-materials__actions > * { min-height: 50px; border-radius: 12px; box-shadow: 0 2px 4px rgb(32 37 34 / 5%), 0 5px 12px rgb(32 37 34 / 8%); }
 .result-route__history .point-materials__history { border-top: 1px solid var(--kb-line); }
-.result-route__history .point-materials__history summary { font-size: 14px; font-weight: 600; }
+.result-route__history .point-materials__history h3 { font-size: 14px; font-weight: 600; }
 .result-people { min-width: 0; }
 .kb-shell .result-people h2 { margin: 0 0 12px; font-size: 18px; }
 .result-people__table th, .result-people__table td { padding: 12px; text-align: right; border-bottom: 1px solid var(--kb-line); font-variant-numeric: tabular-nums; }
@@ -39,3 +39,8 @@
 .kb-shell .result-route__point[aria-expanded='true'] { background: #e7f2e9; border-color: #c6ddcb; }
 .result-route__history .point-materials__item { padding: 10px 12px; margin-bottom: 8px; border: 0; border-radius: 12px; background: #f5f5f1; font-size: 14px; line-height: 1.45; }
 .result-people__table { width: 100%; border: 1px solid var(--kb-line); border-spacing: 0; border-radius: 14px; overflow: hidden; background: #fff; font-size: 14px; table-layout: fixed; }
+
+.result-route__history .point-materials__history h3 { margin: 12px 0; color: var(--kb-muted); }
+.result-route__chevron { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms ease; }
+.result-route__point[aria-expanded='true'] .result-route__chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .result-route__chevron { transition: none; } }
