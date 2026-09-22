@@ -1,0 +1,3 @@
+Built-in imagegen edit of boar-v1.png; resized to 120px preserving alpha. Used only for personal point statistics.
+
+Edit this exact single wild boar profile icon. Increase ONLY the thickness of all red outline strokes by 50% (1.5 times original thickness). Preserve exactly the silhouette, head direction facing right, shoulder arch, ear, tusk, proportions, composition, canvas margins and red color #C6342D. No redesign, no new details, no other icons. Keep internal gaps readable. Real transparent alpha background. This will be displayed as a 32x30px UI icon so the heavier outlines must remain crisp. No glow, no shadow, no gradients, no text.

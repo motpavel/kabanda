@@ -804,7 +804,7 @@ function pluralizeMembers(count: number) {
 }
 
 export function TeamMetric({ icon, value, label }: { icon: 'point' | 'members' | 'bike'; value: number | null; label: string }) {
-  return <div className="kb-team-metric"><span>{icon === 'point' ? <span className="kb-nav-icon kb-nav-icon--boar" aria-hidden="true" style={{ maskImage: `url(${appPath('brand/result-icons/boar-v1.png')})`, WebkitMaskImage: `url(${appPath('brand/result-icons/boar-v1.png')})` }} /> : <TabIcon section={icon === 'members' ? 'kabanda' : 'raids'} />}</span><p><strong aria-label={value === null ? 'Данные ещё не получены' : undefined}>{value ?? '…'}</strong><small>{label}</small></p></div>
+  return <div className="kb-team-metric"><span>{icon === 'point' ? <span className="kb-nav-icon kb-nav-icon--boar" aria-hidden="true" style={{ maskImage: `url(${appPath('brand/result-icons/boar-v2.png')})`, WebkitMaskImage: `url(${appPath('brand/result-icons/boar-v2.png')})` }} /> : <TabIcon section={icon === 'members' ? 'kabanda' : 'raids'} />}</span><p><strong aria-label={value === null ? 'Данные ещё не получены' : undefined}>{value ?? '…'}</strong><small>{label}</small></p></div>
 }
 
 function TeamScreenIcon({ name }: { name: 'point' | 'members' | 'bike' | 'invite' | 'logout' }) {
