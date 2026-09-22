@@ -53,3 +53,10 @@
 .kb-shell .result-share__button:hover { transform: none; border-color: #d63830; color: #c6342d; background: #fff; box-shadow: none; transition: none; }
 .kb-shell .result-gallery__photo,
 .kb-shell .result-gallery__photo:hover { display: block; width: 100%; padding: 0; margin: 0; overflow: hidden; border: 0; border-radius: 12px; background: #efefeb; box-shadow: none; transform: none; }
+
+/* Completed raids use the same page palette as the home screen. */
+html:has(.result-shell), body:has(.result-shell) { background: #f7f7f5; }
+.kb-shell .result-shell button,
+.kb-shell .result-shell button:hover { transform: none; transition: none; }
+.kb-shell .result-route__point:hover { color: #26734b; background: #f2f8f3; border-color: #e1e9e2; box-shadow: none; }
+.kb-shell .result-route__point[aria-expanded='true']:hover { background: #e7f2e9; border-color: #c6ddcb; }

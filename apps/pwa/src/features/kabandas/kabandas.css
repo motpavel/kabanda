@@ -750,7 +750,8 @@
 .kb-text-action { display: block; min-height: 40px !important; margin-top: 10px; border: 0 !important; padding-inline: 0 !important; color: var(--kb-brand-hover) !important; background: transparent !important; box-shadow: none !important; }
 .kb-link-button { display: inline-flex; align-items: center; justify-content: center; border-color: var(--kb-brand); color: #fff; background: var(--kb-brand); text-decoration: none; }
 
-.kb-shell--team {
+.kb-shell--team,
+.kb-shell:has(> .result-shell) {
   --kb-bg: #f7f7f5;
   --kb-surface: #fff;
   --kb-surface-subtle: #f4f3f1;
