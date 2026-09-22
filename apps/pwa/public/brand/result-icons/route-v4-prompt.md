@@ -1,0 +1,3 @@
+Built-in imagegen. Resized to 120px preserving alpha.
+
+Create one playful clean route icon for a cycling app. A round hollow START point at lower left connected by a bold winding S-shaped single trail to a small waving FINISH FLAG at upper right. A charming dynamic curved route with a clear flag, slightly playful rounded geometry. More character than just two circles, but very simple and readable at 30px. Single monochrome brand red #C6342D, uniform thick rounded strokes about 2 units on 24 unit grid, rounded joins/caps. No boar, no animal, no text, no road double edges, no tiny details, no arrows, no shadows or gradients. Square canvas centered balanced 10% margins, real transparent alpha background, transparent interiors.
