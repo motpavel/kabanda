@@ -176,13 +176,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
         if (previous.signature === signature) continue
         previous.signature = signature
         previous.marker.properties.set('markerClass', markerClass); previous.marker.properties.set('ariaLabel', ariaLabel)
-        previous.marker.options.set('iconShape', shape); previous.marker.options.set('zIndex', destination ? 25 : highlighted ? 24 : 20)
+        previous.marker.options.set('iconShape', shape); previous.marker.options.set('zIndex', highlighted ? 40 : destination ? 35 : 20)
         previous.marker.geometry?.setCoordinates([point.latitude, point.longitude])
         continue
       }
-      const layout = runtime.templateLayoutFactory.createClass('<button type="button" class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}"></button>')
-      const marker = new runtime.Placemark([point.latitude, point.longitude], { markerClass, ariaLabel }, {
-        iconLayout: layout, iconShape: shape, hasBalloon: false, hasHint: false, interactiveZIndex: false, zIndex: destination ? 25 : highlighted ? 24 : 20,
+      const layout = runtime.templateLayoutFactory.createClass('<button type="button" class="{{ properties.markerClass }}" data-raid-point="{{ properties.pointId }}" aria-label="{{ properties.ariaLabel }}"></button>')
+      const marker = new runtime.Placemark([point.latitude, point.longitude], { markerClass, ariaLabel, pointId: point.id }, {
+        iconLayout: layout, iconShape: shape, hasBalloon: false, hasHint: false, interactiveZIndex: false, zIndex: highlighted ? 40 : destination ? 35 : 20,
       })
       const entry = { marker, point, signature }
       marker.events.add('click', event => { event.stopPropagation?.(); onSelect.current(entry.point) })
@@ -260,6 +260,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     {((planned && !completed) || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned && !completed ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
     <div className="route-live-map" ref={containerRef}
       onPointerDownCapture={event => {
+        if (event.target instanceof Element && event.target.closest('[data-raid-point]')) { gesture.current = null; return }
         if (!event.isPrimary) { gesture.current = null; stopFollowing(); return }
         if (event.button === 0) gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
       }}
@@ -267,7 +268,26 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       onPointerUpCapture={event => {
         const start = gesture.current
         gesture.current = null
-        if (start?.id === event.pointerId && !start.moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 6) onMapTap?.()
+        if (start?.id !== event.pointerId || start.moved || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return
+        // Yandex places an events pane above HTML markers, so event.target
+        // can be the map even when the user taps directly on a point.
+        const hit = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-raid-point]')]
+          .map(marker => {
+            const box = marker.getBoundingClientRect()
+            return { marker, distance: Math.hypot(event.clientX - (box.left + box.width / 2), event.clientY - (box.top + box.height / 2)), radius: Math.max(22, box.width / 2) }
+          })
+          .filter(item => item.distance <= item.radius)
+          .sort((a, b) => a.distance - b.distance)[0]
+        const entry = hit?.marker.dataset.raidPoint ? pointMarkers.current.get(hit.marker.dataset.raidPoint) : null
+        if (entry) onSelect.current(entry.point)
+        else onMapTap?.()
+      }}
+      onClickCapture={event => {
+        const marker = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-raid-point]') : null
+        const entry = marker?.dataset.raidPoint ? pointMarkers.current.get(marker.dataset.raidPoint) : null
+        if (!entry) return
+        event.stopPropagation()
+        onSelect.current(entry.point)
       }}
       onPointerCancelCapture={() => { if (gesture.current) stopFollowing(); gesture.current = null }}
       onWheelCapture={stopFollowing} onDoubleClickCapture={stopFollowing}

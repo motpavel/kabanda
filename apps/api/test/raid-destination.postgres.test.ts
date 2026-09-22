@@ -24,7 +24,7 @@ suite('shared raid destination', () => {
     await db.query("INSERT INTO raid_point_snapshots(id,raid_id,source_point_id,collection_id,name,location,position) VALUES($1,$2,$3,$4,'Цель',ST_SetSRID(ST_MakePoint(53.21,56.86),4326),0),($5,$6,$3,$4,'Чужая',ST_SetSRID(ST_MakePoint(53.21,56.86),4326),0)", [point, raid, source, collection, foreignPoint, otherRaid])
   })
   afterAll(async () => { await pool?.end() })
-  const select = (actor = nav, version = 1, target = point, key = randomUUID()) => service!.setDestination(actor, raid, { expectedVersion: version, pointSnapshotId: target }, key)
+  const select = (actor = nav, version = 1, target: string | null = point, key = randomUUID()) => service!.setDestination(actor, raid, { expectedVersion: version, pointSnapshotId: target }, key)
   const checkin = (actor: string, extra = {}) => service!.createCheckin(actor, raid, {
     pointSnapshotId: point, evidence: { latitude: 56.86, longitude: 53.21, accuracyMeters: 8, capturedAt: new Date().toISOString() },
     presentParticipantIds: [], organizerAttestation: false, ...extra,
@@ -39,6 +39,30 @@ suite('shared raid destination', () => {
     expect((await select(nav, 1, point, key)).raid.version).toBe(2)
     await expect(select(nav, 1)).rejects.toMatchObject({ statusCode: 409 })
     await expect(select(nav, 2, foreignPoint, key)).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+  })
+
+  it('replaces a target, rejects a concurrent stale selection and cancels idempotently', async () => {
+    const other = randomUUID(), otherSource = randomUUID()
+    await pool!.query(`INSERT INTO points(id,kabanda_id,stable_key,name,location,source,source_id,source_url,license,verification_status)
+      SELECT $1,p.kabanda_id,$1::uuid::text,'Вторая точка',p.location,'test',$1::uuid::text,'https://example.test','test','field_verified'
+      FROM points p JOIN raid_point_snapshots s ON s.source_point_id=p.id WHERE s.id=$2`, [otherSource, point])
+    await pool!.query(`INSERT INTO raid_point_snapshots(id,raid_id,source_point_id,collection_id,name,location,position)
+      SELECT $1,raid_id,$3,collection_id,'Вторая точка',location,1 FROM raid_point_snapshots WHERE id=$2`, [other, point, otherSource])
+    await select()
+    const results = await Promise.allSettled([select(nav, 2, other), select(nav, 2, point)])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
+    const current = await service!.getRaid(nav, raid)
+    expect([point, other]).toContain(current.destination?.pointSnapshotId)
+    const replacement = await select(nav, current.version, other)
+    expect(replacement.raid.destination?.pointSnapshotId).toBe(other)
+    await expect(select(member, replacement.raid.version, null)).rejects.toMatchObject({ statusCode: 403 })
+    const key = randomUUID()
+    const cleared = await select(nav, replacement.raid.version, null, key)
+    expect(cleared.raid.destination).toBeNull()
+    expect((await service!.getRaid(member, raid)).destination).toBeNull()
+    expect((await select(nav, replacement.raid.version, null, key)).raid.version).toBe(cleared.raid.version)
+    await expect(select(nav, replacement.raid.version, point)).rejects.toMatchObject({ statusCode: 409 })
   })
 
   it('rejects non-navigators, outsiders, foreign points and inactive raids', async () => {

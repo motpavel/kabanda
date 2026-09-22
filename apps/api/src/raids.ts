@@ -506,7 +506,7 @@ async function transaction<T>(pool: Pool, task: (client: PoolClient) => Promise<
 export interface RaidService {
   updateSetup(actorUserId: string, raidId: string, input: { expectedVersion: number; title: string; scheduledAt: string | null; meetingPlace: string | null; description: string | null }, operationId: string): Promise<{ raid: RaidProjection }>
 
-  setDestination(actorUserId: string, raidId: string, input: { expectedVersion: number; pointSnapshotId: string }, operationId: string): Promise<RaidCommandResponse>
+  setDestination(actorUserId: string, raidId: string, input: { expectedVersion: number; pointSnapshotId: string | null }, operationId: string): Promise<RaidCommandResponse>
   prepareRaid(actorUserId: string, raidId: string, input: PrepareRaidInput, operationId: string): Promise<{ raid: RaidProjection; presence: RaidPresenceRoster }>
   createDraft(
     actorUserId: string,
@@ -1230,7 +1230,7 @@ export class DatabaseRaidService implements RaidService {
 
   async setDestination(
     actorUserId: string, raidId: string,
-    input: { expectedVersion: number; pointSnapshotId: string }, operationId: string,
+    input: { expectedVersion: number; pointSnapshotId: string | null }, operationId: string,
   ): Promise<RaidCommandResponse> {
     const requestFingerprint = fingerprint('set-destination', raidId, input)
     return transaction(this.pool, async (client) => {
@@ -1241,14 +1241,16 @@ export class DatabaseRaidService implements RaidService {
       const replay = await this.replay<RaidCommandResponse>(client, actorUserId, operationId, requestFingerprint)
       if (replay) return replay
       this.requireVersion(raid, input.expectedVersion)
-      const point = await client.query('SELECT 1 FROM raid_point_snapshots WHERE id = $1 AND raid_id = $2', [input.pointSnapshotId, raidId])
-      if (!point.rowCount) throw this.notFound()
-      if (raid.route_template_id) {
-        const visited = await client.query('SELECT 1 FROM raid_point_credits WHERE raid_id = $1 AND point_snapshot_id = $2 AND user_id = $3', [raidId, input.pointSnapshotId, actorUserId])
-        if (visited.rowCount) throw new RaidError('RAID_POINT_ALREADY_VISITED', 409, 'Эта точка маршрута уже посещена')
+      if (input.pointSnapshotId !== null) {
+        const point = await client.query('SELECT 1 FROM raid_point_snapshots WHERE id = $1 AND raid_id = $2', [input.pointSnapshotId, raidId])
+        if (!point.rowCount) throw this.notFound()
+        if (raid.route_template_id) {
+          const visited = await client.query('SELECT 1 FROM raid_point_credits WHERE raid_id = $1 AND point_snapshot_id = $2 AND user_id = $3', [raidId, input.pointSnapshotId, actorUserId])
+          if (visited.rowCount) throw new RaidError('RAID_POINT_ALREADY_VISITED', 409, 'Эта точка маршрута уже посещена')
+        }
       }
       const updated = await client.query<{ updated_at: Date }>(
-        `UPDATE raids SET destination_point_id = $2, destination_selected_at = clock_timestamp(),
+        `UPDATE raids SET destination_point_id = $2, destination_selected_at = CASE WHEN $2::uuid IS NULL THEN NULL ELSE clock_timestamp() END,
           version = version + 1, updated_at = clock_timestamp() WHERE id = $1 RETURNING updated_at`,
         [raidId, input.pointSnapshotId],
       )

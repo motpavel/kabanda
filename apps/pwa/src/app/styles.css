@@ -102,10 +102,12 @@ button,
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
+@media (hover: hover) and (pointer: fine) {
 button:not(:disabled):hover,
 .file-button:hover {
   border-color: #202923;
   transform: translateY(-1px);
+}
 }
 
 button:focus-visible,
