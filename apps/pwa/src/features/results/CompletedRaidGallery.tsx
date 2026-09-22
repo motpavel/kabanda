@@ -1,3 +1,4 @@
+import { ResultSectionHeading } from './ResultSectionHeading'
 import { useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import { ApiError, requestJson } from '../../lib/http'
@@ -139,7 +140,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const acceptedIds = new Set(items.map(item => item.id))
   const local = drafts.filter(draft => !acceptedIds.has(draft.mediaId ?? draft.intentId ?? ''))
   return <section className="kb-card result-gallery" aria-label="Фотографии завершённого рейда">
-    <h2>Фотографии рейда</h2>
+    <ResultSectionHeading icon="photos">Фотографии рейда</ResultSectionHeading>
     {selected && <FullscreenPhoto createdAt={selected.createdAt} onClose={() => setSelected(null)}><CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(selected.id)}/content`} width={selected.width} height={selected.height} alt="Фото рейда" draggable={false} /></FullscreenPhoto>}
     {items.length > 0 && <div className="result-gallery__grid">{items.map(item => <figure key={item.id}>
       <button className="result-gallery__photo" type="button" aria-label="Открыть фото на весь экран" onClick={() => setSelected(item)}><CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}

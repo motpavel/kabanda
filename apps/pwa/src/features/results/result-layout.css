@@ -68,3 +68,7 @@ html:has(.result-shell), body:has(.result-shell) { background: #f7f7f5; }
 .kb-shell .result-share > img { width: 100%; max-width: none; height: auto; aspect-ratio: auto; border-radius: 0; }
 .result-share__actions { display: grid; gap: 12px; padding: 16px 20px 20px; }
 .result-share__actions p { margin: 0; }
+
+.kb-shell .result-shell { --result-accent: #c6342d; }
+.kb-shell .result-shell .result-section-heading { display: flex; align-items: center; gap: 10px; color: var(--result-accent); font-size: 18px; line-height: 1.3; }
+.result-section-heading__icon { display: block; flex: 0 0 30px; width: 30px; height: 30px; background: currentColor; mask-size: contain; mask-position: center; mask-repeat: no-repeat; -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; }

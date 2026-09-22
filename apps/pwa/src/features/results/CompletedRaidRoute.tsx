@@ -1,3 +1,4 @@
+import { ResultSectionHeading } from './ResultSectionHeading'
 import { useEffect, useState } from 'react'
 import { PointMaterialsPanel } from '../checkins/PointMaterialsPanel'
 import { getRaidMapPoints, getRaidSnapshot } from '../raids/api'
@@ -26,7 +27,7 @@ export function CompletedRaidRoute({ identityId, raid, operations = [], canAddMa
   }, [identityId, raid.id])
 
   return <section className="kb-card result-route" aria-label="Маршрут и посещения рейда">
-    <h2>Маршрут рейда</h2>
+    <ResultSectionHeading icon="route">Маршрут рейда</ResultSectionHeading>
     <div className="raid-active-map result-route__map">
       <RaidRouteMap identityId={identityId} raidId={raid.id} live={false} completed location={null} highlightedPointId={selected?.id ?? null} onSelectPoint={setSelected} />
     </div>
