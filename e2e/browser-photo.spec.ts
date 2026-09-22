@@ -60,10 +60,11 @@ test('selected PNG reaches the durable photo queue through the real browser deco
   })
   await page.goto(`/app?raid=${raidId}`)
   await page.getByRole('button', { name: /^Остановка\./ }).click()
-  const panel = page.getByRole('region', { name: 'Фото и комментарии точки' })
+  const photoInput = page.getByLabel('Добавить фото')
   try {
-    await expect(panel).toBeVisible()
-    await panel.locator('input[type="file"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+    await expect(photoInput).toBeAttached()
+    await expect(photoInput).toBeEnabled()
+    await photoInput.setInputFiles('apps/pwa/public/pwa-192x192.png')
     await expect.poll(async () => {
       if (uploadRequests > 0) return 'durably saved'
       return page.evaluate(() => JSON.stringify({ steps: (window as any).photoPreparationSteps,
