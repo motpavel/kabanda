@@ -18,3 +18,24 @@
 .result-gallery__local figcaption { color: var(--kb-muted); }
 .result-gallery__local strong { display: block; font-weight: 600; }
 @media (min-width: 760px) { .result-gallery__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.result-route__points { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.result-route__points > li { min-width: 0; }
+.result-route__point strong { font-size: 14px; overflow-wrap: anywhere; }
+.result-route__number { font-size: 13px; font-variant-numeric: tabular-nums; }
+.result-route__history { display: grid; gap: 12px; padding: 14px 4px 12px; min-width: 0; }
+.kb-shell .result-route__time { margin: 0; font-size: 13px; color: var(--kb-muted); }
+.kb-shell .result-route__history .point-materials__actions > * { min-height: 50px; border-radius: 12px; box-shadow: 0 2px 4px rgb(32 37 34 / 5%), 0 5px 12px rgb(32 37 34 / 8%); }
+.result-route__history .point-materials__history { border-top: 1px solid var(--kb-line); }
+.result-route__history .point-materials__history summary { font-size: 14px; font-weight: 600; }
+.result-people { min-width: 0; }
+.kb-shell .result-people h2 { margin: 0 0 12px; font-size: 18px; }
+.result-people__table th, .result-people__table td { padding: 12px; text-align: right; border-bottom: 1px solid var(--kb-line); font-variant-numeric: tabular-nums; }
+.result-people__table th:first-child { width: 52%; text-align: left; overflow-wrap: anywhere; }
+.result-people__table thead th { color: var(--kb-muted); background: #f7f8f5; font-size: 12px; font-weight: 500; }
+.result-people__table tbody th { font-weight: 600; }
+.result-people__table tbody tr:last-child > * { border-bottom: 0; }
+.kb-shell .result-route__point { display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; min-height: 54px; margin: 0; padding: 12px; border: 1px solid #e1e9e2; border-radius: 14px; color: #26734b; background: #f2f8f3; text-align: left; }
+.kb-shell .result-route__point[aria-expanded='true'] { background: #e7f2e9; border-color: #c6ddcb; }
+.result-route__history .point-materials__item { padding: 10px 12px; margin-bottom: 8px; border: 0; border-radius: 12px; background: #f5f5f1; font-size: 14px; line-height: 1.45; }
+.result-people__table { width: 100%; border: 1px solid var(--kb-line); border-spacing: 0; border-radius: 14px; overflow: hidden; background: #fff; font-size: 14px; table-layout: fixed; }

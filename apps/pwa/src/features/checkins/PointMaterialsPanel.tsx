@@ -26,9 +26,9 @@ export function mergePointMaterials(current: readonly PointMaterial[], page: rea
   return combined.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true })
 }
 
-export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false, actionContainer }: {
+export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false, actionsAtEnd = false, actionContainer }: {
   identityId: string; kabandaId: string; raidId: string; pointId: string; visible: boolean
-  canWrite: boolean; operations: readonly FieldOperation[]; compact?: boolean; actionContainer?: HTMLElement | null
+  canWrite: boolean; operations: readonly FieldOperation[]; compact?: boolean; actionsAtEnd?: boolean; actionContainer?: HTMLElement | null
 }) {
   const [composerOpen, setComposerOpen] = useState(false)
   const composerId = useId()
@@ -286,12 +286,14 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
         : <img src={photoViewer.preview.url} alt="Выбранное фото" draggable={false} />}
     </div>
   </div>, document.body) : null
-  return <section className={`point-materials${compact ? ' point-materials--compact' : ''}`} aria-label="Фото и комментарии точки">
-    {actionContainer ? createPortal(actions, actionContainer) : actions}
-    {compact && canWrite && !denied && <div id={composerId} className="point-materials__compose" hidden={!composerOpen}>
+  const composer = compact && canWrite && !denied && <div id={composerId} className="point-materials__compose" hidden={!composerOpen}>
       <label>Комментарий<textarea ref={commentRef} maxLength={2000} rows={2} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
       <button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
-    </div>}
+    </div>
+  return <section className={`point-materials${compact ? ' point-materials--compact' : ''}`} aria-label="Фото и комментарии точки">
+    {actionContainer ? createPortal(actions, actionContainer) : !actionsAtEnd && actions}
+    {!actionsAtEnd && composer}
+
     {photoGallery}
     {(!compact || comments.length > 0) && <details className="point-materials__history" open={compact ? undefined : true}>
     {compact ? <summary>Комментарии{comments.length > 0 ? ` · ${comments.length}` : ''}</summary> : <summary>Комментарии</summary>}
@@ -301,8 +303,8 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       {item.body && <p>{item.body}</p>}
       <small>{item.authorName || 'Участник рейда'} · {new Date(item.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>
     </article>)}
-    {cursor && <button type="button" disabled={loading} onClick={() => void refresh(cursor)}>Показать предыдущие материалы</button>}
     </details>}
+    {cursor && <button type="button" disabled={loading} onClick={() => void refresh(cursor)}>Показать предыдущие материалы</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void refresh()}>Повторить</button></p>}
     {pendingComments.length > 0 && <ul className="point-materials__pending">{pendingComments.map(row => <li key={row.operationId}>
       Комментарий: {row.status === 'rejected' ? 'сервер не принял, копия сохранена на телефоне'
@@ -314,8 +316,8 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
         <label className="checkin-photo kb-link-button">{busy ? 'Сохраняем…' : 'Добавить фото'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => {
           void consumeSelectedFile(event.currentTarget, save)
         }} /></label></div>
-      <p className="kb-muted">Материалы не создают новое посещение и не меняют баллы.</p>
     </div>}
+    {actionsAtEnd && <>{!actionContainer && actions}{composer}</>}
     {message && <p role="status">{message}</p>}
     {viewer}
   </section>

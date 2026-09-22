@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { installYandexMapsMock } from './support.js'
 import type { PointVisitHistory } from '../packages/contracts/src/index.js'
 import type { RaidMapPoint, RaidProjection, RouteTrackProjection } from '../apps/pwa/src/features/raids/types.js'
@@ -32,7 +33,7 @@ const points: RaidMapPoint[] = [
   id: `55555555-5555-4555-8555-${String(index + 1).padStart(12, '0')}`,
   sourcePointId: `66666666-6666-4666-8666-${String(index + 1).padStart(12, '0')}`,
   name: String(name), visitedByMe: Boolean(visitedByMe), visitedByTeam: Boolean(visitedByTeam),
-  latitude: Number(latitude), longitude: Number(longitude), position: index,
+  latitude: Number(latitude), longitude: Number(longitude), position: index, lastVisitedAt: at,
 }))
 const metrics = { durationSeconds: 120, distanceMeters: 1000, uniquePoints: 3, photos: 0 }
 const history: PointVisitHistory = {
@@ -82,18 +83,18 @@ async function prepare(page: Page, options: { active?: boolean; emptyVisits?: bo
       if (options.delayedTrack) await gate
       return route.fulfill({ json: { track } })
     }
-    // The independent PNG has no bearing on the route-under-test.
-    if (path.endsWith('/share-card')) return route.fulfill({ status: 503, json: { code: 'TEMPORARY' } })
+    if (path.endsWith('/share-card') || path.endsWith('/content')) return route.fulfill({ contentType: 'image/png', body: readFileSync('apps/pwa/public/pwa-192x192.png') })
     const body = path === '/api/me' ? { user: { id: userId, displayName: 'Участник', username: 'completed-qa', email: 'qa@example.test', identityKind: 'verified', avatarUrl: null } }
       : path === '/api/kabandas' ? { kabandas: [{ id: teamId, name: 'Проверка итогов', role: 'member', avatar: '🐗', coverImage: null, memberCount: 2, pointsCollectionId: null }] }
       : path.endsWith('/result') ? { result: { schemaVersion: 1, raid: { id: raidId, kabandaId: teamId, title: raid.title,
           startedAt: at, completedAt: '2026-09-20T12:02:00Z', partial: false }, team: metrics, personal: metrics,
           participants: [{ userId, displayName: 'Участник', metrics }] } }
       : path.endsWith('/live') || path === `/api/raids/${raidId}` ? { raid, points: rows,
-          teamVisits: false, fieldVisible: true, ...(options.delayedTrack ? {} : { track }) }
+          teamVisits: !options.delayedTrack, fieldVisible: true, ...(options.delayedTrack ? {} : { track }) }
       : path.startsWith(`/api/kabandas/${teamId}/points/`) && path.endsWith('/history') ? history
+      : path.endsWith('/materials') ? { materials: [{ id: 'photo', pointSnapshotId: path.split('/')[5], kind: 'photo', body: 'Фото с точки', authorName: 'Павел', authorUserId: userId, ready: true, width: 192, height: 192, createdAt: at }, { id: 'comment', pointSnapshotId: path.split('/')[5], kind: 'comment', body: 'С кабаном Максом посетили', authorName: 'Павел', authorUserId: userId, ready: true, width: null, height: null, createdAt: at }], nextCursor: null }
       : path.endsWith('/map-points') ? { points: rows }
-      : path.endsWith('/media') ? { media: [], nextCursor: null }
+      : path.endsWith('/media') ? { media: [{ id: 'photo', state: 'ready', contentType: 'image/jpeg', sizeBytes: 100, width: 192, height: 192, caption: 'Фото с точки', purpose: 'gallery', createdAt: at, uploaderUserId: userId }], nextCursor: null }
       : path.endsWith('/check-ins/nearby') ? { policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 }, points: [] }
       : path.endsWith('/presence/me') ? { radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: at }
       : path.endsWith('/raids/history/page') ? { schemaVersion: 2, scope: url.searchParams.get('scope') ?? 'all', raids: [], nextCursor: null }
@@ -124,8 +125,29 @@ test('completed map and list keep only green visits, including team-only, with c
   await expect(page.locator('.result-route__points li')).toHaveCount(3)
   await expectRouteOverview(page)
   await map.getByRole('button', { name: /^Только команда\./ }).click()
-  await expect(page.locator('.result-route__history').getByRole('heading', { name: 'Только команда', exact: true })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'История посещений точки' })).toContainText('Навигатор')
+  const detail = page.locator('.result-route__history')
+  await expect(detail).toContainText('Посетили')
+  await expect(detail.getByRole('heading')).toHaveCount(0)
+  await expect(detail.locator('a')).toHaveCount(0)
+  await expect(detail.getByRole('button', { name: 'Комментарий', exact: true })).toBeVisible()
+  await detail.locator('summary').click()
+  await expect(detail).toContainText('С кабаном Максом посетили')
+  await detail.getByRole('button', { name: 'Комментарий', exact: true }).click()
+  await expect(detail.getByRole('textbox', { name: 'Комментарий', exact: true })).toBeFocused()
+  await expect(page.getByText('Запланировать следующий рейд', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('К завершённым рейдам', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.result-people__table')).toContainText('Участник')
+  await expect(page.locator('.result-route__point[aria-expanded="true"]')).toContainText('2Только команда')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await expect(detail.getByRole('button', { name: 'Открыть фото на весь экран' })).toBeVisible()
+  await detail.getByRole('button', { name: 'Открыть фото на весь экран' }).click()
+  await expect(page.getByRole('dialog', { name: 'Просмотр фото' })).toBeVisible()
+  await page.getByRole('button', { name: 'Закрыть фото' }).click()
+  await expect(page.locator('.result-gallery__grid img')).toHaveCount(1)
+  await expect(page.locator('.result-shell > :last-child').getByRole('button', { name: 'Поделиться карточкой' })).toBeVisible()
+  await page.setViewportSize({ width: 320, height: 760 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 390, height: 844 })
   expect(control.errors).toEqual([])
   await page.screenshot({ path: info.outputPath('completed-visited-only.png'), fullPage: true })
 })

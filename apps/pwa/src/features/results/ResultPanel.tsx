@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/http'
-import { appPath } from '../../lib/paths'
 import { resultResource, useRaidResource } from '../raids/resources'
 import { useFieldQueue } from '../raids/use-field-queue'
 import type { RaidProjection } from '../raids/types'
@@ -116,19 +115,16 @@ function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
         <div className="result-metrics__head" role="row"><span>Метрика</span><strong>Лично</strong><strong>Команда</strong></div>
         {rows.map(row => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}
       </div>}
-      {result && <section className="kb-card" key="participants"><p className="kb-kicker">Участники</p><ul className="result-participants">{result.participants.map(participant => <li key={participant.userId}><strong>{participant.displayName}</strong><span>{participant.metrics.uniquePoints} точек · {participant.metrics.photos} фото</span></li>)}</ul></section>}
-      <CompletedRaidGallery key="gallery" identityId={identityId} raidId={raid.id} enabled={!denied && !staleOnly} onAccessDenied={() => entry.deny()} />
+      {result && <section className="result-people" key="participants"><h2>Участники</h2>
+        <table className="result-people__table"><thead><tr><th scope="col">Участник</th><th scope="col">Точки</th><th scope="col">Фото</th></tr></thead>
+          <tbody>{result.participants.map(participant => <tr key={participant.userId}><th scope="row">{participant.displayName}</th><td>{participant.metrics.uniquePoints}</td><td>{participant.metrics.photos}</td></tr>)}</tbody>
+        </table></section>}
+      <CompletedRaidGallery key="gallery" identityId={identityId} raidId={raid.id} enabled={!denied && !staleOnly} refreshKey={queue.rows.filter(row => row.kind === 'photo' && row.status === 'accepted').map(row => row.operationId).join(':')} onAccessDenied={() => entry.deny()} />
       {card && canUseResult && <section className="kb-card result-share" key="share"><img src={card.url} width="1080" height="1350" alt="Карточка с итогами рейда" /><button className="result-share__button" type="button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Открываем меню…' : 'Поделиться карточкой'}</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</section>}
       {cardError && canUseResult && <div className="kb-notice" role="status" key="share-error">Карточку для друзей не удалось подготовить. <button type="button" onClick={() => setCardRetry(value => value + 1)}>Повторить подготовку карточки</button></div>}
-      {result && <ResultNextRaidAction key="next" enabled={canUseResult} kabandaId={result.raid.kabandaId} />}
-      <a key="history" className="result-history-link" href={`${appPath('app')}?kabanda=${encodeURIComponent(raid.kabandaId)}&tab=raids`}>К завершённым рейдам</a>
+
     </section>
   )
-}
-
-export function ResultNextRaidAction({ enabled, kabandaId }: { enabled: boolean; kabandaId: string }) {
-  if (!enabled) return <a className="kb-link-button result-next" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`}>Вернуться к истории</a>
-  return <a className="kb-link-button kb-primary raid-primary result-next" href={`${appPath('app')}?createRaid=${encodeURIComponent(kabandaId)}`}>Запланировать следующий рейд</a>
 }
 
 function readSessionKey(storageKey: string): string | null {

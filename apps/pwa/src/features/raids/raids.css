@@ -1173,14 +1173,6 @@
 .result-route .result-route__map { position: relative; inset: auto; width: 100%; height: min(52dvh, 440px); min-height: 320px; margin: 0 0 20px; border-radius: 16px; overflow: hidden; }
 .result-route .raid-map-controls { top: 16px; right: 12px; }
 .result-route .raid-map-controls button.raid-map-controls__follow { display: none; }
-.result-route__points { margin: 0; padding-left: 22px; }
-.result-route__points li::marker { color: #26734b; }
-.kb-shell .result-route__points button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; border: 0; border-bottom: 1px solid #eceeeb; border-radius: 0; padding: 10px 4px; color: inherit; background: transparent; text-align: left; }
-.kb-shell .result-route__points button[aria-pressed='true'] { color: #26734b; background: #f2faf4; }
-.result-route__history { margin-top: 18px; border-top: 1px solid #eceeeb; padding-top: 16px; }
-.result-route__history .kb-section-head { align-items: start; }
-.result-route__history .kb-section-head h3 { margin: 0 0 14px; }
-.result-route__history .kb-section-head button { flex: 0 0 44px; }
 .result-route .result-route__map { z-index: 0; isolation: isolate; }
 
 .result-share img { max-width: 420px; aspect-ratio: 4 / 5; object-fit: contain; justify-self: center; }

@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { KabandaSummary } from '../kabandas/types'
-import { ResultNextRaidAction } from '../results/ResultPanel'
 import { RaidHomeCreatePrompt } from './RaidHomeCard'
 
 const membership: KabandaSummary = {
@@ -30,13 +29,4 @@ describe('raid create surfaces', () => {
     expect(renderToStaticMarkup(<RaidHomeCreatePrompt enabled={false} kabanda={membership} />)).toBe('')
   })
 
-  it('offers the next-raid CTA without an organizer-only branch', () => {
-    const markup = renderToStaticMarkup(<ResultNextRaidAction enabled kabandaId={membership.id} />)
-
-    expect(markup).toContain('href="/app?createRaid=kabanda-active"')
-    expect(markup).toContain('Запланировать следующий рейд')
-    const disabled = renderToStaticMarkup(<ResultNextRaidAction enabled={false} kabandaId={membership.id} />)
-    expect(disabled).not.toContain('createRaid')
-    expect(disabled).toContain('href="/app?kabanda=kabanda-active&amp;tab=raids"')
-  })
 })

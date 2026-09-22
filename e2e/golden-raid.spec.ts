@@ -359,6 +359,6 @@ test('legacy-server compatibility: owner completes one canonical raid and opens 
   expect(pageErrors).toEqual([])
   await expect(page.getByRole('link', { name: /Свободный рейд/ })).toBeVisible()
   await page.getByRole('link', { name: /Свободный рейд/ }).click()
-  await page.getByRole('link', { name: 'Запланировать следующий рейд' }).click()
-  await expect(page.getByRole('heading', { name: 'Выйти в рейд' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Поделиться карточкой' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Запланировать следующий рейд' })).toHaveCount(0)
 })

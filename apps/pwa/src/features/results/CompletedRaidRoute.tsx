@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { PointMaterialsPanel } from '../checkins/PointMaterialsPanel'
 import { getRaidMapPoints, getRaidSnapshot } from '../raids/api'
 import { RaidRouteMap } from '../raids/recording/RaidRouteMap'
@@ -29,21 +28,25 @@ export function CompletedRaidRoute({ identityId, raid, operations = [], canAddMa
   return <section className="kb-card result-route" aria-label="Маршрут и посещения рейда">
     <h2>Маршрут рейда</h2>
     <div className="raid-active-map result-route__map">
-      <RaidRouteMap identityId={identityId} raidId={raid.id} live={false} completed location={null} highlightedPointId={null} onSelectPoint={setSelected} />
+      <RaidRouteMap identityId={identityId} raidId={raid.id} live={false} completed location={null} highlightedPointId={selected?.id ?? null} onSelectPoint={setSelected} />
     </div>
     {points.length > 0 && <>
       <h3>Посещённые точки</h3>
-      <ol className="result-route__points">{points.map(point => <li key={point.id}>
-        <button type="button" aria-pressed={selected?.id === point.id} onClick={() => setSelected(point)}>{point.name}<span aria-hidden="true">›</span></button>
-      </li>)}</ol>
+      <ol className="result-route__points">{points.map((point, index) => {
+        const expanded = selected?.id === point.id
+        return <li key={point.id}>
+          <button className="result-route__point" type="button" aria-expanded={expanded} aria-controls={`result-point-${point.id}`} onClick={() => setSelected(expanded ? null : point)}>
+            <span className="result-route__number">{index + 1}</span><strong>{point.name}</strong><span aria-hidden="true">{expanded ? '⌄' : '›'}</span>
+          </button>
+          {expanded && <div id={`result-point-${point.id}`} className="result-route__history">
+            {point.lastVisitedAt && <p className="result-route__time">Посетили <time dateTime={point.lastVisitedAt}>{new Date(point.lastVisitedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</time></p>}
+            {fieldProtocol && <PointMaterialsPanel key={JSON.stringify([identityId, raid.id, point.id])}
+              identityId={identityId} kabandaId={raid.kabandaId} raidId={raid.id} pointId={point.id}
+              visible compact actionsAtEnd canWrite={canAddMaterials} operations={operations} />}
+          </div>}
+        </li>
+      })}</ol>
     </>}
     {failed && <p className="kb-muted">Список посещённых точек пока недоступен.</p>}
-    {selected && <div className="result-route__history">
-      <div className="kb-section-head"><h3>{selected.name}</h3><button type="button" aria-label="Закрыть посещения точки" onClick={() => setSelected(null)}>×</button></div>
-      <PointVisitHistory key={selected.sourcePointId} identityId={identityId} kabandaId={raid.kabandaId} pointId={selected.sourcePointId} currentRaidId={raid.id} />
-      {fieldProtocol && <PointMaterialsPanel key={JSON.stringify([identityId, raid.id, selected.id])}
-        identityId={identityId} kabandaId={raid.kabandaId} raidId={raid.id} pointId={selected.id}
-        visible canWrite={canAddMaterials} operations={operations} />}
-    </div>}
   </section>
 }

@@ -25,8 +25,8 @@ function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
 /** Gallery availability is not inferred from frozen metrics or partial=true.
  * The displayed window survives refresh/page failures; access denial is not a
  * transient failure. Viewing a result never deletes or rewrites photo queues. */
-export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDenied }: {
-  identityId: string; raidId: string; enabled: boolean; onAccessDenied: () => void
+export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDenied, refreshKey = '' }: {
+  identityId: string; raidId: string; enabled: boolean; refreshKey?: string; onAccessDenied: () => void
 }) {
   const [items, setItems] = useState<RaidMedia[]>([])
   const [drafts, setDrafts] = useState<MediaDraftRecord[]>([])
@@ -40,14 +40,16 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const requestedDepth = useRef(1)
   const activeDepth = useRef(0)
   const queuedDepth = useRef<number | null>(null)
+  const refreshQueued = useRef(false)
   const visibleTail = useRef<string | undefined>(undefined)
   const flight = useRef<AbortController | null>(null)
   const denied = useRef(onAccessDenied)
   denied.current = onAccessDenied
 
-  const load = async (depth = Math.max(successfulDepth.current, requestedDepth.current)) => {
+  const load = async (depth = Math.max(successfulDepth.current, requestedDepth.current), invalidate = false) => {
     if (!enabled || !navigator.onLine) return
     if (flight.current) {
+      if (invalidate) refreshQueued.current = true
       // Background refresh may start between pointer-down and the click. Keep
       // an explicit deeper request, rather than silently dropping the action.
       if (depth > activeDepth.current) {
@@ -94,13 +96,16 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
         const next = queuedDepth.current
         queuedDepth.current = null
         // Failure remains explicit and retryable, never an automatic hot loop.
-        if (succeeded && next !== null && next > successfulDepth.current) void load(next)
+        const refreshAgain = refreshQueued.current
+        refreshQueued.current = false
+        if (succeeded && (refreshAgain || (next !== null && next > successfulDepth.current))) void load(Math.max(next ?? 1, successfulDepth.current))
       }
     }
   }
 
   useEffect(() => {
     generation.current++
+    refreshQueued.current = false
     flight.current?.abort(); flight.current = null
     successfulDepth.current = 1; requestedDepth.current = 1; activeDepth.current = 0; queuedDepth.current = null; visibleTail.current = undefined
     setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
@@ -124,6 +129,8 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     }
   }, [identityId, raidId, enabled])
 
+  useEffect(() => { if (refreshKey) void load(undefined, true) }, [refreshKey])
+
   if (!enabled) return null
   const acceptedIds = new Set(items.map(item => item.id))
   const local = drafts.filter(draft => !acceptedIds.has(draft.mediaId ?? draft.intentId ?? ''))
@@ -134,7 +141,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
         width={item.width} height={item.height} style={{ aspectRatio: `${item.width} / ${item.height}` }} loading="lazy" alt={item.caption || 'Фото рейда'} />
       {item.caption && <figcaption>{item.caption}</figcaption>}
     </figure>)}</div>}
-    {loaded && !items.length && !error && <p className="kb-muted">В общей галерее пока нет фотографий. Фото и комментарии отдельных точек можно открыть на карте.</p>}
+    {loaded && !items.length && !error && <p className="kb-muted">В этом рейде пока нет фотографий.</p>}
     {!loaded && !error && <p className="kb-muted" role="status">{navigator.onLine ? 'Загружаем фотографии…' : 'Для общей галереи нужно соединение.'}</p>}
     {cursor && <button type="button" aria-busy={loading} disabled={!loaded || !!error} onClick={() => void load(successfulDepth.current + 1)}>Показать ещё фотографии</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void load(requestedDepth.current)}>Повторить загрузку фотографий</button></p>}
