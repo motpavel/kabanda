@@ -96,7 +96,7 @@ test('three accounts converge after automatic retries on Home while a photograph
     await expect(navPage.getByRole('checkbox', { name: rider.displayName, exact: true })).toBeChecked()
     await expect(navPage.getByRole('checkbox', { name: owner.displayName, exact: true })).toBeChecked()
     await navPage.getByRole('checkbox', { name: owner.displayName, exact: true }).uncheck()
-    await navPage.locator('.point-materials input[type="file"]').first().setInputFiles('apps/pwa/public/pwa-192x192.png')
+    await navPage.getByLabel('Добавить фото').setInputFiles('apps/pwa/public/pwa-192x192.png')
     await expect.poll(() => uploadStarted).toBe(true)
     await navPage.getByRole('complementary', { name: 'Подтверждение точки' }).getByRole('button', { name: 'Пометить точку', exact: true }).click()
     await expect.poll(async () => (await operations(navPage)).find(row => row.kind === 'team')?.status).toBe('retryable')
