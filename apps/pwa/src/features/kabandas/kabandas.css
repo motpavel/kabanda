@@ -1171,3 +1171,6 @@
 
 .kb-map-screen:has(.point-info-sheet:not([hidden])) { z-index: 81; }
 .kb-yandex-marker.selected:not(.visited) { background: #ea3e35 !important; }
+
+.kb-team-metric .kb-nav-icon { width: 28px; height: 28px; color: #c6342d; }
+.kb-nav-icon--boar { mask-size: contain; -webkit-mask-size: contain; mask-position: center; -webkit-mask-position: center; }
