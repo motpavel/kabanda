@@ -111,10 +111,11 @@ function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
       {!denied && <CompletedRaidRoute key="route" identityId={identityId} raid={raid} operations={queue.rows} canAddMaterials={canAddMaterials} />}
       {!result && loading && <p className="kb-muted" role="status" key="loading">Загружаем статистику…</p>}
       {error && <div className="kb-error" role="alert" key="error"><p>{error}</p><button type="button" disabled={loading || !online || staleOnly} onClick={() => void retry()}>Повторить загрузку итогов</button></div>}
-      {result && <div className="result-metrics" role="table" aria-label="Личные и командные метрики" key="metrics">
+      {result && <section className="kb-card result-analytics" key="metrics"><h2>Кабаналитика</h2>
+      <div className="result-metrics" role="table" aria-label="Личные и командные метрики">
         <div className="result-metrics__head" role="row"><span>Метрика</span><strong>Лично</strong><strong>Команда</strong></div>
         {rows.map(row => <div key={row.id} role="row"><span>{row.label}</span><strong>{row.personal}</strong><strong>{row.team}</strong></div>)}
-      </div>}
+      </div></section>}
       {result && <section className="result-people" key="participants"><h2>Участники</h2>
         <table className="result-people__table"><thead><tr><th scope="col">Участник</th><th scope="col">Точки</th><th scope="col">Фото</th></tr></thead>
           <tbody>{result.participants.map(participant => <tr key={participant.userId}><th scope="row">{participant.displayName}</th><td>{participant.metrics.uniquePoints}</td><td>{participant.metrics.photos}</td></tr>)}</tbody>
