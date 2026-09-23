@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -44,6 +45,7 @@ export function RaidTemplatePointSheet({
   onUpdate: (patch: Partial<Pick<DraftRaidTemplatePoint, 'name' | 'address' | 'comment' | 'labelsConfirmed'>>) => void
 }) {
   const sheetRef = useRef<HTMLElement>(null)
+  const commentRef = useRef<HTMLTextAreaElement>(null)
   const dragRef = useRef<{ pointerId: number; startY: number; currentY: number; startHeight: number; maxHeight: number } | null>(null)
   const onCloseRef = useRef(onClose)
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -55,6 +57,37 @@ export function RaidTemplatePointSheet({
   const [expanded, setExpanded] = useState(false)
   const [closing, setClosing] = useState(false)
   onCloseRef.current = onClose
+
+  const resizeComment = useCallback(() => {
+    const field = commentRef.current
+    if (!field) return
+    const previousHeight = field.offsetHeight
+    field.style.height = '0px'
+    const style = getComputedStyle(field)
+    const naturalHeight = field.scrollHeight + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)
+    const height = Math.min(240, Math.max(46, naturalHeight))
+    field.style.height = `${height}px`
+    field.style.overflowY = naturalHeight > height ? 'auto' : 'hidden'
+    const content = field.closest<HTMLElement>('.rt-point-sheet__body')
+    if (content && height > previousHeight && document.activeElement === field && field.selectionEnd === field.value.length) {
+      // Reveal new lines inside the form, never by scrolling the page.
+      content.scrollTop += Math.max(0, field.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom)
+    }
+  }, [])
+
+  useLayoutEffect(resizeComment, [point.comment, resizeComment])
+  useLayoutEffect(() => {
+    const field = commentRef.current
+    if (!field) return
+    let width = field.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (width === field.clientWidth) return
+      width = field.clientWidth
+      resizeComment()
+    })
+    observer.observe(field)
+    return () => observer.disconnect()
+  }, [resizeComment])
 
   const close = useCallback(() => {
     if (closingRef.current) return
@@ -223,6 +256,7 @@ export function RaidTemplatePointSheet({
         />
         <label htmlFor="rt-point-comment">Комментарий</label>
         <textarea
+          ref={commentRef}
           id="rt-point-comment"
           maxLength={500}
           onChange={(event) => onUpdate({ comment: event.target.value })}

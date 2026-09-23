@@ -47,3 +47,9 @@ Browser checks on the local synthetic fixture: 390×844 upward/downward drags; b
 PWA typecheck and all 65 route feature tests passed. Regression tests exercise cancelable touch/wheel events, nested scrolling, both edges, non-overflowing forms, selection, map gestures before/during editing, cancellation, cleanup and viewport offset recovery.
 
 Implementation references: [WebKit overflow/keyboard bug](https://bugs.webkit.org/show_bug.cgi?id=240860), [WebKit keyboard gap bug](https://bugs.webkit.org/show_bug.cgi?id=292603), [React Aria scroll prevention](https://github.com/adobe/react-spectrum/blob/main/packages/react-aria/src/overlays/usePreventScroll.ts).
+
+## Keyboard surface and growing comment
+
+A white non-interactive underlay extends below the sheet during editing, covering content visible through iOS accessory/keyboard translucency. The dialog's programmatic focus no longer paints a focus outline; actionable keyboard controls retain their focus indication. Comments grow and shrink with explicit newlines or wrapping, up to 240px before scrolling internally. Width changes recalculate the height and new trailing lines are revealed inside the form only.
+
+Local browser verification: focused sheet outline none; editing underlay rgb(255,255,255); empty comment 46px, three typed lines 92px, deleting the text returns it to 46px. PWA typecheck and all seven editor component tests passed. Native iOS keyboard translucency cannot be directly reproduced here.

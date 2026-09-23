@@ -145,7 +145,7 @@
 .rt-point-sheet__handle, .rt-point-sheet__actions { flex-shrink: 0; }
 .rt-point-sheet__body > label, .rt-point-sheet__field-head > label { margin: 0; color: #454750; font-size: .78rem; font-weight: 650; }
 .rt-point-sheet :is(input, textarea) { min-height: 46px; padding-block: 9px; }
-.rt-point-sheet textarea { min-height: 46px; max-height: 112px; resize: vertical; }
+.rt-point-sheet textarea { min-height: 46px; max-height: 240px; resize: none; }
 .rt-point-sheet__field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .rt-point-sheet__attribution { flex: 0 0 auto; color: var(--rt-muted); font-size: .65rem; line-height: 1.4; }
 .rt-point-sheet__actions { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 8px; margin-top: 6px; }
