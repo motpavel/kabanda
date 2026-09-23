@@ -13,7 +13,7 @@ export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: (
   const suppressClick = useRef(false)
   dismiss.current = onDismiss
   useSheetViewport(ref, { open, contentSelector: '.raid-arrival-sheet__body, [data-sheet-body]',
-    allowMapSelector: '.route-live-map-shell, .route-live-map' })
+    allowMapSelector: '.route-live-map-shell, .route-live-map, .kb-yandex-map' })
 
   useLayoutEffect(() => {
     const element = ref.current
