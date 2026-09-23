@@ -23,6 +23,11 @@ export type YandexOptionManager = {
 }
 
 export type YandexMapObject = object
+export type YandexTileLayer = {
+  getCopyrights?: () => PromiseLike<unknown>
+  getZoomRange?: () => PromiseLike<unknown>
+}
+export type YandexMapType = { getName: () => string }
 
 export type YandexPlacemark = {
   geometry?: { setCoordinates: (coordinates: YandexCoordinates) => void }
@@ -32,6 +37,7 @@ export type YandexPlacemark = {
 }
 
 export type YandexMap = {
+  setType?: (type: string | YandexMapType) => PromiseLike<void> | void
   container?: {
     fitToViewport?: () => void
   }
@@ -74,6 +80,9 @@ export type YandexMultiRoute = {
 }
 
 export type YandexMapsRuntime = {
+  Layer?: new (url: (number: readonly [number, number], zoom: number) => string, options?: Record<string, unknown>) => YandexTileLayer
+  MapType?: new (name: string, layers: (() => YandexTileLayer)[]) => YandexMapType
+  vow?: { resolve: (value: unknown) => PromiseLike<unknown> }
   ready: (success: () => void, error?: (reason: unknown) => void) => void
   Map: new (element: HTMLElement, state: {
     center: YandexCoordinates

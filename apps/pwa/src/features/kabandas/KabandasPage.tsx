@@ -43,6 +43,7 @@ import { MapViewportMemory, type MapView } from './map-viewport'
 import { MapCamera } from './map-camera'
 import { MapMarkers } from './map-markers'
 import { MapBackgroundTap, isMapMarkerHit } from './map-background-tap'
+import { attachYandexTileCache } from './tiles/yandex-tile-cache'
 import { useNearbyPointHistory } from '../results/useNearbyPointHistory'
 import { pointVisitProgress, visitStateLabel, type VisitState } from './point-progress'
 import { usePointProgress } from '../results/exploration-resources'
@@ -942,6 +943,7 @@ function PointsMap({ visible, points, selectedId, onSelect, setProviderState, me
     if (!container) return
     let active = true
     let settleTimer: ReturnType<typeof setTimeout> | undefined
+    let detachTiles = () => {}
     const resize = new ResizeObserver(() => {
       if (visibleRef.current && document.visibilityState === 'visible') mapRef.current?.container?.fitToViewport?.()
     })
@@ -975,6 +977,7 @@ function PointsMap({ visible, points, selectedId, onSelect, setProviderState, me
       })
       runtimeRef.current = runtime
       mapRef.current = map
+      detachTiles = attachYandexTileCache(map, runtime, container)
       cameraRef.current = new MapCamera(map, () => matchMedia('(prefers-reduced-motion: reduce)').matches)
       markersRef.current = new MapMarkers(map, runtime,
         '<button type="button" class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}" aria-pressed="{{ properties.selected }}"></button>',
@@ -986,6 +989,7 @@ function PointsMap({ visible, points, selectedId, onSelect, setProviderState, me
     })
 
     return () => {
+      detachTiles()
       resize.disconnect()
       clearTimeout(settleTimer)
       active = false

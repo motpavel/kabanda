@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { YandexMap, YandexMapsRuntime } from '../../kabandas/yandex-maps'
+import { attachYandexTileCache } from '../../kabandas/tiles/yandex-tile-cache'
 import {
   attachBicycleRoute,
   attachNumberedWaypointPlacemark,
@@ -115,6 +116,7 @@ export function RaidTemplateEditorMap({
     const container = containerRef.current
     if (!container) return
     let active = true
+    let detachTiles = () => {}
     setProviderState('loading')
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
 
@@ -132,6 +134,7 @@ export function RaidTemplateEditorMap({
         if (typeof nextZoom === 'number') setZoom(nextZoom)
       })
       mapRef.current = map
+      detachTiles = attachYandexTileCache(map, runtime, container)
       runtimeRef.current = runtime
       setProviderState('ready')
     }).catch(() => {
@@ -147,6 +150,7 @@ export function RaidTemplateEditorMap({
     })
 
     return () => {
+      detachTiles()
       active = false
       invalidateLocationRequests(locationRequestGenerationRef)
       runtimeRef.current = null

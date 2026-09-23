@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadYandexMaps, type YandexMap, type YandexPlacemark, type YandexPolyline, type YandexMapsRuntime } from '../../kabandas/yandex-maps'
 import { MapCamera } from '../../kabandas/map-camera'
 import { MapMarkers } from '../../kabandas/map-markers'
+import { attachYandexTileCache } from '../../kabandas/tiles/yandex-tile-cache'
 import type { OneShotCoordinate } from '../../checkins/types'
 import type { RaidLiveSnapshot } from '../live-feed'
 import type { RaidMapPoint, RouteTrackPoint } from '../types'
@@ -113,6 +114,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     const container = containerRef.current
     if (!container) return
     let active = true
+    let detachTiles = () => {}
     const resize = new ResizeObserver(() => mapRef.current?.container?.fitToViewport?.())
     resize.observe(container)
     void loadYandexMaps(import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? '').then(runtime => {
@@ -124,6 +126,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       firstLocation.current = view.source === 'location'
       mapRef.current = new runtime.Map(container, { center: view.center, zoom: view.zoom, controls: [],
         behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, { suppressMapOpenBlock: true })
+      detachTiles = attachYandexTileCache(mapRef.current, runtime, container)
       camera.current = new MapCamera(mapRef.current, () => matchMedia('(prefers-reduced-motion: reduce)').matches)
       pointMarkers.current = new MapMarkers(mapRef.current, runtime,
         '<button type="button" class="{{ properties.markerClass }}" data-raid-point="{{ properties.pointId }}" aria-label="{{ properties.ariaLabel }}"></button>',
@@ -132,6 +135,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       setProvider('ready')
     }).catch(() => { if (active) setProvider('failed') })
     return () => {
+      detachTiles()
       active = false; resize.disconnect(); motion.current?.reset(); preview.current?.reset()
       previewLayers.current?.clear(); previewLayers.current = null
       camera.current?.stop(); camera.current = null
