@@ -6,10 +6,11 @@ import { useLiveRaid } from '../use-live-raid'
 import type { RaidLiveSnapshot } from '../live-feed'
 import type { RaidMapPoint, RouteTrackProjection } from '../types'
 import { readRaidMapCache, saveRaidMapCache } from './map-cache'
+import { completedTrackRevision } from './completed-track-cache'
 import { RouteChangeBuffer, type RouteChangePage } from './route-changes'
 
 type MapSnapshot = RaidLiveSnapshot & { fieldVisible?: boolean }
-export function useRaidMapData(identityId: string, raidId: string, live: boolean, completed: boolean) {
+export function useRaidMapData(identityId: string, raidId: string, live: boolean, completed: boolean, savedSnapshot?: RaidLiveSnapshot | null, snapshotDenied = false, snapshotVerified = false) {
   const snapshot = useLiveRaid(identityId, raidId, live)
   const [staticSnapshot, setStaticSnapshot] = useState<MapSnapshot | null>(null)
   const [track, setTrack] = useState<RouteTrackProjection | null>(null)
@@ -17,20 +18,25 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
   const [dataState, setDataState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const denied = useRef(false)
   const lastStored = useRef('')
-  const currentData: MapSnapshot | null = live ? snapshot.data : staticSnapshot
+  const storedRevision = useRef<string | null>(null)
+  const [cacheReady, setCacheReady] = useState(false)
+  const currentData: MapSnapshot | null = live ? snapshot.data : savedSnapshot !== undefined ? savedSnapshot : staticSnapshot
   const dataRef = useRef(currentData)
   dataRef.current = currentData
+  const routeRevision = completed ? completedTrackRevision(currentData) : null
 
   useEffect(() => {
     let active = true
     denied.current = false
-    setTrack(null); setPoints([]); setStaticSnapshot(null); setDataState('loading'); lastStored.current = ''
+    setTrack(null); setPoints([]); setStaticSnapshot(null); setDataState('loading'); lastStored.current = ''; storedRevision.current = null; setCacheReady(false)
     void readRaidMapCache(identityId, raidId).then(cached => {
       if (!active || !cached || denied.current) return
+      if (!dataRef.current?.track && !cached.track.truncated) storedRevision.current = cached.snapshotRevision ?? null
       setTrack(previous => previous ?? cached.track)
-      setPoints(previous => previous.length ? previous : cached.points)
-    }).catch(() => undefined)
-    if (!live) void getRaidSnapshot(raidId).then(next => {
+      // A fresh authoritative empty list must win over delayed disk hydration.
+      if (!dataRef.current?.points) setPoints(cached.points)
+    }).catch(() => undefined).finally(() => { if (active) setCacheReady(true) })
+    if (!live && savedSnapshot === undefined) void getRaidSnapshot(raidId).then(next => {
       if (!active) return
       setStaticSnapshot(next)
     }).catch(error => {
@@ -45,7 +51,7 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
   }, [identityId, raidId, live, completed])
 
   useEffect(() => {
-    if ((live && snapshot.denied) || currentData?.fieldVisible === false) {
+    if (snapshotDenied || (live && snapshot.denied) || currentData?.fieldVisible === false) {
       denied.current = true; setTrack(null); setPoints([]); setDataState('failed')
       void offlineDb.raidMapCache.delete(JSON.stringify([identityId, raidId])).catch(() => undefined)
       return
@@ -53,16 +59,16 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
     if (currentData?.raid.id === raidId) {
       denied.current = false
       if (currentData.points) setPoints(previous => JSON.stringify(previous) === JSON.stringify(currentData.points) ? previous : currentData.points!)
-      if (currentData.track) setTrack(currentData.track)
+      if (currentData.track) { storedRevision.current = routeRevision; setTrack(currentData.track) }
       setDataState(live && snapshot.error ? 'failed' : 'ready')
     } else if (live && snapshot.error) setDataState('failed')
-  }, [currentData, live, snapshot.error, snapshot.denied, identityId, raidId])
+  }, [currentData, live, snapshot.error, snapshot.denied, snapshotDenied, routeRevision, identityId, raidId])
 
   const protocol = currentData?.teamVisits === true
   const legacyTrackPresent = Boolean(currentData?.track)
-  const readable = Boolean(currentData && ['active', 'paused', 'finalizing', 'completed'].includes(currentData.raid.state) && currentData.fieldVisible !== false)
+  const readable = Boolean(!snapshotDenied && (savedSnapshot === undefined || snapshotVerified) && currentData && ['active', 'paused', 'finalizing', 'completed'].includes(currentData.raid.state) && currentData.fieldVisible !== false)
   useEffect(() => {
-    if (legacyTrackPresent || !readable) return
+    if (legacyTrackPresent || !readable || !cacheReady) return
     let active = true, inFlight = false
     let controller: AbortController | null = null
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -72,6 +78,7 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
       if (!active || inFlight || !navigator.onLine || document.visibilityState !== 'visible' || denied.current) return
       const value = dataRef.current
       if (!value) return
+      if (completed && routeRevision && storedRevision.current === routeRevision) return
       inFlight = true
       controller = new AbortController()
       const signal = controller.signal
@@ -100,6 +107,7 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
             setTrack(response.track); setDataState('ready')
           }
         }
+        if (!hasMore) storedRevision.current = routeRevision
         if (active && hasMore) timer = setTimeout(() => void refresh(), 250)
       } catch (error) {
         if (active) {
@@ -112,7 +120,7 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
       } finally { clearTimeout(deadline); inFlight = false; controller = null }
     }
     void refresh()
-    const interval = setInterval(() => void refresh(), live ? 5000 : 30_000)
+    const interval = setInterval(() => void refresh(), completed ? 60_000 : live ? 5000 : 30_000)
     const resume = () => { if (document.visibilityState === 'visible') void refresh() }
     window.addEventListener('online', resume)
     document.addEventListener('visibilitychange', resume)
@@ -120,7 +128,7 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
       active = false; controller?.abort(); clearInterval(interval); clearTimeout(timer)
       window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume)
     }
-  }, [identityId, raidId, live, readable, protocol, legacyTrackPresent])
+  }, [identityId, raidId, live, completed, readable, protocol, legacyTrackPresent, routeRevision, cacheReady])
 
   useEffect(() => {
     if (currentData || live || completed) return
@@ -130,10 +138,10 @@ export function useRaidMapData(identityId: string, raidId: string, live: boolean
   }, [currentData, live, completed, raidId])
   useEffect(() => {
     if (!track || track.truncated || denied.current) return
-    const signature = JSON.stringify([track.updatedAt, track.pointCount, track.segments, points])
+    const signature = JSON.stringify([track.updatedAt, track.pointCount, track.segments, points, storedRevision.current])
     if (signature === lastStored.current) return
     lastStored.current = signature
-    void saveRaidMapCache(identityId, raidId, points, track).catch(() => undefined)
+    void saveRaidMapCache(identityId, raidId, points, track, storedRevision.current ?? undefined).catch(() => undefined)
   }, [identityId, raidId, track, points])
   const lease = currentData?.raid.navigatorLease
   // A temporary visible leg must belong to this active navigator lease. Cached

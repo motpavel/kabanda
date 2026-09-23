@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { PointVisitHistory as History } from '@kabanda/contracts'
-import { requestJson } from '../../lib/http'
+import { useEffect, useMemo, useState } from 'react'
+import { visitHistoryResource, useViewWindow, COMPLETED_REFRESH_MS } from '../results/view-resources'
+import { useRaidResource } from '../raids/resources'
 import { appPath } from '../../lib/paths'
 import { formatVisitCount, visitsForParticipant } from './visit-history'
 import './point-history.css'
@@ -18,23 +18,14 @@ function LoadingHistory() {
   return <div className="point-visit-history__loading" role="status" aria-label="Загружаем историю"><span /><span /><span /></div>
 }
 
-function ParticipantVisits({ url, userId, currentRaidId, onOpenRaid }: { url: string; userId: string; currentRaidId?: string; onOpenRaid?: () => void }) {
-  const [history, setHistory] = useState<History | null>(null)
-  const [offset, setOffset] = useState(0)
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState(false)
-  const [retry, setRetry] = useState(0)
-  useEffect(() => {
-    let subscribed = true
-    setBusy(true)
-    setError(false)
-    void requestJson<History>(`${url}?visitorId=${encodeURIComponent(userId)}&offset=${offset}`)
-      .then((next) => {
-        if (subscribed) setHistory((previous) => ({ ...next, entries: offset && previous ? [...previous.entries, ...next.entries] : next.entries }))
-      }).catch(() => { if (subscribed) setError(true) })
-      .finally(() => { if (subscribed) setBusy(false) })
-    return () => { subscribed = false }
-  }, [url, userId, offset, retry])
+function ParticipantVisits({ identityId, kabandaId, pointId, userId, active, currentRaidId, onOpenRaid }: {
+  identityId: string; kabandaId: string; pointId: string; userId: string; active: boolean; currentRaidId?: string; onOpenRaid?: () => void
+}) {
+  const entry = useMemo(() => visitHistoryResource(identityId, kabandaId, pointId, userId), [identityId, kabandaId, pointId, userId])
+  const state = useViewWindow(entry, active)
+  const history = state.data
+  const busy = state.status === 'loading' || state.loadingMore
+  const error = state.message
 
   return <div className="point-visit-history__detail">
     {busy && !history && <LoadingHistory />}
@@ -44,32 +35,23 @@ function ParticipantVisits({ url, userId, currentRaidId, onOpenRaid }: { url: st
         <HistoryChevron right />
       </a> : <div><strong>{visit.title}</strong><p><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}</time></p></div>}
     </li>)}</ol>}
-    {error && <p role="alert">Не удалось загрузить посещения. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
-    {history?.nextOffset != null && <button className="point-visit-history__more" type="button" disabled={busy} onClick={() => setOffset(history.nextOffset!)}>{busy ? 'Загружаем…' : 'Показать ещё'}</button>}
+    {error && <p role="alert">Не удалось загрузить посещения. <button type="button" onClick={() => void state.refresh()}>Повторить</button></p>}
+    {history?.nextOffset != null && <button className="point-visit-history__more" type="button" disabled={busy || state.status !== 'ready'} onClick={() => void state.more()}>{busy ? 'Загружаем…' : 'Показать ещё'}</button>}
   </div>
 }
 
 export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, active = true, showHeading = true, onOpenRaid }: {
   kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; active?: boolean; showHeading?: boolean; onOpenRaid?: () => void
 }) {
-  const [history, setHistory] = useState<History | null>(null)
-  const [error, setError] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [retry, setRetry] = useState(0)
+  const entry = useMemo(() => visitHistoryResource(identityId, kabandaId, pointId), [identityId, kabandaId, pointId])
+  const state = useRaidResource(entry, active, null, COMPLETED_REFRESH_MS)
+  const history = state.data
+  const error = state.message
+  const busy = state.status === 'loading'
   const [openedIds, setOpenedIds] = useState<Set<string>>(() => new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const url = `/api/kabandas/${encodeURIComponent(kabandaId)}/points/${encodeURIComponent(pointId)}/history`
-  useEffect(() => {
-    if (!active) { setExpandedId(null); return }
-    let subscribed = true
-    setBusy(true)
-    setError(false)
-    void requestJson<History>(url)
-      .then((next) => { if (subscribed) setHistory(next) })
-      .catch(() => { if (subscribed) setError(true) })
-      .finally(() => { if (subscribed) setBusy(false) })
-    return () => { subscribed = false }
-  }, [url, identityId, retry, active])
+  useEffect(() => { if (!active) setExpandedId(null) }, [active])
+  useEffect(() => { setOpenedIds(new Set()); setExpandedId(null) }, [identityId, kabandaId, pointId])
 
   const visitors = history ? [
     { userId: identityId, displayName: history.visitors.find(visitor => visitor.userId === identityId)?.displayName ?? 'Я', count: history.personalCount },
@@ -80,7 +62,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
   return <section className="point-visit-history point-history-section" aria-label="История посещений точки">
     {showHeading && <header><h3>История посещений</h3></header>}
     {busy && !history && <LoadingHistory />}
-    {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
+    {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => void state.refresh()}>Повторить</button></p>}
     {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
     <ul className="point-visit-history__people">{visitors.map((visitor) => {
       const expanded = expandedId === visitor.userId
@@ -92,7 +74,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
           <span className="point-visit-history__total">{formatVisitCount(visitor.count)}</span>
           {visitor.count > 0 && <HistoryChevron />}
         </button>
-        <div id={detailId} className="point-visit-history__reveal" data-expanded={expanded} inert={!expanded} aria-hidden={!expanded}><div>{openedIds.has(visitor.userId) && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div></div>
+        <div id={detailId} className="point-visit-history__reveal" data-expanded={expanded} inert={!expanded} aria-hidden={!expanded}><div>{openedIds.has(visitor.userId) && <ParticipantVisits active={active && expanded} identityId={identityId} kabandaId={kabandaId} pointId={pointId} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div></div>
       </li>
     })}</ul>
   </section>

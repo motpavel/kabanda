@@ -5,7 +5,8 @@ import type { RaidProjection } from './types'
 
 export function useRaidProjection(identityId: string, raidId: string, staleOnly = false) {
   const entry = useMemo(() => raidResource(identityId, raidId), [identityId, raidId])
-  const resource = useRaidResource(entry, !staleOnly, 5_000)
+  const completed = entry.state.data?.state === 'completed'
+  const resource = useRaidResource(entry, !staleOnly, completed ? 60_000 : 5_000, completed ? 60_000 : 0)
   useRecordingLeaveGuard(identityId, resource.data)
   const applyRaid = useCallback(async (raid: RaidProjection) => {
     // Command responses have already been published by the API before resolving.

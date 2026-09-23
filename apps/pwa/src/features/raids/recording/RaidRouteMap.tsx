@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadYandexMaps, type YandexMap, type YandexPlacemark, type YandexPolyline, type YandexMapsRuntime } from '../../kabandas/yandex-maps'
 import type { OneShotCoordinate } from '../../checkins/types'
+import type { RaidLiveSnapshot } from '../live-feed'
 import type { RaidMapPoint, RouteTrackPoint } from '../types'
 import { RaidControlIcon } from '../RaidControlIcon'
 import { trackEndpoints } from './track-endpoints'
@@ -39,10 +40,10 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
 }
 
 export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSampleAt = null, planned = false,
-  completed = false, localRoutePreview = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
+  completed = false, savedSnapshot, snapshotDenied = false, snapshotVerified = false, localRoutePreview = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
 }: {
   identityId: string; navigatorUserId?: string | null; navigatorSampleAt?: string | null; planned?: boolean
-  completed?: boolean; localRoutePreview?: boolean; raidId: string; live: boolean; location: OneShotCoordinate | null
+  savedSnapshot?: RaidLiveSnapshot | null; snapshotDenied?: boolean; snapshotVerified?: boolean; completed?: boolean; localRoutePreview?: boolean; raidId: string; live: boolean; location: OneShotCoordinate | null
   highlightedPointId: string | null; destinationPointId?: string | null; onSelectPoint: (point: RaidMapPoint) => void; onMapTap?: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,7 +73,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const [following, setFollowing] = useState(false)
   const gesture = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
   const [provider, setProvider] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const { track, points: allPoints, dataState, positions, snapshotNavigator, routePreviewScope, routePreviewIssuedAt } = useRaidMapData(identityId, raidId, live, completed)
+  const { track, points: allPoints, dataState, positions, snapshotNavigator, routePreviewScope, routePreviewIssuedAt } = useRaidMapData(identityId, raidId, live, completed, savedSnapshot, snapshotDenied, snapshotVerified)
   const points = useMemo(() => pointsForRaidMap(allPoints, completed), [allPoints, completed])
 
   useEffect(() => {

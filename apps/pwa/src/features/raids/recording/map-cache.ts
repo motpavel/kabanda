@@ -8,6 +8,7 @@ export interface RaidMapCacheRecord {
   raidId: string
   points: RaidMapPoint[]
   track: RouteTrackProjection
+  snapshotRevision?: string
 }
 
 export async function readRaidMapCache(identityId: string, raidId: string) {
@@ -17,9 +18,9 @@ export async function readRaidMapCache(identityId: string, raidId: string) {
   })
 }
 
-export async function saveRaidMapCache(identityId: string, raidId: string, points: RaidMapPoint[], track: RouteTrackProjection) {
+export async function saveRaidMapCache(identityId: string, raidId: string, points: RaidMapPoint[], track: RouteTrackProjection, snapshotRevision?: string) {
   await offlineDb.transaction('rw', offlineDb.identityContext, offlineDb.raidMapCache, async () => {
     if (await getActiveIdentityId() !== identityId) return
-    await offlineDb.raidMapCache.put({ key: JSON.stringify([identityId, raidId]), identityId, raidId, points, track })
+    await offlineDb.raidMapCache.put({ key: JSON.stringify([identityId, raidId]), identityId, raidId, points, track, ...(snapshotRevision ? { snapshotRevision } : {}) })
   })
 }
