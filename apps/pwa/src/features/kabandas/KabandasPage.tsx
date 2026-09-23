@@ -40,6 +40,9 @@ import {
 import { readPointProjection, savePointProjection } from './cache'
 import { choosePointPresentation, detectWebgl } from './map-state'
 import { MapViewportMemory, type MapView } from './map-viewport'
+import { MapCamera } from './map-camera'
+import { MapMarkers } from './map-markers'
+import { useNearbyPointHistory } from '../results/useNearbyPointHistory'
 import { pointVisitProgress, visitStateLabel, type VisitState } from './point-progress'
 import { usePointProgress } from '../results/exploration-resources'
 import { IZHEVSK_KB_STORES } from './izhevsk-kb-stores'
@@ -571,7 +574,9 @@ function KabandaWorkspace({
           </div>
           <div className="kb-map-notices">{notices}</div>
           {pointCategory === 'attractions' && attractionState === 'checking' ? <p className="kb-map-loading" aria-busy="true">Получаем достопримечательности…</p> : null}
-          {presentation === 'map' && visiblePoints.length > 0 ? <PointsMap memory={mapViewport} points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
+          {presentation === 'map' && visiblePoints.length > 0 ? <PointsMap identityId={user.id} kabandaId={kabanda.id}
+            historyPrefetchEnabled={pointCategory === 'stores' ? storeProgress.status === 'ready' : pointsKnown && !staleAt && !pointMessage}
+            memory={mapViewport} points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} setProviderState={setProviderState} /> : null}
           {(presentation === 'list' || visiblePoints.length === 0) && (
             <div className="kb-map-list-panel">
               {pointCategory === 'attractions' && !pointsKnown
@@ -583,7 +588,7 @@ function KabandaWorkspace({
           <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.name ?? ''}>
             {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
             {selectedPoint && <p className="kb-point-visit-state" data-visit-state={mapVisitState(selectedPoint)}>{visitStateLabel(mapVisitState(selectedPoint))}</p>}
-            {selectedHistoryId && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}
+            {selectedHistoryId && <PointVisitHistory compactLoading key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}
           </PointInfoSheet>
         </div>
       </section>
@@ -892,11 +897,14 @@ const USER_LOCATION_MAP_ZOOM = 14
 const MIN_MAP_ZOOM = 10
 const MAX_MAP_ZOOM = 17
 
-function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void; memory: MapViewportMemory }) {
+function PointsMap({ points, selectedId, onSelect, setProviderState, memory, identityId, kabandaId, historyPrefetchEnabled }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void; memory: MapViewportMemory; identityId: string; kabandaId: string; historyPrefetchEnabled: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<YandexMap | null>(null)
   const runtimeRef = useRef<YandexMapsRuntime | null>(null)
-  const markersRef = useRef(new Map<string, { placemark: YandexPlacemark; point: MapPoint }>())
+  const markersRef = useRef<MapMarkers<MapPoint> | null>(null)
+  const cameraRef = useRef<MapCamera | null>(null)
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
   const userMarkerRef = useRef<YandexPlacemark | null>(null)
   const locationRequestRef = useRef(0)
   const autoLocateStartedRef = useRef(false)
@@ -904,6 +912,17 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
   const [mapReady, setMapReady] = useState(false)
   const [userLocated, setUserLocated] = useState(false)
   const [zoom, setZoom] = useState(() => memory.read().zoom)
+  const [settledView, setSettledView] = useState(() => memory.read())
+  const historyPoints = useMemo(() => points.flatMap(point => {
+    const id = point.category === 'attractions' ? point.id : point.historyPointId
+    return id ? [{ id, latitude: point.latitude, longitude: point.longitude }] : []
+  }), [points])
+  const selected = points.find(point => point.id === selectedId)
+  useNearbyPointHistory({ identityId, kabandaId, points: historyPoints,
+    anchor: { latitude: settledView.center[1], longitude: settledView.center[0] },
+    priorityPointId: selected?.category === 'attractions' ? selected.id : selected?.historyPointId,
+    active: historyPrefetchEnabled && mapReady,
+  })
   const [geolocationError, setGeolocationError] = useState<string | null>(() =>
     'geolocation' in navigator ? null : 'Геолокация недоступна на этом устройстве.',
   )
@@ -912,13 +931,8 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
     const container = containerRef.current
     if (!container) return
     let active = true
-    const resize = new ResizeObserver(() => {
-      const map = mapRef.current
-      if (!map) return
-      const center = map.getCenter(), zoom = map.getZoom()
-      map.container?.fitToViewport?.()
-      map.setCenter(center, zoom, { duration: 0 })
-    })
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
+    const resize = new ResizeObserver(() => mapRef.current?.container?.fitToViewport?.())
     resize.observe(container)
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
     setProviderState('checking')
@@ -940,10 +954,19 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
         if (!nextCenter || nextZoom === undefined) return
         viewRef.current = { center: [nextCenter[1], nextCenter[0]], zoom: nextZoom }
         memory.remember(viewRef.current)
-        setZoom((current) => current === nextZoom ? current : nextZoom)
+        clearTimeout(settleTimer)
+        settleTimer = setTimeout(() => {
+          if (!active) return
+          setZoom(viewRef.current.zoom)
+          setSettledView(viewRef.current)
+        }, 300)
       })
       runtimeRef.current = runtime
       mapRef.current = map
+      cameraRef.current = new MapCamera(map, () => matchMedia('(prefers-reduced-motion: reduce)').matches)
+      markersRef.current = new MapMarkers(map, runtime,
+        '<button type="button" class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}" aria-pressed="{{ properties.selected }}"></button>',
+        point => onSelectRef.current(point.id))
       setMapReady(true)
       setProviderState('ready')
     }).catch(() => {
@@ -952,6 +975,7 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
 
     return () => {
       resize.disconnect()
+      clearTimeout(settleTimer)
       active = false
       locationRequestRef.current += 1
       const map = mapRef.current
@@ -960,7 +984,10 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
         memory.remember({ center: [center[1], center[0]], zoom: map.getZoom() })
       }
       setMapReady(false)
-      markersRef.current.clear()
+      markersRef.current?.clear()
+      markersRef.current = null
+      cameraRef.current?.stop()
+      cameraRef.current = null
       userMarkerRef.current = null
       runtimeRef.current = null
       mapRef.current?.destroy()
@@ -969,69 +996,39 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
   }, [setProviderState, memory])
 
   useEffect(() => {
-    const map = mapRef.current
-    const runtime = runtimeRef.current
-    if (!mapReady || !map || !runtime) return
-
-    for (const { placemark } of markersRef.current.values()) map.geoObjects.remove(placemark)
-    markersRef.current.clear()
-
-    const markerLayout = runtime.templateLayoutFactory.createClass(
-      '<button type="button" class="{{ properties.markerClass }}" aria-label="{{ properties.ariaLabel }}" aria-pressed="{{ properties.selected }}"></button>',
-    )
-
-    for (const point of points) {
+    if (!mapReady) return
+    markersRef.current?.update(points, point => {
       const selected = selectedId === point.id
-      const markerClass = mapMarkerClass(point, selected)
-      const ariaLabel = `${point.name}. ${point.category === 'stores' ? `${point.address}. ` : ''}${visitStateLabel(mapVisitState(point))}`
-      const placemark = new runtime.Placemark([point.latitude, point.longitude], {
-        markerClass,
-        ariaLabel,
-        selected: String(selected),
-      }, {
-        iconLayout: markerLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 14 },
-        hasBalloon: false,
-        hasHint: false,
-        openBalloonOnClick: false,
-        openHintOnHover: false,
-        interactiveZIndex: false,
-        zIndex: selected ? 24 : 20,
-      })
-      placemark.events.add('click', (event) => {
-        event.stopPropagation?.()
-        onSelect(point.id)
-      })
-      markersRef.current.set(point.id, { placemark, point })
-      map.geoObjects.add(placemark)
-    }
+      return {
+        coordinate: [point.latitude, point.longitude],
+        properties: {
+          markerClass: mapMarkerClass(point, selected),
+          ariaLabel: `${point.name}. ${point.category === 'stores' ? `${point.address}. ` : ''}${visitStateLabel(mapVisitState(point))}`,
+          selected: String(selected),
+        },
+        options: {
+          iconShape: { type: 'Circle', coordinates: [0, 0], radius: 14 },
+          hasBalloon: false, hasHint: false, openBalloonOnClick: false,
+          openHintOnHover: false, interactiveZIndex: false, zIndex: selected ? 24 : 20,
+        },
+      }
+    })
+  }, [mapReady, points, selectedId])
 
-    return () => {
-      for (const { placemark } of markersRef.current.values()) map.geoObjects.remove(placemark)
-      markersRef.current.clear()
-    }
-  }, [mapReady, onSelect, points])
-
-  useEffect(() => {
-    for (const [id, marker] of markersRef.current) {
-      const selected = id === selectedId
-      marker.placemark.properties.set('markerClass', mapMarkerClass(marker.point, selected))
-      marker.placemark.properties.set('selected', String(selected))
-      marker.placemark.options.set('zIndex', selected ? 24 : 20)
-    }
-  }, [selectedId])
-
-  const updateLocation = useCallback((location: { center?: readonly [number, number]; zoom?: number }, duration = 260) => {
+  const updateLocation = useCallback((location: { center?: readonly [number, number]; zoom?: number }, duration = 650) => {
     const map = mapRef.current
     if (!map) return
     if (location.center) {
-      map.setCenter([location.center[1], location.center[0]], location.zoom ?? viewRef.current.zoom, {
-        duration,
+      // Explicit centering preserves the user's zoom and animates even across
+      // distant viewports; the SDK handles the flight and tile transitions.
+      if (location.zoom === undefined) cameraRef.current?.center([location.center[1], location.center[0]])
+      else void map.setCenter([location.center[1], location.center[0]], location.zoom, {
+        duration: matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : duration,
         timingFunction: 'ease-in-out',
       })
       return
     }
-    if (location.zoom !== undefined) map.setZoom(location.zoom, { duration })
+    if (location.zoom !== undefined) cameraRef.current?.zoom(location.zoom)
   }, [])
 
   const locateUser = useCallback((accuracy: 'fast' | 'precise' = 'precise', automatic = false) => {
@@ -1048,18 +1045,20 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory }: {
       const map = mapRef.current
       const runtime = runtimeRef.current
       if (!map || !runtime || map !== requestedMap || request !== locationRequestRef.current) return
-      if (userMarkerRef.current) map.geoObjects.remove(userMarkerRef.current)
-      const userLayout = runtime.templateLayoutFactory.createClass('<span class="kb-yandex-user-location" aria-label="Моё местоположение"></span>')
-      userMarkerRef.current = new runtime.Placemark([location[1], location[0]], {}, {
-        iconLayout: userLayout,
-        iconShape: { type: 'Circle', coordinates: [0, 0], radius: 23 },
-        hasBalloon: false,
-        hasHint: false,
-        zIndex: 10,
-      })
-      map.geoObjects.add(userMarkerRef.current)
+      if (userMarkerRef.current) userMarkerRef.current.geometry?.setCoordinates([location[1], location[0]])
+      else {
+        const userLayout = runtime.templateLayoutFactory.createClass('<span class="kb-yandex-user-location" aria-label="Моё местоположение"></span>')
+        userMarkerRef.current = new runtime.Placemark([location[1], location[0]], {}, {
+          iconLayout: userLayout,
+          iconShape: { type: 'Circle', coordinates: [0, 0], radius: 23 },
+          hasBalloon: false,
+          hasHint: false,
+          zIndex: 10,
+        })
+        map.geoObjects.add(userMarkerRef.current)
+      }
       setUserLocated(true)
-      if (!automatic || memory.canAutoCenter()) updateLocation({ center: location, zoom: USER_LOCATION_MAP_ZOOM }, 360)
+      if (!automatic || memory.canAutoCenter()) updateLocation({ center: location, ...(automatic ? { zoom: USER_LOCATION_MAP_ZOOM } : {}) })
     }, () => {
       if (mapRef.current !== requestedMap || request !== locationRequestRef.current) return
       setGeolocationError('Не удалось определить положение. Разрешите геолокацию для Кабанды и повторите.')

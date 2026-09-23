@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { offlineDb } from '../offline/db'
 import { activateIdentity, enqueueOperation } from '../offline/ledger'
 import { raidReadDb, writeSnapshot } from '../raids/cache'
-import { raidResource, resultResource, resetRaidResources, revalidateRaidSession } from '../raids/resources'
+import { raidResource, resultResource, resetRaidResources, revalidateRaidSession, invalidatePointHistory } from '../raids/resources'
 import { ApiError, requestJson } from '../../lib/http'
 import { notifyConfirmedWrite } from '../../lib/api-events'
 import { galleryResource, materialsResource, requestMoreView, COMPLETED_REFRESH_MS, completedPointsResource, visitHistoryResource } from './view-resources'
@@ -23,6 +23,42 @@ beforeEach(async () => {
 afterEach(() => { resetRaidResources(); vi.restoreAllMocks() })
 
 describe('persistent view resources', () => {
+  it('shares a nearby history warmup with a foreground open and retains it on reopen', async () => {
+    const pending = deferred<any>()
+    const load = vi.mocked(requestJson).mockReturnValue(pending.promise)
+    const entry = visitHistoryResource('alice', 'team', 'point')
+    const warmup = entry.refreshIfStale(COMPLETED_REFRESH_MS)
+    const foreground = visitHistoryResource('alice', 'team', 'point').refreshIfStale(COMPLETED_REFRESH_MS)
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+    pending.resolve({ personalCount: 0, visitors: [], entries: [], nextOffset: null })
+    await Promise.all([warmup, foreground])
+    await entry.refreshIfStale(COMPLETED_REFRESH_MS)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(entry.state.data?.visitors).toEqual([])
+  })
+
+  it('invalidates only changed team point histories including participant windows after a remote visit', async () => {
+    const load = vi.mocked(requestJson).mockResolvedValue({ personalCount: 0, visitors: [], entries: [], nextOffset: null })
+    const summary = visitHistoryResource('alice', 'team', 'point')
+    const detail = visitHistoryResource('alice', 'team', 'point', 'alice')
+    const otherPoint = visitHistoryResource('alice', 'team', 'other')
+    const otherTeam = visitHistoryResource('alice', 'other-team', 'point')
+    const denied = visitHistoryResource('alice', 'team', 'point', 'denied')
+    await Promise.all([summary, detail, otherPoint, otherTeam].map(async entry => { await entry.refresh(); await entry.settled() }))
+    denied.deny()
+    const calls = load.mock.calls.length
+    invalidatePointHistory('alice', 'team', new Set(['point']))
+    await Promise.all([summary.settled(), detail.settled()])
+    expect(summary.state.status).toBe('stale'); expect(detail.state.status).toBe('stale')
+    expect(otherPoint.state.status).toBe('ready'); expect(otherTeam.state.status).toBe('ready')
+    expect(denied.state.status).toBe('access-error')
+    expect(await raidReadDb.snapshots.get(summary.key)).toBeUndefined()
+    expect(await raidReadDb.snapshots.get(detail.key)).toBeUndefined()
+    expect(load).toHaveBeenCalledTimes(calls) // hidden windows do not start a request storm
+    await summary.refreshIfStale(COMPLETED_REFRESH_MS)
+    expect(load).toHaveBeenCalledTimes(calls + 1)
+  })
+
   it('restores materials before a slow refresh and avoids requests on immediate reopen', async () => {
     const load = vi.mocked(requestJson).mockResolvedValue({ materials: [material('one')], nextCursor: null, canWrite: true })
     const entry = materialsResource('alice', 'team', 'raid', 'point')

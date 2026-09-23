@@ -18,6 +18,18 @@ function LoadingHistory() {
   return <div className="point-visit-history__loading" role="status" aria-label="Загружаем историю"><span /><span /><span /></div>
 }
 
+/** The map projection describes this raid only, not the all-time history. */
+export type KnownRaidPointVisit = { visitedByMe: boolean; visitedByTeam: boolean; stale?: boolean }
+
+function KnownRaidVisit({ visit }: { visit: KnownRaidPointVisit }) {
+  return <div className="point-visit-history__empty">
+    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg>
+    <p>{visit.visitedByMe ? 'Вы уже отмечены здесь в этом рейде.' : visit.visitedByTeam
+      ? 'Кабанда уже отмечена здесь в этом рейде.' : 'В этом рейде кабанда здесь ещё не была.'}
+      {visit.stale && <small className="point-visit-history__saved">По последним данным</small>}</p>
+  </div>
+}
+
 function ParticipantVisits({ identityId, kabandaId, pointId, userId, active, currentRaidId, onOpenRaid }: {
   identityId: string; kabandaId: string; pointId: string; userId: string; active: boolean; currentRaidId?: string; onOpenRaid?: () => void
 }) {
@@ -40,14 +52,16 @@ function ParticipantVisits({ identityId, kabandaId, pointId, userId, active, cur
   </div>
 }
 
-export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, active = true, showHeading = true, onOpenRaid }: {
-  kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; active?: boolean; showHeading?: boolean; onOpenRaid?: () => void
+export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, knownVisit, compactLoading = false, active = true, showHeading = true, onOpenRaid }: {
+  kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; knownVisit?: KnownRaidPointVisit
+  compactLoading?: boolean; active?: boolean; showHeading?: boolean; onOpenRaid?: () => void
 }) {
   const entry = useMemo(() => visitHistoryResource(identityId, kabandaId, pointId), [identityId, kabandaId, pointId])
   const state = useRaidResource(entry, active, null, COMPLETED_REFRESH_MS)
   const history = state.data
   const error = state.message
   const busy = state.status === 'loading'
+  const summary = currentRaidId && state.status !== 'access-error' ? knownVisit : undefined
   const [openedIds, setOpenedIds] = useState<Set<string>>(() => new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
   useEffect(() => { if (!active) setExpandedId(null) }, [active])
@@ -58,12 +72,18 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
     ...history.visitors.filter((visitor) => visitor.userId !== identityId)
       .sort((left, right) => right.count - left.count || left.displayName.localeCompare(right.displayName, 'ru')),
   ].filter((visitor) => visitor.count > 0) : []
+  // A live visit can arrive before a previously cached empty history refreshes.
+  // Keep the confirmed raid status instead of briefly claiming no visits exist.
+  const showKnownVisit = Boolean(summary && (!history || (!visitors.length && (summary.visitedByMe || summary.visitedByTeam))))
 
   return <section className="point-visit-history point-history-section" aria-label="История посещений точки">
     {showHeading && <header><h3>История посещений</h3></header>}
-    {busy && !history && <LoadingHistory />}
+    {showKnownVisit && summary && <KnownRaidVisit visit={summary} />}
+    {busy && !history && ((summary || compactLoading)
+      ? <p className="point-visit-history__pending" role="status">Уточняем историю…</p> : <LoadingHistory />)}
+    {showKnownVisit && history && state.refreshing && <p className="point-visit-history__pending" role="status">Уточняем историю…</p>}
     {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => void state.refresh()}>Повторить</button></p>}
-    {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
+    {history && !visitors.length && !showKnownVisit && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
     <ul className="point-visit-history__people">{visitors.map((visitor) => {
       const expanded = expandedId === visitor.userId
       const detailId = `point-visits-${pointId}-${visitor.userId}`

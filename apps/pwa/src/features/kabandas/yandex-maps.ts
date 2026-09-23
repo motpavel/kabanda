@@ -42,11 +42,12 @@ export type YandexMap = {
   }
   getCenter: () => YandexCoordinates
   getZoom: () => number
+  panTo: (center: YandexCoordinates, options?: { duration?: number; flying?: boolean; safe?: boolean; timingFunction?: string }) => PromiseLike<void> | void
   setCenter: (center: YandexCoordinates, zoom?: number, options?: {
     duration?: number
     timingFunction?: string
-  }) => void
-  setZoom: (zoom: number, options?: { duration?: number }) => void
+  }) => PromiseLike<void> | void
+  setZoom: (zoom: number, options?: { duration?: number }) => PromiseLike<void> | void
   destroy: () => void
 }
 
