@@ -135,7 +135,12 @@ export function RaidTemplatePointSheet({
         onPointerUp={(event) => finishDrag(event, true)}
       >
         <span aria-hidden="true" className="rt-point-sheet__grabber" />
-        <h2 id="rt-point-sheet-title">Точка {pointNumber}</h2>
+        <div className="rt-point-sheet__title-row">
+          <h2 id="rt-point-sheet-title">Точка {pointNumber}</h2>
+          <button aria-label="Закрыть точку" className="rt-point-sheet__close" onPointerDown={(event) => event.stopPropagation()} onClick={onClose} type="button">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></svg>
+          </button>
+        </div>
       </header>
       {point.geocodeStatus !== 'ready' && <p className="rt-point-sheet__hint">
         {point.geocodeStatus === 'pending' && 'Определяем название и адрес…'}
