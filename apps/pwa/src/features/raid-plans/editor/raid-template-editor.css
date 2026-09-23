@@ -204,3 +204,20 @@ body.rt-point-sheet-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .rt-point-sheet { transition: none; }
 }
+
+/* The dialog is focused on open, but is not an interactive focus target. */
+.rt-editor-shell .rt-point-sheet:is(:focus, :focus-visible) { outline: none; }
+.rt-point-sheet, .rt-point-sheet__handle { -webkit-tap-highlight-color: transparent; }
+/* Paint below the visual viewport too: iOS keyboard accessory bars can be
+   translucent and expose the layout viewport behind them. This is paint only,
+   outside the form's sizing and hit testing. */
+.rt-editor-shell[data-point-sheet-editing='true'] .rt-point-sheet-backdrop::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 100lvh;
+  background: #fff;
+  pointer-events: none;
+}
