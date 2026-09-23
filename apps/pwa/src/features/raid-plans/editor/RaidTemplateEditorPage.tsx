@@ -326,9 +326,8 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         <span><strong>{draft.points.length}</strong><small>{pointCountLabel(draft.points.length)}</small></span>
         <span><strong>{summary.distance}</strong><small>{summary.label}</small></span>
       </div>
-      {draft.points.length > 1 && <p className="rt-editor__order-hint">Перетащите точки или используйте стрелки, чтобы изменить порядок.</p>}
+      {draft.points.length > 1 && <p className="rt-editor__order-hint">Потяните за шесть точек справа, чтобы изменить порядок.</p>}
       <RaidTemplatePointList
-        onDelete={deletePoint}
         onMove={(pointId, direction) => dispatch({ type: 'move-point', pointId, direction })}
         onReorder={(activeId, overId) => dispatch({ type: 'reorder-point', activeId, overId })}
         onSelect={(pointId) => dispatch({ type: 'select-point', pointId })}

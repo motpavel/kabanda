@@ -17,9 +17,8 @@ const points: DraftRaidTemplatePoint[] = [
 ]
 
 describe('raid template point controls', () => {
-  it('keeps drag, move buttons, and edit cards available together', () => {
+  it('keeps a compact drag handle with keyboard instructions and editing on the row', () => {
     const markup = renderToStaticMarkup(<RaidTemplatePointList
-      onDelete={() => undefined}
       onMove={() => undefined}
       onReorder={() => undefined}
       onSelect={() => undefined}
@@ -27,8 +26,9 @@ describe('raid template point controls', () => {
       selectedPointId={null}
     />)
     expect(markup).toContain('Перетащить точку 1')
-    expect(markup).toContain('Поднять точку 2 выше')
-    expect(markup).toContain('Опустить точку 1 ниже')
+    expect(markup).not.toContain('Поднять точку')
+    expect(markup).not.toContain('Удалить точку')
+    expect(markup).toContain('Для изменения порядка с клавиатуры')
     expect(markup).toContain('Проверьте')
   })
 

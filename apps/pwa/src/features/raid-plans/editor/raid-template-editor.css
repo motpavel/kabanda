@@ -32,7 +32,7 @@
   padding: 6px;
   border-radius: 18px;
   background: var(--rt-surface);
-  box-shadow: 0 2px 8px #20212603;
+  box-shadow: 0 8px 28px #232a3512, 0 2px 6px #232a3505;
 }
 .rt-editor-nav a { display: flex; align-items: center; min-height: 48px; color: var(--rt-ink); text-decoration: none; border-radius: 12px; }
 .rt-editor-nav__back { justify-content: center; }
@@ -51,7 +51,7 @@
 .rt-editor__local-state svg { flex: 0 0 16px; width: 16px; height: 16px; }
 .rt-editor__local-state--saved svg { color: #28704d; }
 .rt-editor__local-state--failed { color: #a53a2d; }
-.rt-editor__basics, .rt-editor__route, .rt-editor__sharing { display: grid; gap: 20px; padding: 20px; border-radius: 22px; background: var(--rt-surface); box-shadow: 0 2px 8px #20212603; }
+.rt-editor__basics, .rt-editor__route, .rt-editor__sharing { display: grid; gap: 20px; padding: 20px; border-radius: 22px; background: var(--rt-surface); box-shadow: 0 8px 28px #232a3512, 0 2px 6px #232a3505; }
 .rt-editor__section-head { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; gap: 12px; }
 .rt-editor__section-head > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 11px; background: #fff0ee; color: var(--rt-red-dark); font-size: .85rem; font-weight: 750; }
 .rt-editor__section-head h2 { margin: 0; font-size: 1.05rem; font-weight: 750; letter-spacing: -.02em; line-height: 1.4; }
@@ -107,20 +107,19 @@
 .rt-editor__points-empty strong { color: var(--rt-ink); font-size: .9rem; }
 .rt-editor__order-hint { margin: 0; color: var(--rt-muted); font-size: .75rem; }
 .rt-point-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
-.rt-point-card { display: grid; min-width: 0; grid-template-columns: 44px minmax(0, 1fr); gap: 4px; border: 1px solid var(--rt-line); border-radius: 16px; padding: 8px; background: #fff; transition: border-color 150ms ease, transform 150ms ease; }
-.rt-point-card--selected { border-color: var(--rt-red); }
-.rt-point-card--dragged { z-index: 3; border-color: var(--rt-red); transform: scale(1.01); box-shadow: 0 8px 20px #20212616; }
-.rt-point-card__drag { min-width: 44px; min-height: 48px; border: 0; border-radius: 10px; color: #7b7d86; background: transparent; font-size: 23px; touch-action: none; user-select: none; }
-.rt-point-card__main { display: grid; min-width: 0; grid-template-columns: 30px minmax(0, 1fr); gap: 7px 10px; align-items: start; border: 0; border-radius: 10px; padding: 8px 4px; color: inherit; background: transparent; text-align: left; }
-.rt-point-card__number { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 10px; color: var(--rt-red-dark); background: #fff0ee; font-size: .8rem; font-weight: 750; }
-.rt-point-card__copy { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
-.rt-point-card__copy strong { font-size: .85rem; line-height: 1.4; }
-.rt-point-card__copy small, .rt-point-card__copy em { color: var(--rt-muted); font-size: .73rem; font-style: normal; line-height: 1.45; }
-.rt-point-card__state { grid-column: 2; justify-self: start; border-radius: 6px; padding: 3px 7px; color: #7b5428; background: #fff4df; font-size: .66rem; font-weight: 650; }
-.rt-point-card__state--confirmed { color: #28704d; background: #eaf5ee; }
-.rt-point-card__actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 6px; padding-top: 6px; border-top: 1px solid var(--rt-line); }
-.rt-point-card__actions button { min-width: 48px; min-height: 48px; border: 0; border-radius: 10px; color: #555862; background: #f5f5f7; font-size: 18px; }
-.rt-point-card__actions .rt-point-card__delete { color: var(--rt-red-dark); background: #fff0ee; margin-left: auto; }
+.rt-point-card { position: relative; display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 44px; align-items: stretch; gap: 4px; border: 1px solid #ececf0; border-radius: 18px; padding: 10px 8px 10px 12px; background: #fff; box-shadow: 0 8px 20px #232a3512, 0 2px 5px #232a3508; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+.rt-point-card--selected { border-color: #ed302b88; }
+.rt-point-card--dragged { z-index: 3; border-color: #ed302b88; transform: scale(1.025); box-shadow: 0 16px 32px #232a3529, 0 3px 8px #232a3514; }
+.rt-point-card__drag { display: grid; place-items: center; align-self: stretch; min-width: 44px; min-height: 48px; border: 0; border-radius: 12px; color: #9497a0; background: transparent; touch-action: none; user-select: none; cursor: grab !important; }
+.rt-point-card__drag:active { cursor: grabbing !important; }
+.rt-point-card__drag svg { width: 24px; height: 24px; fill: currentColor; stroke: none; }
+.rt-point-card__main { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; border: 0; border-radius: 10px; padding: 8px 0; color: inherit; background: transparent; text-align: left; }
+.rt-point-card__number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: #fff; background: var(--rt-red); box-shadow: 0 3px 8px #ed302b26; font-size: .85rem; line-height: 1; font-weight: 750; font-variant-numeric: tabular-nums; }
+.rt-point-card__copy { display: grid; min-width: 0; gap: 5px; padding-top: 3px; overflow-wrap: anywhere; }
+.rt-point-card__copy strong { font-size: .88rem; line-height: 1.4; }
+.rt-point-card__copy small, .rt-point-card__copy em { color: var(--rt-muted); font-size: .74rem; font-style: normal; line-height: 1.45; }
+.rt-point-card__copy .rt-point-card__needs-review { color: #94611c; font-size: .7rem; }
+.rt-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .rt-editor__validation, .rt-editor__offline, .rt-editor__error { margin: 0; border: 1px solid #efc1bd; border-radius: 14px; padding: 14px 16px; color: #8e2c27; background: #fff1f0; font-size: .85rem; line-height: 1.5; }
 .rt-editor__feedback { display: grid; gap: 12px; scroll-margin-block: 24px 100px; outline: none; }
 .rt-editor__validation ul { margin: 6px 0 0; padding-left: 20px; }
