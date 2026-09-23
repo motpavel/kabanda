@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { containPointSheetScroll } from './point-sheet-scroll'
+import { containSheetScroll } from './sheet-scroll'
 
 /** Use real cancelable Events; only the DOM ancestry and scroll metrics are fake. */
 class ScrollElement {
@@ -37,9 +37,10 @@ function fixture() {
   const note = new ScrollElement('textarea', content)
   const background = new ScrollElement('main')
   let editing = true
+  let topmost = true
   const addListener = vi.spyOn(doc, 'addEventListener')
   const removeListener = vi.spyOn(doc, 'removeEventListener')
-  const release = containPointSheetScroll(sheet as unknown as HTMLElement, content as unknown as HTMLElement, () => editing)
+  const release = containSheetScroll(sheet as unknown as HTMLElement, content as unknown as HTMLElement, () => editing, '.rt-map--point-editing', () => topmost)
   const dispatch = (type: string, target: ScrollElement, props: Record<string, unknown> = {}, cancelable = true) => {
     const event = new Event(type, { cancelable })
     Object.defineProperties(event, Object.fromEntries(Object.entries({ target, ...props }).map(([key, value]) => [key, { value }])))
@@ -54,7 +55,7 @@ function fixture() {
     return touch('touchmove', target, 100 - delta)
   }
   const wheel = (target: ScrollElement, deltaY: number) => dispatch('wheel', target, { deltaY })
-  return { doc, mapCanvas, sheet, header, content, input, note, background, release, addListener, removeListener, dispatch, touch, drag, wheel, setEditing: (value: boolean) => { editing = value } }
+  return { doc, mapCanvas, sheet, header, content, input, note, background, release, addListener, removeListener, dispatch, touch, drag, wheel, setTopmost: (value: boolean) => { topmost = value }, setEditing: (value: boolean) => { editing = value } }
 }
 
 describe('point sheet gesture containment', () => {
@@ -193,4 +194,15 @@ describe('point sheet gesture containment', () => {
     expect(f.drag(f.background, 40).defaultPrevented).toBe(false)
     expect(f.wheel(f.background, 40).defaultPrevented).toBe(false)
   })
+})
+
+
+it('lets the top sheet own gestures while a lower sheet stays mounted', () => {
+  const f = fixture()
+  f.setTopmost(false)
+  expect(f.drag(f.note, 80).defaultPrevented).toBe(false)
+  expect(f.wheel(f.background, 80).defaultPrevented).toBe(false)
+  f.setTopmost(true)
+  expect(f.drag(f.note, 80).defaultPrevented).toBe(true)
+  f.release()
 })

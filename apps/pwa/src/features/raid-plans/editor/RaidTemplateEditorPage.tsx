@@ -310,7 +310,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
       </div>
       <div className="rt-editor-field">
         <label htmlFor="rt-template-description">Описание <span>Необязательно</span></label>
-        <textarea id="rt-template-description" rows={3} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути" />
+        <textarea id="rt-template-description" rows={2} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути" />
       </div>
       <div className="rt-editor-field">
         <span className="rt-editor-field__label">Обложка маршрута</span>

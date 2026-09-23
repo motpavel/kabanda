@@ -72,4 +72,4 @@
 
 .kb-shell .raid-arrival-sheet .point-materials__compose textarea { font-weight: 400; caret-color: #c93e32; }
 .kb-shell .raid-arrival-sheet .point-materials__compose textarea:focus,
-.kb-shell .raid-arrival-sheet .point-materials__compose textarea:focus-visible { outline: 2px solid #c93e32; outline-offset: -2px; border-color: #c93e32; box-shadow: none; }
+.kb-shell .raid-arrival-sheet .point-materials__compose textarea:focus-visible { outline: none; border-color: #c9cec8; box-shadow: none; }

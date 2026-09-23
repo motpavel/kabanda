@@ -111,8 +111,11 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
 
   useLayoutEffect(() => {
     if (compact && composerOpen && visible) {
-      commentRef.current?.focus({ preventScroll: true })
-      commentRef.current?.scrollIntoView({ block: 'nearest' })
+      const input = commentRef.current
+      input?.focus({ preventScroll: true })
+      // Sheet viewport handling reveals the field inside its body. Native
+      // scrollIntoView would also pan the page underneath on iOS.
+      if (!input?.closest('.raid-arrival-sheet, [data-fixed-sheet]')) input?.scrollIntoView({ block: 'nearest' })
     }
   }, [compact, composerOpen, visible])
 

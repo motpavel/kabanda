@@ -242,7 +242,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
     </header>
     <dialog {...actionsSheet} className="raid-active-map__actions" aria-labelledby="raid-actions-title" onClose={() => actionsTrigger.current?.focus({ preventScroll: true })}
       onCancel={event => { event.preventDefault(); setActionsOpen(false) }} onClick={event => { if (event.target === event.currentTarget) setActionsOpen(false) }}>
-      <div className="raid-action-sheet">
+      <div className="raid-action-sheet" data-sheet-body>
         <button className="raid-sheet-grip" data-sheet-drag="true" aria-label="Свернуть действия рейда" onClick={() => setActionsOpen(false)} type="button"><span /></button>
         <header className="raid-action-sheet__header" data-sheet-drag="true"><h2 id="raid-actions-title">{navigatorOpen ? 'Навигатор рейда' : finishOpen ? 'Завершить рейд?' : 'Ваш рейд'}</h2></header>
         {navigatorOpen ? <>

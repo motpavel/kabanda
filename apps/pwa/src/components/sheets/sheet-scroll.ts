@@ -1,5 +1,5 @@
 /** Only the form body (or a long note inside it) may consume a vertical gesture. */
-export function pointSheetCanScroll(target: Element, content: HTMLElement, deltaY: number) {
+export function sheetCanScroll(target: Element, content: HTMLElement, deltaY: number) {
   if (!content.contains(target) || deltaY === 0) return false
   const note = target.closest<HTMLTextAreaElement>('textarea')
   const candidates = note && content.contains(note) ? [note, content] : [content]
@@ -11,19 +11,26 @@ export function pointSheetCanScroll(target: Element, content: HTMLElement, delta
 
 /** Safari ignores overflow:hidden when its keyboard is open. Stop gestures before
  * they reach the root scroller, including gestures on a non-overflowing form. */
-export function containPointSheetScroll(sheet: HTMLElement, content: HTMLElement, isEditing: () => boolean) {
+export function containSheetScroll(sheet: HTMLElement, content: HTMLElement, isEditing: () => boolean, allowMapSelector?: string, isActive: () => boolean = () => true) {
   const doc = sheet.ownerDocument
   let gesture: { target: Element; x: number; y: number } | null = null
-  const mapGesture = (target: Element) => !isEditing() && !!target.closest('.rt-map--point-editing') && !sheet.contains(target)
+  const mapGesture = (target: Element) => !isEditing() && !!allowMapSelector && !!target.closest(allowMapSelector) && !sheet.contains(target)
   const onStart = (event: TouchEvent) => {
+    if (!isActive()) return
     const touch = event.touches[0]
     gesture = touch ? { target: event.target as Element, x: touch.clientX, y: touch.clientY } : null
   }
   const onMove = (event: TouchEvent) => {
+    if (!isActive()) return
     const touch = event.touches[0]
     const target = gesture?.target ?? event.target as Element
     if (!target || typeof target.closest !== 'function') {
       if (event.cancelable) event.preventDefault()
+      return
+    }
+    if (isEditing() && !sheet.contains(target)) {
+      if (event.cancelable) event.preventDefault()
+      event.stopPropagation()
       return
     }
     if (mapGesture(target)) return
@@ -37,17 +44,23 @@ export function containPointSheetScroll(sheet: HTMLElement, content: HTMLElement
     // but non-scrolling field re-enable vertical page panning.
     if (input === doc.activeElement && input && event.touches.length === 1 &&
       Math.abs(deltaX) > Math.abs(deltaY)) return
-    if (event.touches.length === 1 && pointSheetCanScroll(target, content, deltaY)) return
+    if (event.touches.length === 1 && sheetCanScroll(target, content, deltaY)) return
     if (event.cancelable) event.preventDefault()
   }
   const onEnd = () => { gesture = null }
   const onWheel = (event: WheelEvent) => {
+    if (!isActive()) return
     const target = event.target as Element
     if (!target || typeof target.closest !== 'function') {
       if (event.cancelable) event.preventDefault()
       return
     }
-    if (mapGesture(target) || pointSheetCanScroll(target, content, event.deltaY)) return
+    if (isEditing() && !sheet.contains(target)) {
+      if (event.cancelable) event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+    if (mapGesture(target) || sheetCanScroll(target, content, event.deltaY)) return
     if (event.cancelable) event.preventDefault()
   }
   doc.addEventListener('touchstart', onStart, { capture: true, passive: true })

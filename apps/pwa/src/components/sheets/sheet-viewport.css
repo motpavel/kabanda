@@ -1,0 +1,8 @@
+.sheet-keyboard-underlay { position: fixed; left: 0; right: 0; height: 100lvh; background: #fff; pointer-events: none; }
+.sheet-keyboard-underlay[hidden] { display: none; }
+[data-fixed-sheet] { left: 0; right: 0; margin-inline: auto; box-sizing: border-box; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+[data-fixed-sheet]:is(:focus, :focus-visible) { outline: none; }
+[data-fixed-sheet] :is([data-sheet-body], .raid-arrival-sheet__body, textarea) { overscroll-behavior: none; }
+[data-fixed-sheet][data-sheet-editing] :is(input, textarea):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
+[data-fixed-sheet][data-sheet-editing] :is(input, textarea) { font-size: 16px; }
+[data-fixed-sheet] [data-sheet-body] { min-height: 0; overflow-y: auto; touch-action: pan-y; }

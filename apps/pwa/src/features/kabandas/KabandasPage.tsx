@@ -4,6 +4,7 @@ import { RiderLoader } from '../../app/RiderLoader'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { User } from '@kabanda/contracts'
 import { ApiError } from '../../lib/http'
+import { useSheetViewport } from '../../components/sheets/useSheetViewport'
 import { PointInfoSheet } from '../checkins/PointInfoSheet'
 import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
@@ -366,6 +367,11 @@ function KabandaWorkspace({
   const [membershipAction, setMembershipAction] = useState<string | null>(null)
   const [teamMenuOpen, setTeamMenuOpen] = useState(false)
   const [adminDialog, setAdminDialog] = useState<'rename' | 'members' | 'leadership' | null>(null)
+  const adminSheetRef = useRef<HTMLElement>(null)
+  useSheetViewport(adminSheetRef, { open: adminDialog !== null })
+  useEffect(() => {
+    if (adminDialog === 'rename') adminSheetRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
+  }, [adminDialog])
   const [renameDraft, setRenameDraft] = useState(kabanda.name)
   const [teamAction, setTeamAction] = useState<'rename' | 'cover' | 'leadership' | null>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
@@ -687,11 +693,11 @@ function KabandaWorkspace({
 
         {adminDialog === 'rename' && (
           <div className="kb-team-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAdminDialog(null)}>
-            <form className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-rename-title" onSubmit={rename}>
+            <form ref={node => { adminSheetRef.current = node }} className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-rename-title" onSubmit={rename}>
               <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
               <h2 id="kb-rename-title">Переименовать Кабанду</h2>
               <label htmlFor="kb-rename-input">Новое название</label>
-              <input id="kb-rename-input" autoFocus required minLength={1} maxLength={80} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} />
+              <input id="kb-rename-input" required minLength={1} maxLength={80} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} />
               <button className="kb-primary" type="submit" disabled={teamAction === 'rename'}>{teamAction === 'rename' ? 'Сохраняем…' : 'Сохранить'}</button>
             </form>
           </div>
@@ -699,7 +705,7 @@ function KabandaWorkspace({
 
         {adminDialog === 'members' && (
           <div className="kb-team-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAdminDialog(null)}>
-            <section className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-members-title">
+            <section ref={node => { adminSheetRef.current = node }} className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-members-title">
               <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
               <h2 id="kb-members-title">Удалить участников</h2>
               <p>Вожак останется в Кабанде.</p>
@@ -720,7 +726,7 @@ function KabandaWorkspace({
 
         {adminDialog === 'leadership' && (
           <div className="kb-team-dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAdminDialog(null)}>
-            <section className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-leadership-title">
+            <section ref={node => { adminSheetRef.current = node }} className="kb-team-dialog" role="dialog" aria-modal="true" aria-labelledby="kb-leadership-title">
               <button className="kb-team-dialog-close" type="button" aria-label="Закрыть" onClick={() => setAdminDialog(null)}>×</button>
               <h2 id="kb-leadership-title">Передать права вожака</h2>
               <p>Выберите нового вожака. После передачи он получит управление Кабандой.</p>

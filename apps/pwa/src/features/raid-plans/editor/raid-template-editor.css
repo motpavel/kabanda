@@ -60,7 +60,7 @@
 .rt-editor-field > label:not(.rt-cover), .rt-editor-field__label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; font-size: .85rem; font-weight: 650; }
 .rt-editor-field > label > span { color: var(--rt-muted); font-size: .75rem; font-weight: 450; }
 .rt-editor-field > input, .rt-editor-field > textarea, .rt-point-sheet input, .rt-point-sheet textarea { width: 100%; min-width: 0; min-height: 48px; margin: 0; border: 1px solid var(--rt-line); border-radius: 12px; padding: 12px; color: var(--rt-ink); background: #f8f8fa; font-size: 16px; line-height: 1.5; }
-.rt-editor-field > textarea { min-height: 102px; resize: vertical; }
+.rt-editor-field > textarea { min-height: 74px; resize: vertical; }
 .rt-editor-field :is(input, textarea)::placeholder { color: #797b83; opacity: 1; }
 .rt-cover { position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 14px; min-height: 116px; margin: 0; padding: 18px; overflow: hidden; border: 1px dashed #c9cad1; border-radius: 16px; background: #f8f8fa; cursor: pointer; }
 .rt-cover input, .rt-visibility__options input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
@@ -128,8 +128,8 @@
 .rt-editor__action[hidden] { display: none; }
 .rt-editor__save { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 52px; border: 0; border-radius: 16px; padding: 12px 16px; color: #fff; background: var(--rt-red); font-size: .95rem; font-weight: 750; }
 .rt-editor__save svg { width: 20px; flex: 0 0 20px; }
-.rt-point-sheet-backdrop { position: fixed; z-index: 100; top: var(--rt-viewport-top, 0px); left: 0; right: 0; height: var(--rt-viewport-height, 100dvh); display: grid; align-items: end; background: transparent; pointer-events: none; }
-.rt-point-sheet { pointer-events: auto; --rt-point-sheet-drag: 0px; display: flex; flex-direction: column; width: min(100%, 640px); max-height: var(--rt-sheet-max-height, min(58dvh, 460px)); overflow: hidden; gap: 10px; justify-self: center; border: 1px solid #2021260f; border-radius: 24px 24px 0 0; padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -10px 40px #20212626; transform: translateY(var(--rt-point-sheet-drag)); transition: transform 160ms ease; }
+.rt-point-sheet-backdrop { position: fixed; z-index: 100; top: var(--sheet-viewport-top, 0px); left: 0; right: 0; height: var(--sheet-viewport-height, 100dvh); display: grid; align-items: end; background: transparent; pointer-events: none; }
+.rt-point-sheet { pointer-events: auto; --rt-point-sheet-drag: 0px; display: flex; flex-direction: column; width: min(100%, 640px); max-height: var(--sheet-max-height, min(58dvh, 460px)); overflow: hidden; gap: 10px; justify-self: center; border: 1px solid #2021260f; border-radius: 24px 24px 0 0; padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -10px 40px #20212626; transform: translateY(var(--rt-point-sheet-drag)); transition: transform 160ms ease; }
 .rt-point-sheet--dragging { transition: none; }
 .rt-point-sheet__grabber { width: 36px; height: 4px; justify-self: center; border-radius: 999px; background: #d4d4db; }
 .rt-point-sheet__handle { display: grid; gap: 4px; cursor: grab; touch-action: none; user-select: none; }
@@ -184,12 +184,12 @@ body.rt-point-sheet-open { overflow: hidden; }
 
 /* A focused field retains its quiet border; keyboard focus on buttons remains visible. */
 .rt-editor-shell :is(input, textarea):is(:focus, :focus-visible) { outline: none; box-shadow: none; border-color: var(--rt-line); }
-.rt-map--point-editing { top: var(--rt-viewport-top, 0px); bottom: auto; height: var(--rt-viewport-height, 100dvh); }
+.rt-map--point-editing { top: var(--sheet-viewport-top, 0px); bottom: auto; height: var(--sheet-viewport-height, 100dvh); }
 
 /* The handle owns sheet gestures; fields scroll without moving the page. */
 .rt-point-sheet { transition: transform 160ms ease, height 160ms ease; }
-.rt-point-sheet--expanded, .rt-point-sheet--dragging { max-height: var(--rt-sheet-expanded-height, calc(100dvh - 12px)); }
-.rt-point-sheet--expanded { height: var(--rt-sheet-expanded-height, calc(100dvh - 12px)); }
+.rt-point-sheet--expanded, .rt-point-sheet--dragging { max-height: var(--sheet-expanded-height, calc(100dvh - 12px)); }
+.rt-point-sheet--expanded { height: var(--sheet-expanded-height, calc(100dvh - 12px)); }
 .rt-point-sheet--expanded form, .rt-point-sheet--dragging form { flex: 1; }
 .rt-point-sheet--expanded .rt-point-sheet__body, .rt-point-sheet--dragging .rt-point-sheet__body { flex: 1; align-content: start; }
 .rt-point-sheet--dragging { transition: none; }
@@ -199,8 +199,8 @@ body.rt-point-sheet-open { overflow: hidden; }
 .rt-point-sheet__body, .rt-point-sheet textarea { overscroll-behavior: none; }
 .rt-point-sheet__body { touch-action: pan-y; }
 .rt-point-sheet__actions { touch-action: none; }
-.rt-editor-shell[data-point-sheet-editing='true'] .rt-point-sheet-backdrop { pointer-events: auto; }
-.rt-editor-shell[data-point-sheet-keyboard='true'] .rt-point-sheet { padding-bottom: 16px; }
+.rt-editor-shell[data-sheet-editing='true'] .rt-point-sheet-backdrop { pointer-events: auto; }
+.rt-editor-shell[data-sheet-keyboard='true'] .rt-point-sheet { padding-bottom: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .rt-point-sheet { transition: none; }
 }
@@ -211,7 +211,7 @@ body.rt-point-sheet-open { overflow: hidden; }
 /* Paint below the visual viewport too: iOS keyboard accessory bars can be
    translucent and expose the layout viewport behind them. This is paint only,
    outside the form's sizing and hit testing. */
-.rt-editor-shell[data-point-sheet-editing='true'] .rt-point-sheet-backdrop::after {
+.rt-editor-shell[data-sheet-editing='true'] .rt-point-sheet-backdrop::after {
   content: '';
   position: absolute;
   top: 100%;
@@ -220,4 +220,17 @@ body.rt-point-sheet-open { overflow: hidden; }
   height: 100lvh;
   background: #fff;
   pointer-events: none;
+}
+
+/* Let the map use the complete route card, without a second horizontal inset. */
+.rt-editor__route { --rt-card-inset: 20px; }
+.rt-editor__route .rt-map:not(.rt-map--point-editing) {
+  width: calc(100% + 2 * var(--rt-card-inset));
+  margin-inline: calc(-1 * var(--rt-card-inset));
+  height: clamp(400px, 60dvh, 560px);
+  border-inline: 0;
+  border-radius: 0;
+}
+@media (max-width: 380px) {
+  .rt-editor__route { --rt-card-inset: 16px; }
 }

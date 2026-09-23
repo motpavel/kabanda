@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { usePointSheetViewport } from './usePointSheetViewport'
+import { useSheetViewport } from './useSheetViewport'
+import { lockSheetPage } from './sheet-page-lock'
+import { usePointSheetViewport } from '../../features/raid-plans/editor/usePointSheetViewport'
 
 const effects = vi.hoisted(() => ({ mount: null as (() => void | (() => void)) | null }))
 vi.mock('react', () => ({ useLayoutEffect: (mount: () => void | (() => void)) => { effects.mount = mount } }))
@@ -52,6 +54,12 @@ class TestElement extends DOMTarget {
     }
     return null
   }
+  removed = false
+  hidden = false
+  setAttribute() {}
+  insertAdjacentElement() {}
+  remove() { this.removed = true }
+  get offsetHeight() { return Math.min(this.height, parseFloat(this.style.maxHeight) || this.height) }
   getBoundingClientRect() { return { top: this.top, bottom: this.top + this.height, height: this.height } as DOMRect }
 }
 
@@ -59,12 +67,14 @@ class TestDocument extends DOMTarget {
   body = new TestElement('body')
   documentElement = new TestElement('html')
   activeElement: TestElement | null = null
+  created: TestElement[] = []
+  createElement(tag: string) { const element = new TestElement(tag); this.created.push(element); return element }
 }
 
 const cleanups: Array<() => void> = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); vi.unstubAllGlobals() })
 
-function mount() {
+function mount(surface = false, open = true, visualViewportEnabled = true) {
   const doc = new TestDocument()
   const shell = new TestElement('.rt-editor-shell')
   const sheet = new TestElement('.rt-point-sheet', shell)
@@ -85,18 +95,21 @@ function mount() {
   let frameId = 0
   const observer = { observe: vi.fn(), disconnect: vi.fn() }
   vi.stubGlobal('HTMLElement', TestElement)
+  vi.stubGlobal('getComputedStyle', () => ({ zIndex: '75' }))
   vi.stubGlobal('document', doc)
   vi.stubGlobal('window', win)
+  if (!visualViewportEnabled) Object.assign(win, { visualViewport: undefined })
   vi.stubGlobal('navigator', { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5 })
   vi.stubGlobal('ResizeObserver', class { constructor() { return observer } })
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameId, callback); return frameId })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
   const heightChange = vi.fn()
-  usePointSheetViewport({ current: sheet as unknown as HTMLElement }, heightChange)
+  if (surface) useSheetViewport({ current: sheet as unknown as HTMLElement }, { open, contentSelector: '.rt-point-sheet__body' })
+  else usePointSheetViewport({ current: sheet as unknown as HTMLElement }, heightChange)
   const cleanup = effects.mount?.()
-  if (typeof cleanup !== 'function') throw new Error('Expected mounted viewport hook')
+  if (open && typeof cleanup !== 'function') throw new Error('Expected mounted viewport hook')
   let active = true
-  const release = () => { if (active) { active = false; cleanup() } }
+  const release = () => { if (active) { active = false; if (typeof cleanup === 'function') cleanup() } }
   cleanups.push(release)
   const flush = () => {
     const pending = [...frames.values()]
@@ -121,16 +134,16 @@ describe('point sheet viewport lifecycle', () => {
     f.doc.documentElement.clientHeight = 430
     Object.assign(f.viewport, { height: 430, offsetTop: 220 })
     f.viewport.dispatchEvent(new Event('resize'))
-    expect(f.shell.dataset.pointSheetKeyboard).toBe('true')
-    expect(f.shell.style.getPropertyValue('--rt-viewport-top')).toBe('220px')
-    expect(f.shell.style.getPropertyValue('--rt-viewport-height')).toBe('430px')
-    expect(f.shell.style.getPropertyValue('--rt-sheet-expanded-height')).toBe('418px')
+    expect(f.shell.dataset.sheetKeyboard).toBe('true')
+    expect(f.shell.style.getPropertyValue('--sheet-viewport-top')).toBe('220px')
+    expect(f.shell.style.getPropertyValue('--sheet-viewport-height')).toBe('430px')
+    expect(f.shell.style.getPropertyValue('--sheet-expanded-height')).toBe('418px')
     f.win.innerHeight = 844
     f.doc.documentElement.clientHeight = 844
     Object.assign(f.viewport, { height: 844, offsetTop: 90 })
     f.viewport.dispatchEvent(new Event('resize'))
-    expect(f.shell.dataset.pointSheetKeyboard).toBe('false')
-    expect(f.shell.style.getPropertyValue('--rt-viewport-top')).toBe('0px')
+    expect(f.shell.dataset.sheetKeyboard).toBe('false')
+    expect(f.shell.style.getPropertyValue('--sheet-viewport-top')).toBe('0px')
   })
 
   it('reveals the focused field on keyboard resize, without fighting internal scroll on viewport pan', () => {
@@ -155,17 +168,17 @@ describe('point sheet viewport lifecycle', () => {
     f.focus()
     Object.assign(f.viewport, { height: 430, offsetTop: 0 })
     f.viewport.dispatchEvent(new Event('resize'))
-    expect(f.shell.dataset.pointSheetKeyboard).toBe('true')
+    expect(f.shell.dataset.sheetKeyboard).toBe('true')
     f.doc.documentElement.clientWidth = 844
     f.doc.documentElement.clientHeight = 390
     f.win.innerHeight = 390
     f.viewport.height = 180
     f.win.dispatchEvent(new Event('resize'))
-    expect(f.shell.dataset.pointSheetKeyboard).toBe('true')
+    expect(f.shell.dataset.sheetKeyboard).toBe('true')
     Object.assign(f.viewport, { height: 390, offsetTop: 20 })
     f.viewport.dispatchEvent(new Event('resize'))
-    expect(f.shell.dataset.pointSheetKeyboard).toBe('false')
-    expect(f.shell.style.getPropertyValue('--rt-viewport-top')).toBe('0px')
+    expect(f.shell.dataset.sheetKeyboard).toBe('false')
+    expect(f.shell.style.getPropertyValue('--sheet-viewport-top')).toBe('0px')
   })
 
   it('focuses a tapped iPhone field without native root pan and restores its appearance next frame', () => {
@@ -178,7 +191,7 @@ describe('point sheet viewport lifecycle', () => {
     expect(f.note.style.opacity).toBe('0')
     f.flush()
     expect(f.note.style.opacity).toBe('.8')
-    expect(f.shell.dataset.pointSheetEditing).toBe('true')
+    expect(f.shell.dataset.sheetEditing).toBe('true')
   })
 
   it('does not focus a field at the end of a scrolling gesture', () => {
@@ -210,7 +223,7 @@ describe('point sheet viewport lifecycle', () => {
     expect(f.observer.disconnect).toHaveBeenCalledOnce()
     expect(f.frames.size).toBe(0)
     expect(f.shell.dataset).toEqual({})
-    expect(f.shell.style.getPropertyValue('--rt-viewport-height')).toBe('')
+    expect(f.shell.style.getPropertyValue('--sheet-viewport-height')).toBe('')
     expect(f.heightChange).toHaveBeenLastCalledWith(0)
     f.heightChange.mockClear()
     f.viewport.dispatchEvent(new Event('resize'))
@@ -219,4 +232,61 @@ describe('point sheet viewport lifecycle', () => {
     expect(f.heightChange).not.toHaveBeenCalled()
     expect(f.win.scrollY).toBe(70)
   })
+})
+
+
+describe('shared sheet surfaces', () => {
+  it('does not lock the page or attach an underlay for a closed retained sheet', () => {
+    const f = mount(true, false)
+    expect(f.doc.body.style.position).toBe('relative')
+    expect(f.doc.created).toHaveLength(0)
+    expect(f.sheet.dataset.fixedSheet).toBeUndefined()
+  })
+
+  it('pins an ordinary sheet above the keyboard and cleans its surface and white underlay', () => {
+    const f = mount(true)
+    expect(f.sheet.style.position).toBe('fixed')
+    expect(f.sheet.style.top).toBe('514px')
+    expect(f.sheet.dataset.fixedSheet).toBe('true')
+    const underlay = f.doc.created[0]!
+    expect(underlay.hidden).toBe(true)
+    f.focus()
+    Object.assign(f.viewport, { height: 430, offsetTop: 30 })
+    f.viewport.dispatchEvent(new Event('resize'))
+    expect(f.sheet.style.top).toBe('130px')
+    expect(f.sheet.style.maxHeight).toBe('406px')
+    expect(underlay.style.top).toBe('460px')
+    expect(underlay.hidden).toBe(false)
+    expect(f.sheet.style.getPropertyValue('--sheet-safe-bottom')).toBe('0px')
+    f.release()
+    expect(underlay.removed).toBe(true)
+    expect(f.sheet.style.position).toBe('')
+    expect(f.sheet.style.top).toBe('')
+    expect(f.doc.body.style.position).toBe('relative')
+  })
+
+  it('keeps the page locked when the previous sheet closes after another one opens', () => {
+    const f = mount()
+    const second = lockSheetPage(new TestElement('dialog') as unknown as HTMLElement)
+    expect(second.isTopmost()).toBe(true)
+    f.release()
+    expect(f.doc.body.style.position).toBe('fixed')
+    expect(f.win.scrollY).toBe(0)
+    second.release()
+    expect(f.doc.body.style.position).toBe('relative')
+    expect(f.win.scrollY).toBe(70)
+    second.release()
+    expect(f.win.scrollY).toBe(70)
+  })
+})
+
+
+it('uses resized innerHeight in webviews without VisualViewport', () => {
+  const f = mount(true, true, false)
+  f.focus()
+  f.win.innerHeight = 350
+  f.doc.documentElement.clientHeight = 350
+  f.win.dispatchEvent(new Event('resize'))
+  expect(f.sheet.style.getPropertyValue('--sheet-viewport-height')).toBe('350px')
+  expect(f.sheet.dataset.sheetKeyboard).toBe('true')
 })

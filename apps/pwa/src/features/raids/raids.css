@@ -1012,7 +1012,7 @@
   margin: 0 auto;
   overflow: auto;
   border-radius: 26px 26px 0 0;
-  padding: 0 20px calc(18px + env(safe-area-inset-bottom));
+  padding: 0 20px calc(18px + var(--sheet-safe-bottom, env(safe-area-inset-bottom)));
   background: #fff;
   box-shadow: 0 -8px 36px rgb(26 31 34 / 16%);
   overscroll-behavior: contain;
@@ -1098,7 +1098,7 @@
   overscroll-behavior: contain;
 }
 .raid-active-map__actions::backdrop { background: rgb(19 25 23 / 24%); }
-.raid-action-sheet { padding: 0 20px calc(18px + env(safe-area-inset-bottom)); }
+.raid-action-sheet { padding: 0 20px calc(18px + var(--sheet-safe-bottom, env(safe-area-inset-bottom))); }
 .raid-active-map .raid-sheet-grip { display: grid; place-items: center; width: 100%; min-height: 44px; padding: 0; border: 0; border-radius: 0; background: transparent; transform: none; }
 .raid-active-map :is(.raid-sheet-grip, .raid-arrival-sheet__collapse):focus { outline: none; }
 .raid-active-map :is(.raid-sheet-grip, .raid-arrival-sheet__collapse):focus-visible span { background: #69716d; }
@@ -1268,3 +1268,7 @@
 
 .raid-action-sheet .raid-handoff { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
 .raid-action-sheet .raid-handoff .kb-kicker, .raid-action-sheet .raid-handoff h2 { display: none; }
+
+.raid-active-map__actions[data-fixed-sheet] { overflow: hidden; }
+.raid-active-map__actions[data-fixed-sheet][open] { display: flex; flex-direction: column; }
+.raid-active-map__actions[data-fixed-sheet] > .raid-action-sheet { min-height: 0; overflow-y: auto; }
