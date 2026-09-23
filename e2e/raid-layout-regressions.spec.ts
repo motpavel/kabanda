@@ -82,8 +82,6 @@ for (const width of [320, 390, 430, 1024]) {
     expect(imageBox.y - cardBox.y).toBeLessThanOrEqual(30)
     expect(imageBox.height / imageBox.width).toBeCloseTo(1.25, 1)
     expect(Math.abs(imageBox.width - (cardBox.width - 2))).toBeLessThanOrEqual(2)
-    // Edge-to-edge inside the card must not restore a giant desktop poster.
-    expect(imageBox.height).toBeLessThanOrEqual(526)
     expect((await photo.boundingBox())!.height).toBeLessThanOrEqual(360)
     const layout = await page.locator('.result-shell').evaluate(shell => {
       const children = [...shell.children].map(element => ({ name: element.className, rect: element.getBoundingClientRect() })).filter(item => item.rect.height > 0)
@@ -93,6 +91,8 @@ for (const width of [320, 390, 430, 1024]) {
     expect(layout.overflow).toBeLessThanOrEqual(1)
     expect(Math.max(...layout.gaps)).toBeLessThan(48)
     expect(errors).toEqual([])
+    // Edge-to-edge inside the card must not restore a giant desktop poster.
+    expect(imageBox.height).toBeLessThanOrEqual(526)
     await page.screenshot({ path: info.outputPath(`completed-${width}.png`), fullPage: true })
     await info.attach('layout-measurement', { body: JSON.stringify({ width, cardBox, imageBox, ...layout }), contentType: 'application/json' })
   })
