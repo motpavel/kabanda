@@ -13,8 +13,64 @@
 .kb-shell .result-gallery p { margin: 0; }
 .result-gallery__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px; }
 .result-gallery__grid figure { margin: 0; min-width: 0; }
-.result-gallery__grid img { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; border-radius: 12px; background: #efefeb; }
+.result-gallery__grid img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; object-position: center; border-radius: 12px; background: #efefeb; }
 .result-gallery__grid figcaption { margin-top: 6px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
 .result-gallery__local figcaption { color: var(--kb-muted); }
 .result-gallery__local strong { display: block; font-weight: 600; }
 @media (min-width: 760px) { .result-gallery__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.result-route__points { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.result-route__points > li { min-width: 0; }
+.result-route__point strong { font-size: 14px; overflow-wrap: anywhere; }
+.result-route__number { font-size: 13px; font-variant-numeric: tabular-nums; }
+.result-route__history { display: grid; gap: 12px; padding: 14px 4px 12px; min-width: 0; }
+.kb-shell .result-route__time { margin: 0; font-size: 13px; color: var(--kb-muted); }
+.kb-shell .result-route__history .point-materials__actions > * { min-height: 50px; border-radius: 12px; box-shadow: 0 2px 4px rgb(32 37 34 / 5%), 0 5px 12px rgb(32 37 34 / 8%); }
+.result-route__history .point-materials__history { border-top: 1px solid var(--kb-line); }
+.result-route__history .point-materials__history h3 { font-size: 14px; font-weight: 600; }
+.result-people { min-width: 0; }
+.kb-shell .result-people h2 { margin: 0 0 12px; font-size: 18px; }
+.result-people__table th, .result-people__table td { padding: 12px; text-align: right; border-bottom: 1px solid var(--kb-line); font-variant-numeric: tabular-nums; }
+.result-people__table th:first-child { width: 52%; text-align: left; overflow-wrap: anywhere; }
+.result-people__table thead th { color: var(--kb-muted); background: #f7f8f5; font-size: 12px; font-weight: 500; }
+.result-people__table tbody th { font-weight: 600; }
+.result-people__table tbody tr:last-child > * { border-bottom: 0; }
+.kb-shell .result-route__point { display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; min-height: 54px; margin: 0; padding: 12px; border: 1px solid #e1e9e2; border-radius: 14px; color: #26734b; background: #f2f8f3; text-align: left; }
+.kb-shell .result-route__point[aria-expanded='true'] { background: #e7f2e9; border-color: #c6ddcb; }
+.result-route__history .point-materials__item { padding: 10px 12px; margin-bottom: 8px; border: 0; border-radius: 12px; background: #f5f5f1; font-size: 14px; line-height: 1.45; }
+.result-people__table { width: 100%; border: 0; border-spacing: 0; border-radius: 0; overflow: hidden; background: #fff; font-size: 14px; table-layout: fixed; }
+
+.result-route__history .point-materials__history h3 { margin: 12px 0; color: var(--kb-muted); }
+.result-route__chevron { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms ease; }
+.result-route__point[aria-expanded='true'] .result-route__chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .result-route__chevron { transition: none; } }
+
+.kb-shell .result-shell { background: transparent; gap: 16px; }
+.kb-shell .result-shell > .kb-card,
+.kb-shell .result-people { padding: 20px; border: 1px solid var(--kb-line); border-radius: 22px; background: #fff; box-shadow: 0 10px 30px rgb(35 42 53 / 6%); }
+.kb-shell .result-shell > .result-metrics { border-radius: 22px; box-shadow: 0 10px 30px rgb(35 42 53 / 6%); }
+.kb-shell .result-share__button,
+.kb-shell .result-share__button:hover { transform: none; border-color: #d63830; color: #c6342d; background: #fff; box-shadow: none; transition: none; }
+.kb-shell .result-gallery__photo,
+.kb-shell .result-gallery__photo:hover { display: block; width: 100%; padding: 0; margin: 0; overflow: hidden; border: 0; border-radius: 12px; background: #efefeb; box-shadow: none; transform: none; }
+
+/* Completed raids use the same page palette as the home screen. */
+html:has(.result-shell), body:has(.result-shell) { background: #f7f7f5; }
+.kb-shell .result-shell button,
+.kb-shell .result-shell button:hover { transform: none; transition: none; }
+.kb-shell .result-route__point:hover { color: #26734b; background: #f2f8f3; border-color: #e1e9e2; box-shadow: none; }
+.kb-shell .result-route__point[aria-expanded='true']:hover { background: #e7f2e9; border-color: #c6ddcb; }
+
+.kb-shell .result-analytics h2 { margin: 0 0 12px; font-size: 18px; }
+.kb-shell .result-analytics .result-metrics { border: 0; border-radius: 0; box-shadow: none; }
+
+/* Keep the edge-to-edge poster inside its card, but bound the whole card on
+   wide screens so a 4:5 image does not become a nearly 1000px-tall section. */
+.kb-shell .result-shell > .result-share { padding: 0; gap: 0; overflow: hidden; width: 100%; max-width: 420px; justify-self: center; }
+.kb-shell .result-share > img { width: 100%; max-width: none; height: auto; aspect-ratio: auto; border-radius: 0; }
+.result-share__actions { display: grid; gap: 12px; padding: 16px 20px 20px; }
+.result-share__actions p { margin: 0; }
+
+.kb-shell .result-shell { --result-accent: #c6342d; }
+.kb-shell .result-shell .result-section-heading { display: flex; align-items: flex-end; gap: 10px; color: var(--result-accent); font-size: 18px; line-height: 1.3; }
+.result-section-heading__icon { display: block; flex: 0 0 30px; width: 30px; height: 30px; background: currentColor; mask-size: contain; mask-position: center; mask-repeat: no-repeat; -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; }

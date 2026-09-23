@@ -106,7 +106,7 @@ test('cached metrics survive a failed recheck with a working retry and stable co
   unavailable = false
   await retry.click()
   await expect(retry).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Запланировать следующий рейд' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Запланировать следующий рейд' })).toHaveCount(0)
   expect(await page.evaluate(() => (window as any).savedResultNodes[0] === document.querySelector('.raid-completion') && (window as any).savedResultNodes[1] === document.querySelector('.result-route'))).toBe(true)
   expect(errors).toEqual([])
 })

@@ -2242,9 +2242,18 @@ export class DatabaseRaidService implements RaidService {
       const result = await client.query(
         `SELECT id, uploader_user_id, state, content_type, size_bytes, width, height,
            caption, purpose, created_at
-         FROM raid_media
-         WHERE raid_id = $1 AND state = 'ready'
-           AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid))
+         FROM (
+           SELECT id, uploader_user_id, state::text, content_type, size_bytes, width, height,
+             caption, purpose::text, created_at
+           FROM raid_media WHERE raid_id = $1 AND state = 'ready'
+           UNION ALL
+           SELECT m.id, m.author_user_id, 'ready', 'image/jpeg', octet_length(m.content_bytes), m.width, m.height,
+             nullif(m.body, ''), 'gallery', m.created_at
+           FROM raid_point_materials m JOIN raids r ON r.id = m.raid_id
+           WHERE m.raid_id = $1 AND m.kind = 'photo' AND m.ready
+             AND r.state = 'completed'
+         ) photos
+         WHERE ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid))
          ORDER BY created_at DESC, id DESC LIMIT $4`,
         [raidId, cursorValue?.createdAt ?? null, cursorValue?.id ?? null, limit + 1],
       )
@@ -2276,7 +2285,11 @@ export class DatabaseRaidService implements RaidService {
       await this.visibleRaid(client, actorUserId, raidId)
       const result = await client.query<{ content_bytes: Buffer }>(
         `SELECT content_bytes FROM raid_media
-         WHERE id = $1 AND raid_id = $2 AND state = 'ready'`,
+         WHERE id = $1 AND raid_id = $2 AND state = 'ready'
+         UNION ALL
+         SELECT m.content_bytes FROM raid_point_materials m JOIN raids r ON r.id = m.raid_id
+         WHERE m.id = $1 AND m.raid_id = $2 AND m.kind = 'photo' AND m.ready
+           AND r.state = 'completed'`,
         [mediaId, raidId],
       )
       if (!result.rows[0]?.content_bytes) throw this.notFound()

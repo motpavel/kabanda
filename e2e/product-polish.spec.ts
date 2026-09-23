@@ -88,7 +88,7 @@ test('confirmed completion keeps the same hero and map while result metrics arri
     gate.resolve()
     await expect(page.locator('.raid-completion__stats dd')).toHaveText(['00:10:00', '2', '1', '1,5'])
     expect(await page.evaluate(() => (window as any).resultNodes[0] === document.querySelector('.raid-completion') && (window as any).resultNodes[1] === document.querySelector('.result-route'))).toBe(true)
-    await expect(page.getByRole('link', { name: 'Запланировать следующий рейд' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Запланировать следующий рейд' })).toHaveCount(0)
     expect(errors).toEqual([])
   } finally { gate.resolve() }
 })

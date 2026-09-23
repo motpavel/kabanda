@@ -1,0 +1,3 @@
+Generated with built-in imagegen, using pack-v3.png as reference. Resized to 120px preserving alpha.
+
+Create one standalone single wild-boar member icon matching the attached two-boar group icon. Keep only ONE front member, centered: shoulder/bust arch below a wild boar head in side profile looking RIGHT, elongated angular snout, pointed ear, restrained short bristle crest and tiny tusk. Match reference thick uniform rounded red outlines, simple professional navigation pictogram readable at 24px. No smile, no cartoon pig snout, no Angry Birds, no second member. Solid #C6342D strokes, transparent background with real alpha, square canvas, icon fills central 80%, no text, no shading.

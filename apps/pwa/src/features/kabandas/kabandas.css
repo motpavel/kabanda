@@ -312,7 +312,9 @@
 .kb-nav-icon--home { mask-position: 0 0; -webkit-mask-position: 0 0; }
 .kb-nav-icon--map { mask-position: 100% 0; -webkit-mask-position: 100% 0; }
 .kb-nav-icon--raids { mask-position: 0 100%; -webkit-mask-position: 0 100%; }
-.kb-nav-icon--kabanda { mask-position: 100% 100%; -webkit-mask-position: 100% 100%; }
+.kb-nav-icon--kabanda { mask-size: contain; -webkit-mask-size: contain; mask-position: center; -webkit-mask-position: center; }
+.kb-team-members-heading { display: flex; align-items: center; gap: 10px; }
+.kb-team-members-heading .kb-nav-icon { width: 30px; height: 30px; color: #c6342d; }
 .kb-app-tabbar a[aria-current="page"] .kb-nav-icon { color: #f42d29; }
 
 .kb-auth-shell { width: min(100%, 1400px); padding-block: max(18px, env(safe-area-inset-top)); overflow-x: hidden; }
@@ -750,7 +752,8 @@
 .kb-text-action { display: block; min-height: 40px !important; margin-top: 10px; border: 0 !important; padding-inline: 0 !important; color: var(--kb-brand-hover) !important; background: transparent !important; box-shadow: none !important; }
 .kb-link-button { display: inline-flex; align-items: center; justify-content: center; border-color: var(--kb-brand); color: #fff; background: var(--kb-brand); text-decoration: none; }
 
-.kb-shell--team {
+.kb-shell--team,
+.kb-shell:has(> .result-shell) {
   --kb-bg: #f7f7f5;
   --kb-surface: #fff;
   --kb-surface-subtle: #f4f3f1;
@@ -1168,3 +1171,6 @@
 
 .kb-map-screen:has(.point-info-sheet:not([hidden])) { z-index: 81; }
 .kb-yandex-marker.selected:not(.visited) { background: #ea3e35 !important; }
+
+.kb-team-metric .kb-nav-icon { width: 32px; height: 30px; color: #c6342d; }
+.kb-nav-icon--boar { mask-size: contain; -webkit-mask-size: contain; mask-position: center; -webkit-mask-position: center; }

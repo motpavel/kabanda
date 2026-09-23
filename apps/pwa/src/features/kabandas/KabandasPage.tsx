@@ -7,7 +7,7 @@ import { ApiError } from '../../lib/http'
 import { PointInfoSheet } from '../checkins/PointInfoSheet'
 import { PointVisitHistory } from '../checkins/PointVisitHistory'
 import { appPath, appUrl } from '../../lib/paths'
-import { AppTabBar } from '../../app/AppTabBar'
+import { AppTabBar, TabIcon } from '../../app/AppTabBar'
 import { navigateApp } from '../../app/transitions'
 import { replaceAppLocation } from '../../app/navigation-history'
 import { useScreenScroll } from '../../app/screen-scroll'
@@ -642,14 +642,14 @@ function KabandaWorkspace({
           </div>
           <div className="kb-team-stats" aria-label="Статистика Кабанды" title="Итоги завершённых рейдов, все категории точек">
             <TeamMetric icon="point" value={personalPoints} label="точек лично" />
-            <TeamMetric icon="members" value={teamPoints} label="точек команды" />
+            <TeamMetric icon="members" value={teamPoints} label="точек кабанды" />
             <TeamMetric icon="bike" value={completedRaids} label="рейдов" />
           </div>
         </article>
 
         <section className="kb-team-panel kb-team-members-panel">
           <div className="kb-team-panel-head">
-            <h2>Состав Кабанды</h2>
+            <h2 className="kb-team-members-heading"><TabIcon section="kabanda" />Состав Кабанды</h2>
           </div>
           {members.length ? (
             <ul className="kb-team-members">
@@ -804,7 +804,7 @@ function pluralizeMembers(count: number) {
 }
 
 export function TeamMetric({ icon, value, label }: { icon: 'point' | 'members' | 'bike'; value: number | null; label: string }) {
-  return <div className="kb-team-metric"><span><TeamScreenIcon name={icon} /></span><p><strong aria-label={value === null ? 'Данные ещё не получены' : undefined}>{value ?? '…'}</strong><small>{label}</small></p></div>
+  return <div className="kb-team-metric"><span>{icon === 'point' ? <span className="kb-nav-icon kb-nav-icon--boar" aria-hidden="true" style={{ maskImage: `url(${appPath('brand/result-icons/boar-v3.png')})`, WebkitMaskImage: `url(${appPath('brand/result-icons/boar-v3.png')})` }} /> : icon === 'members' ? <span className="kb-nav-icon kb-nav-icon--kabanda" aria-hidden="true" style={{ maskImage: `url(${appPath('brand/result-icons/pack-v4.png')})`, WebkitMaskImage: `url(${appPath('brand/result-icons/pack-v4.png')})` }} /> : <TabIcon section="raids" />}</span><p><strong aria-label={value === null ? 'Данные ещё не получены' : undefined}>{value ?? '…'}</strong><small>{label}</small></p></div>
 }
 
 function TeamScreenIcon({ name }: { name: 'point' | 'members' | 'bike' | 'invite' | 'logout' }) {

@@ -1,6 +1,8 @@
+import { ResultSectionHeading } from './ResultSectionHeading'
 import { useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import { ApiError, requestJson } from '../../lib/http'
+import { FullscreenPhoto } from '../checkins/FullscreenPhoto'
 import { CachedImage } from '../../lib/CachedImage'
 import { offlineDb } from '../offline/db'
 import { getActiveIdentityId } from '../offline/ledger'
@@ -10,6 +12,7 @@ import { GALLERY_PAGE_SIZE, loadGalleryWindow } from './gallery-window'
 import './result-layout.css'
 
 function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
+  const [viewing, setViewing] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     const next = URL.createObjectURL(draft.blob)
@@ -17,17 +20,19 @@ function LocalPhoto({ draft }: { draft: MediaDraftRecord }) {
     return () => URL.revokeObjectURL(next)
   }, [draft.blob])
   return <figure className="result-gallery__local">
-    {url && <img src={url} alt={draft.caption || 'Фото, сохранённое на этом телефоне'} />}
-    <figcaption>{draft.caption && <strong>{draft.caption}</strong>}Сохранено на этом телефоне. Отправка на сервер не подтверждена.</figcaption>
+    {url && <button className="result-gallery__photo" type="button" aria-label="Открыть фото на весь экран" onClick={() => setViewing(true)}><img src={url} alt="Фото на этом телефоне" /></button>}
+    {viewing && url && <FullscreenPhoto createdAt={draft.createdAt} onClose={() => setViewing(false)}><img src={url} alt="Фото на этом телефоне" /></FullscreenPhoto>}
+    <figcaption>Сохранено на этом телефоне. Отправка на сервер не подтверждена.</figcaption>
   </figure>
 }
 
 /** Gallery availability is not inferred from frozen metrics or partial=true.
  * The displayed window survives refresh/page failures; access denial is not a
  * transient failure. Viewing a result never deletes or rewrites photo queues. */
-export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDenied }: {
-  identityId: string; raidId: string; enabled: boolean; onAccessDenied: () => void
+export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDenied, refreshKey = '' }: {
+  identityId: string; raidId: string; enabled: boolean; refreshKey?: string; onAccessDenied: () => void
 }) {
+  const [selected, setSelected] = useState<RaidMedia | null>(null)
   const [items, setItems] = useState<RaidMedia[]>([])
   const [drafts, setDrafts] = useState<MediaDraftRecord[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -40,14 +45,16 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
   const requestedDepth = useRef(1)
   const activeDepth = useRef(0)
   const queuedDepth = useRef<number | null>(null)
+  const refreshQueued = useRef(false)
   const visibleTail = useRef<string | undefined>(undefined)
   const flight = useRef<AbortController | null>(null)
   const denied = useRef(onAccessDenied)
   denied.current = onAccessDenied
 
-  const load = async (depth = Math.max(successfulDepth.current, requestedDepth.current)) => {
+  const load = async (depth = Math.max(successfulDepth.current, requestedDepth.current), invalidate = false) => {
     if (!enabled || !navigator.onLine) return
     if (flight.current) {
+      if (invalidate) refreshQueued.current = true
       // Background refresh may start between pointer-down and the click. Keep
       // an explicit deeper request, rather than silently dropping the action.
       if (depth > activeDepth.current) {
@@ -81,7 +88,7 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     } catch (reason) {
       if (current !== generation.current) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
-        setItems([]); setDrafts([]); setCursor(null); visibleTail.current = undefined
+        setSelected(null); setItems([]); setDrafts([]); setCursor(null); visibleTail.current = undefined
         successfulDepth.current = 1; requestedDepth.current = 1
         denied.current()
       }
@@ -94,16 +101,19 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
         const next = queuedDepth.current
         queuedDepth.current = null
         // Failure remains explicit and retryable, never an automatic hot loop.
-        if (succeeded && next !== null && next > successfulDepth.current) void load(next)
+        const refreshAgain = refreshQueued.current
+        refreshQueued.current = false
+        if (succeeded && (refreshAgain || (next !== null && next > successfulDepth.current))) void load(Math.max(next ?? 1, successfulDepth.current))
       }
     }
   }
 
   useEffect(() => {
     generation.current++
+    refreshQueued.current = false
     flight.current?.abort(); flight.current = null
     successfulDepth.current = 1; requestedDepth.current = 1; activeDepth.current = 0; queuedDepth.current = null; visibleTail.current = undefined
-    setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
+    setSelected(null); setItems([]); setDrafts([]); setCursor(null); setLoaded(false); setError(null); setLocalError(false)
     if (!enabled) return
     let active = true
     const subscription = liveQuery(async () => {
@@ -124,17 +134,19 @@ export function CompletedRaidGallery({ identityId, raidId, enabled, onAccessDeni
     }
   }, [identityId, raidId, enabled])
 
+  useEffect(() => { if (refreshKey) void load(undefined, true) }, [refreshKey])
+
   if (!enabled) return null
   const acceptedIds = new Set(items.map(item => item.id))
   const local = drafts.filter(draft => !acceptedIds.has(draft.mediaId ?? draft.intentId ?? ''))
   return <section className="kb-card result-gallery" aria-label="Фотографии завершённого рейда">
-    <h2>Фотографии рейда</h2>
+    <ResultSectionHeading icon="photos">Фотографии рейда</ResultSectionHeading>
+    {selected && <FullscreenPhoto createdAt={selected.createdAt} onClose={() => setSelected(null)}><CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(selected.id)}/content`} width={selected.width} height={selected.height} alt="Фото рейда" draggable={false} /></FullscreenPhoto>}
     {items.length > 0 && <div className="result-gallery__grid">{items.map(item => <figure key={item.id}>
-      <CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}
-        width={item.width} height={item.height} style={{ aspectRatio: `${item.width} / ${item.height}` }} loading="lazy" alt={item.caption || 'Фото рейда'} />
-      {item.caption && <figcaption>{item.caption}</figcaption>}
+      <button className="result-gallery__photo" type="button" aria-label="Открыть фото на весь экран" onClick={() => setSelected(item)}><CachedImage identityId={identityId} src={`/api/raids/${encodeURIComponent(raidId)}/media/${encodeURIComponent(item.id)}/content`}
+        width={item.width} height={item.height} loading="lazy" alt={item.caption || 'Фото рейда'} /></button>
     </figure>)}</div>}
-    {loaded && !items.length && !error && <p className="kb-muted">В общей галерее пока нет фотографий. Фото и комментарии отдельных точек можно открыть на карте.</p>}
+    {loaded && !items.length && !error && <p className="kb-muted">В этом рейде пока нет фотографий.</p>}
     {!loaded && !error && <p className="kb-muted" role="status">{navigator.onLine ? 'Загружаем фотографии…' : 'Для общей галереи нужно соединение.'}</p>}
     {cursor && <button type="button" aria-busy={loading} disabled={!loaded || !!error} onClick={() => void load(successfulDepth.current + 1)}>Показать ещё фотографии</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void load(requestedDepth.current)}>Повторить загрузку фотографий</button></p>}

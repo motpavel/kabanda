@@ -1,0 +1,3 @@
+Built-in imagegen edit of photos-v2.png. Resized to 120px preserving alpha; UI uses brand red mask.
+
+Edit this exact camera-boar icon. Remove ONLY the small horizontal rounded rectangular flash/viewfinder inside the camera body near the upper left (viewer's left, the only small standalone rounded rectangle). Replace that tiny feature with transparent empty space. Preserve EVERYTHING else exactly: camera outer outline, ears, bristle crest, both happy eye arcs, oval snout lens and nostrils, red color, stroke thickness, scale, composition, margins. Do not redraw or redesign anything else. Real transparent alpha background.

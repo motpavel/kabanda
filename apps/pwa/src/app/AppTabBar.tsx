@@ -41,6 +41,7 @@ export function AppTabBar({
   )
 }
 
-function TabIcon({ section }: { section: AppSection }) {
-  return <span aria-hidden="true" className={`kb-nav-icon kb-nav-icon--${section}`} style={{ maskImage: `url(${appPath('brand/kabanda-navigation-v1.png')})`, WebkitMaskImage: `url(${appPath('brand/kabanda-navigation-v1.png')})` }} />
+export function TabIcon({ section }: { section: AppSection }) {
+  const iconPath = section === 'kabanda' ? 'brand/result-icons/pack-v4.png' : 'brand/kabanda-navigation-v1.png'
+  return <span aria-hidden="true" className={`kb-nav-icon kb-nav-icon--${section}`} style={{ maskImage: `url(${appPath(iconPath)})`, WebkitMaskImage: `url(${appPath(iconPath)})` }} />
 }

@@ -6,8 +6,8 @@ import { api, fixture, installSyntheticSession, installYandexMapsMock, type Fixt
 import { createDeviceContext } from './persistent-context.js'
 
 // Real auth cookies, API routes and a guarded disposable PostgreSQL database.
-// Only GPS, the map provider and one delayed upload connection are synthetic.
-test('navigator visit reaches three open phones independently of a photo and survives finish', async ({ browser }, info) => {
+// Only GPS, the map provider and deliberately delayed connections are synthetic.
+test('navigator visit reaches three open phones, unlocks personal materials and survives finish', async ({ browser }, info) => {
   test.setTimeout(120_000)
   const url = requireE2EDatabaseUrl()
   const pool = createDatabase(url)
@@ -78,8 +78,9 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(navPage.getByRole('checkbox', { name: rider.displayName, exact: true })).toBeChecked()
     await expect(navPage.getByRole('checkbox', { name: owner.displayName, exact: true })).toBeChecked()
     await navPage.getByRole('checkbox', { name: owner.displayName, exact: true }).uncheck()
-    await navPage.locator('input[type="file"][aria-label="Добавить фото"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
-    await expect.poll(() => uploadStarted).toBe(true)
+    // New product rule: neither navigator nor another rider can contribute to
+    // an unvisited stop. No photo preparation can delay the initial visit.
+    await expect(navPage.locator('input[type="file"][aria-label="Добавить фото"]')).toHaveCount(0)
     await navPage.route(new RegExp(`/api/raids/${raidId}/check-ins/team$`), async route => {
       visitStarted = true
       await visitGate
@@ -90,7 +91,6 @@ test('navigator visit reaches three open phones independently of a photo and sur
     const start = Date.now()
     await navPage.getByRole('complementary', { name: 'Подтверждение точки' }).getByRole('button', { name: 'Пометить точку', exact: true }).click()
     await expect.poll(() => visitStarted).toBe(true)
-    // A saved/sending command is not a confirmation. Photo is held too.
     await expect(success).toHaveCount(0)
     expect((await pool.query('SELECT count(*)::int AS n FROM raid_checkin_attempts WHERE raid_id=$1', [raidId])).rows[0]!.n).toBe(0)
     releaseVisit()
@@ -103,7 +103,6 @@ test('navigator visit reaches three open phones independently of a photo and sur
     for (const page of pages) await expect(page.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/, { timeout: 8000 })
     const propagationMs = Date.now() - start
     expect(propagationMs).toBeLessThan(8000)
-    expect((await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(false)
     const credits = (await pool.query('SELECT user_id FROM raid_point_credits WHERE raid_id=$1 ORDER BY user_id', [raidId])).rows
     expect(credits.map(row => row.user_id).sort()).toEqual([nav.userId, rider.userId].sort())
     expect((await pool.query('SELECT count(*)::int AS n FROM raid_checkin_attempts WHERE raid_id=$1', [raidId])).rows[0]!.n).toBe(1)
@@ -114,15 +113,23 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect(history.getByRole('button', { name: /Пометить|Новый визит/ })).toHaveCount(0)
     await expect(history.getByText('Вас нет в последней отметке', { exact: false })).toBeVisible()
     await expect(riderPage.getByRole('button', { name: /Вас отметили на точке Общая остановка/ })).toBeVisible()
-    await history.getByRole('button', { name: 'Комментарий', exact: true }).click()
-    await expect(history.getByRole('button', { name: 'Добавить комментарий' })).toBeVisible()
+    await expect(history.getByText(/Фото и комментарии можно добавить после вашей подтверждённой отметки/)).toBeVisible()
+    await expect(history.getByRole('button', { name: 'Комментарий', exact: true })).toHaveCount(0)
+    await expect(history.locator('input[type="file"]')).toHaveCount(0)
+    // Upload starts only after personal confirmation and remains independent
+    // of GPS and of other open phones. The separate retry test holds a previous
+    // stop's photo while confirming a new stop and recovering on Home.
+    await navPage.getByRole('button', { name: /^Общая остановка\./ }).click()
+    const navHistory = navPage.getByRole('complementary', { name: 'Точка: Общая остановка' })
+    await navHistory.locator('input[type="file"][aria-label="Добавить фото"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+    await expect.poll(() => uploadStarted).toBe(true)
+    expect((await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(false)
+    await navHistory.getByRole('button', { name: 'Свернуть точку' }).click()
     const liveAfterRenewal = riderPage.waitForResponse(response => response.url().includes(`/api/raids/${raidId}/fast/live`) && response.ok())
     await riderPage.evaluate(userId => window.dispatchEvent(new CustomEvent('kabanda:identity-changed', { detail: { userId } })), rider.userId)
     await liveAfterRenewal
     await expect(riderPage.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/)
     await expect(navPage.locator('.raid-active-map__header small')).toHaveText('Маршрут записывается')
-    // Instrument only future polylines at the existing map provider boundary.
-    // The recorder, IDB, route uploads and canonical PostgreSQL rows remain real.
     await navPage.evaluate(() => {
       type Line = { geometry: { setCoordinates: (points: readonly (readonly number[])[]) => void } }
       type Constructor = new (points: readonly (readonly number[])[], properties?: Record<string, unknown>, options?: Record<string, unknown>) => Line
@@ -151,7 +158,6 @@ test('navigator visit reaches three open phones independently of a photo and sur
     await expect.poll(async () => (await frames()).filter(frame => frame.part === 'tip').at(-1)?.points.at(-1)?.[1]).toBeCloseTo(movedLongitude, 7)
     expect((await frames()).some(frame => frame.part === 'history' && frame.points.some(point => Math.abs(point[0]! - movedLatitude) < 1e-7 && Math.abs(point[1]! - 53.21) < 1e-7))).toBe(true)
     await expect(success).toHaveCount(0)
-    // Server route writes continue while its display reads and photo upload wait.
     await expect.poll(async () => (await pool.query(`SELECT count(*)::int AS n FROM raid_route_samples
       WHERE raid_id=$1 AND abs(ST_Y(geom::geometry)-$2)<0.0000001 AND abs(ST_X(geom::geometry)-$3)<0.0000001`,
       [raidId, movedLatitude, movedLongitude])).rows[0]!.n).toBeGreaterThan(0)
@@ -177,13 +183,16 @@ test('navigator visit reaches three open phones independently of a photo and sur
     const photoViewer = navPage.getByRole('dialog', { name: 'Просмотр фото' })
     await expect(photoViewer.getByRole('img', { name: 'Фото точки' })).toBeVisible()
     await photoViewer.getByRole('button', { name: 'Закрыть фото' }).click()
-    await materials.getByLabel('Комментарий или подпись к фото').fill('Добавлено после финиша')
+    await materials.getByRole('button', { name: 'Комментарий', exact: true }).click()
+    await materials.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Добавлено после финиша')
     await materials.getByRole('button', { name: 'Добавить комментарий' }).click()
-    await expect(materials.getByText('Добавлено после финиша', { exact: true })).toBeVisible()
+    await expect(materials.locator('.point-materials__item p')).toHaveText('Комментарий: Добавлено после финиша')
+    await expect(materials.locator('.point-materials__item')).toHaveAttribute('data-comment-state', 'confirmed')
+    await expect(history.getByRole('button', { name: 'Комментарий', exact: true })).toHaveCount(0)
     expect((await pool.query('SELECT result_json,share_sha256 FROM raid_results WHERE raid_id=$1', [raidId])).rows[0]).toEqual(before)
     expect(errors).toEqual([])
     await navPage.screenshot({ path: info.outputPath('completed-point-materials.png'), fullPage: true })
-    await info.attach('propagation-measurement', { body: JSON.stringify({ syntheticDirectApi: true, propagationMs, phones: 3, uploadHeldUntilVisit: true }), contentType: 'application/json' })
+    await info.attach('propagation-measurement', { body: JSON.stringify({ syntheticDirectApi: true, propagationMs, phones: 3, photoStartsAfterPersonalVisit: true, photoHeldDuringGps: true }), contentType: 'application/json' })
   } finally {
     releaseVisit(); releaseTrack(); releaseUpload()
     await Promise.all(contexts.map(context => context.close()))
