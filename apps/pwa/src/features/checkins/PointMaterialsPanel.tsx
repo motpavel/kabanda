@@ -9,6 +9,7 @@ import { consumeSelectedFile } from './selected-file'
 import { FullscreenPhoto } from './FullscreenPhoto'
 import { pointCommentRows } from './point-comment-rows'
 import './point-materials.css'
+import { PointMaterialsHint } from './PointMaterialsHint'
 
 export type PointMaterial = {
   id: string; pointSnapshotId: string; authorUserId: string; authorName: string
@@ -245,8 +246,7 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       </article>)}
     </section>}
     {!loaded && !error && !comments.length && <p className="kb-muted">{navigator.onLine ? 'Загружаем материалы…' : 'Для загрузки материалов нужно соединение.'}</p>}
-    {loaded && !items.length && !comments.length && !visiblePhotoPreviews.length && <p className="kb-muted">Здесь пока нет фото и комментариев.</p>}
-    {loaded && !denied && !mayWrite && <p className="kb-muted">Фото и комментарии можно добавить после вашей подтверждённой отметки на этой точке в рейде.</p>}
+    {loaded && !denied && !mayWrite && (items.length > 0 || comments.length > 0 || visiblePhotoPreviews.length > 0) && <PointMaterialsHint />}
     {cursor && <button type="button" disabled={loading} onClick={() => void refresh(cursor)}>Показать предыдущие материалы</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void refresh()}>Повторить</button></p>}
     {!compact && mayWrite && <div className="point-materials__compose">

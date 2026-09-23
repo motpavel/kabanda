@@ -58,8 +58,12 @@
 html:has(.result-shell), body:has(.result-shell) { background: #f7f7f5; }
 .kb-shell .result-shell button,
 .kb-shell .result-shell button:hover { transform: none; transition: none; }
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .kb-shell .result-route__point:hover { color: #26734b; background: #f2f8f3; border-color: #e1e9e2; box-shadow: none; }
+}
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .kb-shell .result-route__point[aria-expanded='true']:hover { background: #e7f2e9; border-color: #c6ddcb; }
+}
 
 .kb-shell .result-analytics h2 { margin: 0 0 12px; font-size: 18px; }
 .kb-shell .result-analytics .result-metrics { border: 0; border-radius: 0; box-shadow: none; }

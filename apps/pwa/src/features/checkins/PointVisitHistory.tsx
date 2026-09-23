@@ -4,10 +4,15 @@ import { requestJson } from '../../lib/http'
 import { appPath } from '../../lib/paths'
 import { formatVisitCount, visitsForParticipant } from './visit-history'
 import './point-history.css'
+import { PointMaterialsHint } from './PointMaterialsHint'
 
 const dateTime = (value: string) => new Date(value).toLocaleString('ru-RU', {
   day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
 })
+
+function HistoryChevron({ right = false }: { right?: boolean }) {
+  return <svg className={`point-visit-history__chevron${right ? ' point-visit-history__chevron--right' : ''}`} aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
 
 function LoadingHistory() {
   return <div className="point-visit-history__loading" role="status" aria-label="Загружаем историю"><span /><span /><span /></div>
@@ -36,7 +41,7 @@ function ParticipantVisits({ url, userId, currentRaidId, onOpenRaid }: { url: st
     {history && <ol className="point-visit-history__visits">{visitsForParticipant(history.entries, userId).map((visit) => <li key={visit.id}>
       {visit.raidId ? <a className="point-visit-history__raid" href={`${appPath('app')}?raid=${encodeURIComponent(visit.raidId)}`} onClick={onOpenRaid}>
         <span><strong>{visit.title}</strong><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}{visit.raidId === currentRaidId && ' · этот рейд'}</time></span>
-        <span aria-hidden="true">›</span>
+        <HistoryChevron right />
       </a> : <div><strong>{visit.title}</strong><p><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}</time></p></div>}
     </li>)}</ol>}
     {error && <p role="alert">Не удалось загрузить посещения. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
@@ -67,16 +72,16 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
   }, [url, identityId, retry, active])
 
   const visitors = history ? [
-    { userId: identityId, displayName: 'Вы', count: history.personalCount },
+    { userId: identityId, displayName: history.visitors.find(visitor => visitor.userId === identityId)?.displayName ?? 'Я', count: history.personalCount },
     ...history.visitors.filter((visitor) => visitor.userId !== identityId)
       .sort((left, right) => right.count - left.count || left.displayName.localeCompare(right.displayName, 'ru')),
   ].filter((visitor) => visitor.count > 0) : []
 
-  return <section className="point-visit-history" aria-label="История посещений точки">
-    {showHeading && <header><h3>Посещения</h3></header>}
+  return <section className="point-visit-history point-history-section" aria-label="История посещений точки">
+    {showHeading && <header><h3>История посещений</h3></header>}
     {busy && !history && <LoadingHistory />}
     {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
-    {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша Кабанда здесь ещё не была</p></div>}
+    {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
     <ul className="point-visit-history__people">{visitors.map((visitor) => {
       const expanded = expandedId === visitor.userId
       const detailId = `point-visits-${pointId}-${visitor.userId}`
@@ -85,7 +90,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
           <span className={`point-visit-history__avatar${visitor.userId === identityId ? ' point-visit-history__avatar--self' : ''}`} aria-hidden="true">{visitor.userId === identityId ? 'Я' : visitor.displayName.trim().slice(0, 1).toUpperCase()}</span>
           <span className="point-visit-history__name">{visitor.displayName}</span>
           <span className="point-visit-history__total">{formatVisitCount(visitor.count)}</span>
-          {visitor.count > 0 && <svg className="point-visit-history__chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+          {visitor.count > 0 && <HistoryChevron />}
         </button>
         <div id={detailId} className="point-visit-history__reveal" data-expanded={expanded} inert={!expanded} aria-hidden={!expanded}><div>{openedIds.has(visitor.userId) && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div></div>
       </li>

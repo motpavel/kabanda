@@ -574,7 +574,7 @@ function KabandaWorkspace({
               {activeProviderState === 'failed' && visiblePoints.length > 0 && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком.</p>}
             </div>
           )}
-          <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.category === 'stores' ? selectedPoint.address ?? selectedPoint.name : selectedPoint?.name ?? ''} kicker={selectedPoint?.category === 'stores' ? 'КРАСНОЕ&БЕЛОЕ' : 'ТОЧКА ГОРОДА'}>
+          <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.name ?? ''}>
             {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
             {selectedPoint && <p className="kb-point-visit-state" data-visit-state={mapVisitState(selectedPoint)}>{visitStateLabel(mapVisitState(selectedPoint))}</p>}
             {selectedHistoryId && <PointVisitHistory key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}

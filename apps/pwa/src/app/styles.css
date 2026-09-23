@@ -102,7 +102,7 @@ button,
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 button:not(:disabled):hover,
 .file-button:hover {
   border-color: #202923;

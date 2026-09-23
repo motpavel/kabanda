@@ -639,7 +639,7 @@
 .result-history__controls button { width: 40px; min-height: 40px; padding: 0; }
 .result-history__list { display: flex; gap: .65rem; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; }
 .result-history__list a { display: grid; min-width: min(100%, 270px); gap: .45rem; padding: .9rem; border: 1px solid var(--kb-line); border-radius: 14px; color: inherit; background: rgb(255 253 248 / 74%); text-decoration: none; scroll-snap-align: start; transition: transform 160ms ease, background-color 160ms ease; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .result-history__list a:hover { background: #fffdf8; transform: translateY(-2px); }
 }
 .result-history__list a > span { display: grid; gap: .1rem; }
@@ -806,7 +806,7 @@
 
 .raid-control-icon { display: block; flex: 0 0 auto; width: 22px; height: 22px; }
 .raid-active-map .raid-active-map__header > button:active { transform: none; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-active-map__header > button:hover { transform: none; }
 }
 
@@ -872,7 +872,7 @@
 .raid-map-controls button:disabled { color: #a5aaa6; }
 .raid-active-map .raid-map-controls__follow[aria-pressed='true'],
 .raid-active-map .raid-map-controls__follow[aria-pressed='true']:active { color: #c6342d; background: #fff0ed; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-map-controls__follow[aria-pressed='true']:hover { color: #c6342d; background: #fff0ed; }
 }
 .raid-active-map .raid-map-controls button:focus-visible { outline: 2px solid #c6342d; outline-offset: -3px; }
@@ -896,7 +896,7 @@
   background: #fff;
   box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgb(23 27 29 / 32%);
 }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-live-point:hover {
   --raid-point-border: #ea3e35;
   position: relative;
@@ -922,7 +922,7 @@
   box-shadow: 0 0 0 1.5px #fff, 0 3px 9px rgb(23 27 29 / 26%);
   opacity: 1;
 }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-live-point--visited:hover {
   --raid-point-border: #85d69a;
   background: #fff;
@@ -938,7 +938,7 @@
   border-width: 6px;
   animation: raid-point-attention 900ms ease-in-out infinite alternate;
 }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-live-point--nearby:hover {
   width: 24px;
   height: 24px;
@@ -1071,7 +1071,7 @@
 .checkin-media-details__toggle { margin-left: auto; }
 .checkin-panel--map .checkin-media-details { border: 0; }
 .checkin-panel--map .checkin-media-details summary { gap: 12px; min-height: 44px; padding: 10px 14px; border-radius: 14px; color: var(--kb-ink); background: #fff; box-shadow: inset 0 0 0 1.5px #d9dfda; font-size: .88rem; font-weight: 600; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .checkin-panel--map .checkin-media-details summary:hover { background: #f7f9f6; }
 }
 .checkin-panel--map .checkin-media-details summary:focus-visible { outline: 2px solid var(--kb-ink); outline-offset: 3px; }
@@ -1112,7 +1112,7 @@
 .raid-active-map .raid-action-sheet__item { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 58px; padding: 14px 4px; border: 0; border-radius: 0; background: transparent; text-align: left; font-size: .95rem; font-weight: 600; transform: none; }
 .raid-active-map .raid-action-sheet__item + .raid-action-sheet__item { border-top: 1px solid #eeefec; }
 .raid-active-map .raid-action-sheet__item--finish { color: #d93128; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-action-sheet__item:hover { background: #f7f8f5; }
 }
 .raid-action-sheet__hint { margin: 4px 0 10px; color: var(--kb-muted); font-size: .85rem; line-height: 1.5; }
@@ -1161,7 +1161,7 @@
 .raid-active-map .raid-live-point--nearby:active,
 .raid-arrival-pill > span:first-child,
 .raid-arrival-sheet__pulse { animation: none; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-live-point--nearby:hover { animation: none; }
 }
 }
@@ -1179,7 +1179,7 @@
 .kb-shell .result-share__button { display: flex; justify-content: center; width: 100%; min-height: 48px; border: 1.5px solid #d63830; color: #c6342d; background: #fff; font-weight: 700; }
 .kb-shell a.result-next.kb-primary { display: block; border: 1px solid #e54536; border-radius: 14px; padding: 15px 18px; color: #fff; background: #e54536; font-weight: 700; text-decoration: none; }
 .kb-shell a.result-history-link { display: block; width: 100%; min-height: 44px; padding: 12px; color: #626b65; background: transparent; text-align: center; text-decoration: none; font-size: .88rem; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .kb-shell a.result-history-link:hover { color: #202522; text-decoration: underline; }
 }
 
