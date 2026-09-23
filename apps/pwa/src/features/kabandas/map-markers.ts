@@ -1,4 +1,4 @@
-import type { YandexCoordinates, YandexMap, YandexMapsRuntime, YandexPlacemark } from './yandex-maps'
+import type { YandexCoordinates, YandexMap, DisplayMapRuntime, YandexPlacemark } from './yandex-maps'
 
 type MarkerView = {
   coordinate: YandexCoordinates
@@ -13,7 +13,7 @@ const equal = (left: unknown, right: unknown) => left === right || JSON.stringif
 export class MapMarkers<Point extends { id: string }> {
   private entries = new Map<string, Entry<Point>>()
   private layout: unknown
-  constructor(private readonly map: YandexMap, private readonly runtime: YandexMapsRuntime,
+  constructor(private readonly map: YandexMap, private readonly runtime: DisplayMapRuntime,
     template: string, private readonly select: (point: Point) => void) {
     this.layout = runtime.templateLayoutFactory.createClass(template)
   }

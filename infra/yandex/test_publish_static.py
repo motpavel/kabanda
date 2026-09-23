@@ -127,6 +127,15 @@ class StaticPublisherTests(unittest.TestCase):
         self.assertLess(objects.index(by_key["assets/main-ABC12345.js"]), objects.index(by_key["sw.js"]))
         self.assertFalse(any(item.key.startswith(("api/", "relay/")) for item in objects))
 
+    def test_city_archive_is_immutable_binary_and_published_before_app_shell(self):
+        key = "assets/izhevsk-20260923-ABC12345.kmap"
+        self.write(key, b"KBMAP001-public-cartography")
+        objects = self.prepare()
+        archive = next(item for item in objects if item.key == key)
+        self.assertEqual(archive.content_type, "application/octet-stream")
+        self.assertEqual(archive.cache_control, publisher.IMMUTABLE)
+        self.assertLess(objects.index(archive), next(i for i, item in enumerate(objects) if item.key == "sw.js"))
+
     def test_dry_run_uses_no_credentials_network_or_output_files(self):
         with patch.object(publisher, "s3_client", side_effect=AssertionError("network forbidden")) as connect:
             with contextlib.redirect_stdout(io.StringIO()) as output:

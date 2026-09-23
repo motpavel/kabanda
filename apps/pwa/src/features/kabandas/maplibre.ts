@@ -7,6 +7,9 @@ export function loadMapLibre(): Promise<typeof import('maplibre-gl')> {
   ]).then(([mapLibre, worker]) => {
     mapLibre.setWorkerUrl(worker.default)
     return mapLibre
+  }).catch(error => {
+    mapLibrePromise = null
+    throw error
   })
   return mapLibrePromise
 }

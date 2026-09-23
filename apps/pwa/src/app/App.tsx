@@ -14,6 +14,7 @@ import { RetainedScreen } from './RetainedScreen'
 import { appPath } from '../lib/paths'
 import { isInternalAppLink, navigateApp } from './transitions'
 import { readAppSearch, subscribeAppLocation } from './navigation-history'
+import { OfflineCityMap } from '../features/offline-map/OfflineCityMap'
 import './smooth-ui.css'
 
 const CapabilityLabPage = lazy(() => import('../features/capability-lab/App').then(module => ({ default: module.CapabilityLabPage })))
@@ -23,6 +24,7 @@ const RaidsDesignPrototype = lazy(() => import('../features/raids-design/RaidsDe
 const RouteTrackingPrototype = lazy(() => import('../features/route-tracking-prototype/RouteTrackingPrototype').then(module => ({ default: module.RouteTrackingPrototype })))
 
 export function App() {
+  const search = useSyncExternalStore(subscribeAppLocation, readAppSearch, () => '')
   if (window.location.pathname.endsWith('/auth/verify')) return <VerifyMagicLinkPage />
   if (window.location.pathname.endsWith('/prototype/raids')) return <OptionalScreen><RaidsDesignPrototype /></OptionalScreen>
   if (window.location.pathname.endsWith('/prototype/route-tracking')) return <OptionalScreen><RouteTrackingPrototype /></OptionalScreen>
@@ -30,6 +32,9 @@ export function App() {
   if (window.location.pathname.endsWith('/invite')) return <InvitePage />
   if (window.location.pathname.endsWith('/lab/legacy')) return <OptionalScreen><CapabilityLabPage /></OptionalScreen>
   if (/\/lab(?:\/index\.html|\/)?$/.test(window.location.pathname)) return <OptionalScreen><GpsExperimentPage /></OptionalScreen>
+  // Public basemap only: an offline launch must not need a session check or
+  // mount the recording/field-sync tree to render already downloaded streets.
+  if (new URLSearchParams(search).get('offlineMap') === '1') return <><OfflineCityMap /><PortraitMode /></>
   return <InstallProvider><RecordingRuntimeProvider><FieldSyncOwner /><AppRoute /><PortraitMode /><PwaUpdateGate /></RecordingRuntimeProvider></InstallProvider>
 }
 

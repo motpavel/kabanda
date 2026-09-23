@@ -108,6 +108,9 @@ export type YandexMapsRuntime = {
   }
 }
 
+/** Shared display boundary; routing/geocoding remain provider-specific. */
+export type DisplayMapRuntime = Pick<YandexMapsRuntime, 'Map' | 'Placemark' | 'Polyline' | 'templateLayoutFactory'>
+
 declare global {
   interface Window {
     ymaps?: YandexMapsRuntime

@@ -1,3 +1,6 @@
+import { loadOfflineMapRuntime } from '../offline-map/runtime'
+import { OfflineMapStatus } from '../offline-map/OfflineMapStatus'
+import { useMapArchiveRecovery } from '../offline-map/useMapArchiveRecovery'
 import '../../app/fonts.css'
 import { AlphaDiagnosticsConsent } from '../../app/AlphaDiagnosticsConsent'
 import { RiderLoader } from '../../app/RiderLoader'
@@ -42,11 +45,12 @@ import { choosePointPresentation, detectWebgl } from './map-state'
 import { MapViewportMemory, type MapView } from './map-viewport'
 import { MapCamera } from './map-camera'
 import { MapMarkers } from './map-markers'
+import { MapBackgroundTap, isMapMarkerHit } from './map-background-tap'
 import { useNearbyPointHistory } from '../results/useNearbyPointHistory'
 import { pointVisitProgress, visitStateLabel, type VisitState } from './point-progress'
 import { usePointProgress } from '../results/exploration-resources'
 import { IZHEVSK_KB_STORES } from './izhevsk-kb-stores'
-import { loadYandexMaps, type YandexMap, type YandexMapsRuntime, type YandexPlacemark } from './yandex-maps'
+import { type YandexMap, type DisplayMapRuntime, type YandexPlacemark } from './yandex-maps'
 import { useKabandaMotion } from './useKabandaMotion'
 import { HomeDashboard } from '../home/HomeDashboard'
 import { ProductionRaidsHub } from '../raids/ProductionRaidsHub'
@@ -363,6 +367,11 @@ function KabandaWorkspace({
   const [pointCategory, setPointCategory] = useState<MapPointCategory>('stores')
   const [requestedView, setRequestedView] = useState<PointPresentation>('map')
   const [providerState, setProviderState] = useState<ProviderState>('checking')
+  const retryMap = useCallback(() => {
+    setProviderState('checking')
+    setRequestedView('map')
+  }, [])
+  useMapArchiveRecovery(providerState === 'failed' && requestedView === 'map', retryMap)
   const [attractionState, setAttractionState] = useState<ProviderState>('checking')
   const [staleAt, setStaleAt] = useState<string | null>(null)
   const [pointMessage, setPointMessage] = useState<string | null>(null)
@@ -568,7 +577,7 @@ function KabandaWorkspace({
               </select>
             </label>
             <div className="kb-view-switch kb-map-view-switch" aria-label="Вид точек">
-              <button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || activeProviderState === 'failed'} onClick={() => setRequestedView('map')}>Карта</button>
+              <button type="button" aria-pressed={presentation === 'map'} disabled={!webglAvailable || (pointCategory === 'attractions' && attractionState === 'failed')} onClick={() => providerState === 'failed' ? retryMap() : setRequestedView('map')}>Карта</button>
               <button type="button" aria-pressed={presentation === 'list'} onClick={() => setRequestedView('list')}>Список</button>
             </div>
           </div>
@@ -582,12 +591,12 @@ function KabandaWorkspace({
               {pointCategory === 'attractions' && !pointsKnown
                 ? <p className="kb-points-pending" role="status">{attractionState === 'checking' ? 'Получаем точки…' : 'Точки пока недоступны.'}</p>
                 : <PointList points={visiblePoints} selectedId={selectedPointId} onSelect={setSelectedPointId} />}
-              {activeProviderState === 'failed' && visiblePoints.length > 0 && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком.</p>}
+              {activeProviderState === 'failed' && visiblePoints.length > 0 && <p className="kb-muted">Карта сейчас недоступна. Точки остаются доступны списком. {providerState === 'failed' && webglAvailable && <button type="button" onClick={retryMap}>Повторить загрузку карты</button>}</p>}
             </div>
           )}
           <PointInfoSheet open={Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.name ?? ''}>
             {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
-            {selectedPoint && <p className="kb-point-visit-state" data-visit-state={mapVisitState(selectedPoint)}>{visitStateLabel(mapVisitState(selectedPoint))}</p>}
+            {selectedPoint && mapVisitState(selectedPoint) !== 'unvisited' && <p className="kb-point-visit-state" data-visit-state={mapVisitState(selectedPoint)}>{visitStateLabel(mapVisitState(selectedPoint))}</p>}
             {selectedHistoryId && <PointVisitHistory compactLoading key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}
           </PointInfoSheet>
         </div>
@@ -894,13 +903,14 @@ function PointList({ points, selectedId, onSelect }: { points: readonly MapPoint
 }
 
 const USER_LOCATION_MAP_ZOOM = 14
-const MIN_MAP_ZOOM = 10
-const MAX_MAP_ZOOM = 17
+const MIN_MAP_ZOOM = 3
+const MAX_MAP_ZOOM = 19
 
-function PointsMap({ points, selectedId, onSelect, setProviderState, memory, identityId, kabandaId, historyPrefetchEnabled }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string) => void; setProviderState: (state: ProviderState) => void; memory: MapViewportMemory; identityId: string; kabandaId: string; historyPrefetchEnabled: boolean }) {
+function PointsMap({ points, selectedId, onSelect, setProviderState, memory, identityId, kabandaId, historyPrefetchEnabled }: { points: readonly MapPoint[]; selectedId: string | null; onSelect: (id: string | null) => void; setProviderState: (state: ProviderState) => void; memory: MapViewportMemory; identityId: string; kabandaId: string; historyPrefetchEnabled: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const backgroundTap = useRef(new MapBackgroundTap())
   const mapRef = useRef<YandexMap | null>(null)
-  const runtimeRef = useRef<YandexMapsRuntime | null>(null)
+  const runtimeRef = useRef<DisplayMapRuntime | null>(null)
   const markersRef = useRef<MapMarkers<MapPoint> | null>(null)
   const cameraRef = useRef<MapCamera | null>(null)
   const onSelectRef = useRef(onSelect)
@@ -934,10 +944,9 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory, ide
     let settleTimer: ReturnType<typeof setTimeout> | undefined
     const resize = new ResizeObserver(() => mapRef.current?.container?.fitToViewport?.())
     resize.observe(container)
-    const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
     setProviderState('checking')
 
-    void loadYandexMaps(apiKey).then((runtime) => {
+    void loadOfflineMapRuntime().then((runtime) => {
       if (!active) return
       const view = memory.read()
       viewRef.current = view
@@ -1074,8 +1083,20 @@ function PointsMap({ points, selectedId, onSelect, setProviderState, memory, ide
   }, [locateUser, mapReady])
 
   return <>
-    <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" onPointerDownCapture={() => memory.userInteracted()} onWheelCapture={() => memory.userInteracted()} onKeyDownCapture={() => memory.userInteracted()}>
-      <div ref={containerRef} className="kb-yandex-map-stage" />
+    <div className="kb-map kb-yandex-map" data-kabanda-map role="group" aria-label="Карта точек Ижевска" onPointerDownCapture={event => { memory.userInteracted(); if (!event.isPrimary) backgroundTap.current.cancel() }} onWheelCapture={() => { memory.userInteracted(); backgroundTap.current.cancel() }} onKeyDownCapture={() => memory.userInteracted()}>
+      <div ref={containerRef} className="kb-yandex-map-stage"
+        onPointerDownCapture={event => {
+          if (event.target instanceof Element && event.target.closest('button, a, input, select, textarea')) { backgroundTap.current.cancel(); return }
+          backgroundTap.current.down(event)
+        }}
+        onPointerMoveCapture={event => backgroundTap.current.move(event)}
+        onPointerUpCapture={event => {
+          if (!backgroundTap.current.up(event)) return
+          const markers = [...event.currentTarget.querySelectorAll<HTMLElement>('.kb-yandex-marker, .kb-yandex-user-location')]
+          if (!isMapMarkerHit(event.clientX, event.clientY, markers.map(marker => marker.getBoundingClientRect()))) onSelectRef.current(null)
+        }}
+        onPointerCancelCapture={() => backgroundTap.current.cancel()} />
+      <OfflineMapStatus />
       <div className="kb-yandex-zoom" aria-label="Масштаб карты">
         <button type="button" aria-label="Приблизить" disabled={!mapReady || zoom >= MAX_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.min(MAX_MAP_ZOOM, viewRef.current.zoom + 1) })}>+</button>
         <button type="button" aria-label="Отдалить" disabled={!mapReady || zoom <= MIN_MAP_ZOOM} onClick={() => updateLocation({ zoom: Math.max(MIN_MAP_ZOOM, viewRef.current.zoom - 1) })}>−</button>
