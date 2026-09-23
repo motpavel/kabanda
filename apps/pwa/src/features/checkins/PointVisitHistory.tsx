@@ -4,6 +4,7 @@ import { requestJson } from '../../lib/http'
 import { appPath } from '../../lib/paths'
 import { formatVisitCount, visitsForParticipant } from './visit-history'
 import './point-history.css'
+import { PointMaterialsHint } from './PointMaterialsHint'
 
 const dateTime = (value: string) => new Date(value).toLocaleString('ru-RU', {
   day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -67,16 +68,16 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
   }, [url, identityId, retry, active])
 
   const visitors = history ? [
-    { userId: identityId, displayName: 'Вы', count: history.personalCount },
+    { userId: identityId, displayName: history.visitors.find(visitor => visitor.userId === identityId)?.displayName ?? 'Я', count: history.personalCount },
     ...history.visitors.filter((visitor) => visitor.userId !== identityId)
       .sort((left, right) => right.count - left.count || left.displayName.localeCompare(right.displayName, 'ru')),
   ].filter((visitor) => visitor.count > 0) : []
 
-  return <section className="point-visit-history" aria-label="История посещений точки">
-    {showHeading && <header><h3>Посещения</h3></header>}
+  return <section className="point-visit-history point-history-section" aria-label="История посещений точки">
+    {showHeading && <header><h3>История посещений</h3></header>}
     {busy && !history && <LoadingHistory />}
     {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
-    {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша Кабанда здесь ещё не была</p></div>}
+    {history && !visitors.length && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
     <ul className="point-visit-history__people">{visitors.map((visitor) => {
       const expanded = expandedId === visitor.userId
       const detailId = `point-visits-${pointId}-${visitor.userId}`

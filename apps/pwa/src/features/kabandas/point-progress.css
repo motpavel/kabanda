@@ -1,5 +1,4 @@
 .kb-yandex-marker.kb-visit--unknown, .kb-dot.kb-visit--unknown { border-style: dashed; opacity: .65; }
-.kb-yandex-marker.kb-visit--personal::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font: 800 14px/1 system-ui, sans-serif; pointer-events: none; }
 .kb-yandex-marker.kb-visit--team::after { content: ''; position: absolute; inset: 5px; border: 1px solid #fff; border-radius: 50%; pointer-events: none; }
 .kb-point-visit-state { margin: 8px 0 12px; font-weight: 700; }
 .kb-point-visit-state[data-visit-state='unknown'] { font-weight: 400; color: #666; }

@@ -95,3 +95,10 @@
 @media (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-live-point.raid-live-point--destination:hover { --raid-point-border: #ea3e35; width: 18px; height: 18px; border-width: 5px; background: #fff; opacity: 1; animation: none; }
 }
+
+/* All rows and raid cards share the sheet's content edges. */
+.kb-shell .point-history-section .point-visit-history__person { padding-inline: 0; }
+.point-history-section .point-visit-history__detail { padding-inline: 0; }
+.point-history-section .point-visit-history__visits { margin-inline: 0; padding-inline: 0; }
+.point-history-section .point-visit-history__visits > li { box-sizing: border-box; width: 100%; }
+.point-history-section .point-visit-history__people > li + li::before { margin-inline: 0; }
