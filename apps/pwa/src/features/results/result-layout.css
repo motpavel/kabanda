@@ -64,7 +64,9 @@ html:has(.result-shell), body:has(.result-shell) { background: #f7f7f5; }
 .kb-shell .result-analytics h2 { margin: 0 0 12px; font-size: 18px; }
 .kb-shell .result-analytics .result-metrics { border: 0; border-radius: 0; box-shadow: none; }
 
-.kb-shell .result-shell > .result-share { padding: 0; gap: 0; overflow: hidden; }
+/* Keep the edge-to-edge poster inside its card, but bound the whole card on
+   wide screens so a 4:5 image does not become a nearly 1000px-tall section. */
+.kb-shell .result-shell > .result-share { padding: 0; gap: 0; overflow: hidden; width: 100%; max-width: 420px; justify-self: center; }
 .kb-shell .result-share > img { width: 100%; max-width: none; height: auto; aspect-ratio: auto; border-radius: 0; }
 .result-share__actions { display: grid; gap: 12px; padding: 16px 20px 20px; }
 .result-share__actions p { margin: 0; }

@@ -35,8 +35,10 @@ test('selected PNG reaches the durable photo queue through the real browser deco
       return encode.call(this, value => { diagnostic.push(value ? 'encode:ok' : 'encode:empty'); callback(value) }, type, quality)
     }
   })
+  // A photo-decoder fixture must represent a confirmed personal visit now.
+  // Real authorization and unvisited denial are tested against PostgreSQL.
   const photo = { pointSnapshotId: pointId, sourcePointId: pointId, name: 'Остановка', latitude: 56.86, longitude: 53.21,
-    distanceMeters: 0, creditedByMe: false, creditedByTeam: false }
+    distanceMeters: 0, creditedByMe: true, creditedByTeam: true }
   let uploadRequests = 0
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname
@@ -47,9 +49,11 @@ test('selected PNG reaches the durable photo queue through the real browser deco
     const body = path === '/api/me' ? { user: { id: userId, displayName: 'Участник', username: 'photo-qa', email: 'photo@example.test', identityKind: 'verified', avatarUrl: null } }
       : path === '/api/kabandas' ? { kabandas: [{ id: teamId, name: 'Фото', role: 'member', avatar: '🐗', coverImage: null, memberCount: 1, pointsCollectionId: null }] }
       : path.endsWith('/live') ? { raid, teamVisits: true, revision: '1', serverAt: new Date().toISOString(), claims: [], fallbacks: [], positions: [],
-        points: [{ id: pointId, sourcePointId: pointId, name: 'Остановка', latitude: 56.86, longitude: 53.21, position: 0, visitedByMe: false, visitedByTeam: false }] }
-      : path.endsWith('/materials') ? { materials: [], nextCursor: null }
-      : path.endsWith(`/points/${pointId}/history`) ? { pointId, personalCount: 0, visitors: [], entries: [], nextOffset: null }
+        points: [{ id: pointId, sourcePointId: pointId, name: 'Остановка', latitude: 56.86, longitude: 53.21, position: 0,
+          visitedByMe: true, visitedByTeam: true, lastAttemptId: 'photo-fixture-visit', myLastVisitAttemptId: 'photo-fixture-visit',
+          lastVisitedAt: '2026-09-19T12:00:00Z', lastVisitParticipantIds: [userId] }] }
+      : path.endsWith('/materials') ? { materials: [], nextCursor: null, canWrite: true }
+      : path.endsWith(`/points/${pointId}/history`) ? { pointId, personalCount: 1, visitors: [{ userId, displayName: 'Участник', count: 1 }], entries: [], nextOffset: null }
       : path.endsWith('/check-ins/nearby') ? { policy: { version: 'v1', radiusMeters: 50, maxAgeSeconds: 60, maxAccuracyMeters: 50 }, points: [photo] }
       : path.endsWith('/check-ins/presence') ? { pointSnapshotId: pointId, radiusMeters: 50, participants: [], serverAt: new Date().toISOString() }
       : path.endsWith('/presence/me') ? { radiusMeters: 50, maxAgeSeconds: 30, allReady: false, participants: [], serverAt: new Date().toISOString() }
@@ -68,12 +72,12 @@ test('selected PNG reaches the durable photo queue through the real browser deco
     await expect.poll(async () => {
       if (uploadRequests > 0) return 'durably saved'
       return page.evaluate(() => JSON.stringify({ steps: (window as any).photoPreparationSteps,
-        message: document.querySelector('.point-materials [role="status"]')?.textContent ?? null }))
+        message: document.querySelector('.point-materials [role="alert"]')?.textContent ?? null }))
     }, { timeout: 15000 }).toBe('durably saved')
     expect(errors).toEqual([])
   } finally {
     await info.attach('photo-preparation-steps', { body: JSON.stringify({ errors, browser: await page.evaluate(() => ({
-      steps: (window as any).photoPreparationSteps, message: document.querySelector('.point-materials [role="status"]')?.textContent ?? null,
+      steps: (window as any).photoPreparationSteps, message: document.querySelector('.point-materials [role="alert"]')?.textContent ?? null,
     })) }), contentType: 'application/json' })
   }
 })

@@ -91,6 +91,8 @@ for (const width of [320, 390, 430, 1024]) {
     expect(layout.overflow).toBeLessThanOrEqual(1)
     expect(Math.max(...layout.gaps)).toBeLessThan(48)
     expect(errors).toEqual([])
+    // Edge-to-edge inside the card must not restore a giant desktop poster.
+    expect(imageBox.height).toBeLessThanOrEqual(526)
     await page.screenshot({ path: info.outputPath(`completed-${width}.png`), fullPage: true })
     await info.attach('layout-measurement', { body: JSON.stringify({ width, cardBox, imageBox, ...layout }), contentType: 'application/json' })
   })

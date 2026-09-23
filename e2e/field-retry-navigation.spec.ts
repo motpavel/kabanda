@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { createDatabase } from '../apps/api/src/database.js'
+import { FieldRaidService } from '../apps/api/src/field-service.js'
 import { assertE2EDatabaseGuard, prepareE2EIdentity, requireE2EDatabaseUrl } from '../apps/api/src/e2e-fixture.js'
 import { fixture, installSyntheticSession, installYandexMapsMock, type FixtureIdentity } from './support.js'
 import { createDeviceContext } from './persistent-context.js'
@@ -21,13 +22,14 @@ async function operations(page: Page) {
   })
 }
 
-test('three accounts converge after automatic retries on Home while a photograph is held', async ({ browser }, info) => {
+test('three accounts converge after automatic retries on Home while a visited stop photograph is held', async ({ browser }, info) => {
   test.setTimeout(120_000)
   const url = requireE2EDatabaseUrl(), pool = createDatabase(url)
   await assertE2EDatabaseGuard(pool)
   const owner = fixture<FixtureIdentity>('prepare')
   const nav = await prepareE2EIdentity(url, randomUUID()), rider = await prepareE2EIdentity(url, randomUUID())
   const teamId = randomUUID(), raidId = randomUUID(), collectionId = randomUUID(), pointId = randomUUID(), sourceId = randomUUID()
+  const priorPointId = randomUUID(), priorSourceId = randomUUID()
   const contexts: import('@playwright/test').BrowserContext[] = []
   let release!: () => void
   const uploadGate = new Promise<void>(done => { release = done })
@@ -47,6 +49,17 @@ test('three accounts converge after automatic retries on Home while a photograph
       VALUES($1,$2,$3,$4,'Общая остановка',ST_SetSRID(ST_MakePoint(53.21,56.86),4326),0)`, [pointId, raidId, sourceId, collectionId])
     await pool.query("INSERT INTO raid_activity_windows(raid_id,opened_at,opened_version) VALUES($1,now()-interval '1 minute',1)", [raidId])
     await pool.query('INSERT INTO raid_navigator_leases(raid_id,navigator_user_id,generation) VALUES($1,$2,1)', [raidId, nav.userId])
+    // The new policy forbids photos before a personal visit. Keep the original
+    // lane-isolation regression by holding a photo from a DIFFERENT, already
+    // visited stop while the next visit is retried on Home. No fake credits.
+    await pool.query(`INSERT INTO points(id,kabanda_id,stable_key,name,location,source,source_id,source_url,license,verification_status)
+      VALUES($1,$2,$1::uuid::text,'Предыдущая остановка',ST_SetSRID(ST_MakePoint(53.21,56.859),4326),'test',$1::uuid::text,'https://example.test','test','field_verified')`, [priorSourceId, teamId])
+    await pool.query(`INSERT INTO raid_point_snapshots(id,raid_id,source_point_id,collection_id,name,location,position)
+      VALUES($1,$2,$3,$4,'Предыдущая остановка',ST_SetSRID(ST_MakePoint(53.21,56.859),4326),1)`, [priorPointId, raidId, priorSourceId, collectionId])
+    const visits = new FieldRaidService(pool, 'retry-fixture-service-secret-at-least-32-bytes')
+    expect((await visits.createTeamVisit(nav.userId, raidId, { pointSnapshotId: priorPointId,
+      evidence: { latitude: 56.859, longitude: 53.21, accuracyMeters: 8, capturedAt: new Date().toISOString() },
+      presentParticipantIds: [], confirmedAttendance: true }, randomUUID())).outcome).toBe('accepted')
     const pages: Page[] = []
     for (const [index, identity] of [owner, nav, rider].entries()) {
       const context = await createDeviceContext(browser, { baseURL: 'http://127.0.0.1:4173', viewport: { width: 390, height: 844 },
@@ -72,17 +85,15 @@ test('three accounts converge after automatic retries on Home while a photograph
     }
     const [ownerPage, navPage, riderPage] = pages as [Page, Page, Page]
     navPage.on('dialog', dialog => void dialog.accept())
-    await navPage.route(new RegExp(`/api/raids/${raidId}/points/${pointId}/materials/[^/]+/content$`), async route => {
+    await navPage.route(new RegExp(`/api/raids/${raidId}/points/${priorPointId}/materials/[^/]+/content$`), async route => {
       if (route.request().method() !== 'PUT') return route.continue()
       uploadStarted = true; await uploadGate
-      await route.continue().catch(() => {}) // The test's finally can close the waiting tab.
+      await route.continue().catch(() => {})
     })
     await navPage.route(`**/api/raids/${raidId}/check-ins/team`, async route => {
       attempts.push({ key: route.request().headers()['idempotency-key'] ?? '', body: route.request().postData() ?? '', url: navPage.url() })
       if (attempts.length === 1) return route.fulfill({ status: 503, json: { error: { code: 'TEST_TEMPORARY', message: 'Synthetic outage' } } })
       if (attempts.length === 2) {
-        // Commit on the real API, then lose only the acknowledgement. The next
-        // automatic retry must reconcile the same receipt, not create a visit.
         const response = await route.fetch()
         expect(response.status()).toBe(200)
         committedAt = Date.now()
@@ -96,8 +107,14 @@ test('three accounts converge after automatic retries on Home while a photograph
     await expect(navPage.getByRole('checkbox', { name: rider.displayName, exact: true })).toBeChecked()
     await expect(navPage.getByRole('checkbox', { name: owner.displayName, exact: true })).toBeChecked()
     await navPage.getByRole('checkbox', { name: owner.displayName, exact: true }).uncheck()
-    await navPage.locator('input[type="file"][aria-label="Добавить фото"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
+    await navPage.getByRole('button', { name: /^Предыдущая остановка\./ }).click()
+    const priorSheet = navPage.getByRole('complementary', { name: 'Точка: Предыдущая остановка' })
+    await priorSheet.locator('input[type="file"][aria-label="Добавить фото"]').setInputFiles('apps/pwa/public/pwa-192x192.png')
     await expect.poll(() => uploadStarted).toBe(true)
+    await priorSheet.getByRole('button', { name: 'Свернуть точку' }).click()
+    await navPage.getByRole('button', { name: /Вы рядом с точкой/ }).click()
+    await expect(panel).toBeVisible()
+    await navPage.getByRole('checkbox', { name: owner.displayName, exact: true }).uncheck()
     await navPage.getByRole('complementary', { name: 'Подтверждение точки' }).getByRole('button', { name: 'Пометить точку', exact: true }).click()
     await expect.poll(async () => (await operations(navPage)).find(row => row.kind === 'team')?.status).toBe('retryable')
     await contexts[1]!.setOffline(true)
@@ -112,15 +129,15 @@ test('three accounts converge after automatic retries on Home while a photograph
     expect(new Set(attempts.map(attempt => attempt.key)).size).toBe(1)
     expect(new Set(attempts.map(attempt => attempt.body)).size).toBe(1)
     for (const page of [ownerPage, riderPage]) await expect(page.getByRole('button', { name: /^Общая остановка\./ })).toHaveClass(/raid-live-point--visited/)
-    expect((await pool.query('SELECT count(*)::int AS n FROM raid_checkin_attempts WHERE raid_id=$1', [raidId])).rows[0]!.n).toBe(1)
-    expect((await pool.query('SELECT user_id FROM raid_point_credits WHERE raid_id=$1 ORDER BY user_id', [raidId])).rows.map(row => row.user_id).sort()).toEqual([nav.userId, rider.userId].sort())
-    expect((await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(false)
+    expect((await pool.query('SELECT count(*)::int AS n FROM raid_checkin_attempts WHERE raid_id=$1 AND point_snapshot_id=$2', [raidId, pointId])).rows[0]!.n).toBe(1)
+    expect((await pool.query('SELECT user_id FROM raid_point_credits WHERE raid_id=$1 AND point_snapshot_id=$2 ORDER BY user_id', [raidId, pointId])).rows.map(row => row.user_id).sort()).toEqual([nav.userId, rider.userId].sort())
+    expect((await pool.query('SELECT ready,point_snapshot_id FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]).toMatchObject({ ready: false, point_snapshot_id: priorPointId })
     release()
     await expect.poll(async () => (await pool.query('SELECT ready FROM raid_point_materials WHERE raid_id=$1', [raidId])).rows[0]?.ready).toBe(true)
     await expect.poll(async () => (await operations(navPage)).find(row => row.kind === 'photo')?.status).toBe('accepted')
     expect(errors).toEqual([])
     await info.attach('automatic-retry-evidence', { body: JSON.stringify({ realDisposableApi: true, phones: 3,
-      attempts: attempts.length, samePayload: true, sameOperation: true, retryOnHome: true, committedAt, photoHeldUntilVisit: true }), contentType: 'application/json' })
+      attempts: attempts.length, samePayload: true, sameOperation: true, retryOnHome: true, committedAt, priorVisitedStopPhotoHeldUntilNextVisit: true }), contentType: 'application/json' })
   } finally {
     release(); await Promise.all(contexts.map(context => context.close())); await pool.end()
   }
