@@ -10,6 +10,10 @@ const dateTime = (value: string) => new Date(value).toLocaleString('ru-RU', {
   day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
 })
 
+function HistoryChevron({ right = false }: { right?: boolean }) {
+  return <svg className={`point-visit-history__chevron${right ? ' point-visit-history__chevron--right' : ''}`} aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+
 function LoadingHistory() {
   return <div className="point-visit-history__loading" role="status" aria-label="Загружаем историю"><span /><span /><span /></div>
 }
@@ -37,7 +41,7 @@ function ParticipantVisits({ url, userId, currentRaidId, onOpenRaid }: { url: st
     {history && <ol className="point-visit-history__visits">{visitsForParticipant(history.entries, userId).map((visit) => <li key={visit.id}>
       {visit.raidId ? <a className="point-visit-history__raid" href={`${appPath('app')}?raid=${encodeURIComponent(visit.raidId)}`} onClick={onOpenRaid}>
         <span><strong>{visit.title}</strong><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}{visit.raidId === currentRaidId && ' · этот рейд'}</time></span>
-        <span aria-hidden="true">›</span>
+        <HistoryChevron right />
       </a> : <div><strong>{visit.title}</strong><p><time dateTime={visit.visitedAt}>{dateTime(visit.visitedAt)}</time></p></div>}
     </li>)}</ol>}
     {error && <p role="alert">Не удалось загрузить посещения. <button type="button" onClick={() => setRetry((value) => value + 1)}>Повторить</button></p>}
@@ -86,7 +90,7 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
           <span className={`point-visit-history__avatar${visitor.userId === identityId ? ' point-visit-history__avatar--self' : ''}`} aria-hidden="true">{visitor.userId === identityId ? 'Я' : visitor.displayName.trim().slice(0, 1).toUpperCase()}</span>
           <span className="point-visit-history__name">{visitor.displayName}</span>
           <span className="point-visit-history__total">{formatVisitCount(visitor.count)}</span>
-          {visitor.count > 0 && <svg className="point-visit-history__chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+          {visitor.count > 0 && <HistoryChevron />}
         </button>
         <div id={detailId} className="point-visit-history__reveal" data-expanded={expanded} inert={!expanded} aria-hidden={!expanded}><div>{openedIds.has(visitor.userId) && <ParticipantVisits url={url} userId={visitor.userId} currentRaidId={currentRaidId} onOpenRaid={onOpenRaid} />}</div></div>
       </li>

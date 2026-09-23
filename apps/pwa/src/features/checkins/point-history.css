@@ -4,7 +4,7 @@
 .point-visit-history__people { list-style: none; margin: 0; padding: 0; }
 .point-visit-history__people > li { border-top: 1px solid #eceeeb; }
 .kb-shell .point-visit-history__person { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; box-shadow: none; transform: none; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .kb-shell .point-visit-history__person:hover { background: #f8f9f7; border: 0; transform: none; }
 }
 .kb-shell .point-visit-history__person:active { background: #f0f2ef; transform: none; }
@@ -23,7 +23,7 @@
 .point-visit-history__visits > li::marker { color: #929a94; font-size: .75rem; font-variant-numeric: tabular-nums; }
 .point-visit-history__visits a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; color: inherit; font-weight: 650; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; }
 .point-visit-history__visits a > span { color: #929a94; font-size: 1.2rem; font-weight: 400; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .point-visit-history__visits a:hover { color: #b72d28; }
 }
 .point-visit-history__visits a:focus-visible { outline: 2px solid #c6342d; outline-offset: 3px; }
@@ -41,7 +41,7 @@
 .point-visit-history__empty > svg { flex: 0 0 24px; color: #b9362c; }
 .point-visit-history__empty > p { margin: 0; }
 .kb-shell .raid-destination-action { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px; padding: 12px 16px; border: 1.5px solid #d63830; border-radius: 12px; background: #fff; color: #c6342d; font: inherit; font-weight: 700; box-shadow: none; }
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .kb-shell .raid-destination-action:hover { background: #fff5f3; border-color: #c6342d; }
 }
 .kb-shell .raid-destination-action:disabled { opacity: 1; background: #fff7f5; color: #ad4c44; border-color: #e5afa9; cursor: default; }
@@ -75,7 +75,7 @@
 .point-history-section .point-visit-history__avatar--self { background: #fbe9e6; color: #b9362c; }
 .point-history-section .point-visit-history__name { font-size: .9375rem; font-weight: 600; }
 .point-history-section .point-visit-history__total { padding: 4px 9px; border-radius: 8px; background: #fff; color: #a9362e; font-size: .8125rem; font-weight: 600; white-space: nowrap; }
-.point-history-section .point-visit-history__chevron { flex-basis: 14px; width: 14px; }
+.point-history-section .point-visit-history__chevron { flex-basis: 16px; width: 16px; height: 16px; }
 .point-history-section .point-visit-history__detail { padding: 0 14px 14px; }
 .point-history-section .point-visit-history__visits { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .point-history-section .point-visit-history__visits > li { padding: 8px 12px; border: 1px solid #eeecea; border-radius: 12px; background: #fff; box-shadow: 0 2px 5px rgb(32 37 34 / 5%), 0 6px 16px rgb(32 37 34 / 7%); }
@@ -92,7 +92,7 @@
 
 .point-history-section .point-visit-history__visits .point-visit-history__raid { min-height: 0; padding-block: 0; }
 
-@media (hover: hover) and (pointer: fine) {
+@media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
 .raid-active-map .raid-live-point.raid-live-point--destination:hover { --raid-point-border: #ea3e35; width: 18px; height: 18px; border-width: 5px; background: #fff; opacity: 1; animation: none; }
 }
 
@@ -102,3 +102,5 @@
 .point-history-section .point-visit-history__visits { margin-inline: 0; padding-inline: 0; }
 .point-history-section .point-visit-history__visits > li { box-sizing: border-box; width: 100%; }
 .point-history-section .point-visit-history__people > li + li::before { margin-inline: 0; }
+
+.point-visit-history__chevron--right { transform: rotate(-90deg); }
