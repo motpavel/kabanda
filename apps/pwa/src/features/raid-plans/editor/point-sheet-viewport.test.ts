@@ -12,6 +12,11 @@ describe('point sheet keyboard viewport', () => {
     expect(geometry.top + geometry.height).toBe(460)
     expect(geometry.maxSheetHeight).toBe(358)
   })
+  it('follows the real keyboard edge when Safari reports an offset beyond the layout gap', () => {
+    const geometry = pointSheetViewport(600, { height: 430, offsetTop: 220, scale: 1 })
+    expect(geometry.top).toBe(220)
+    expect(geometry.top + geometry.height).toBe(650)
+  })
   it('uses the available height when Android also resizes the layout viewport', () => {
     expect(pointSheetViewport(350, { height: 350, offsetTop: 0, scale: 1 }).maxSheetHeight).toBe(338)
   })

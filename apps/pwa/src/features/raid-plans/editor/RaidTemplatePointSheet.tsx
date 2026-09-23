@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -10,9 +11,19 @@ import type { DraftRaidTemplatePoint } from '../types'
 import { usePointSheetViewport } from './usePointSheetViewport'
 
 const POINT_SHEET_DISMISS_DISTANCE = 72
+const POINT_SHEET_EXPAND_DISTANCE = 48
+const POINT_SHEET_EXIT_DURATION = 160
 
 export function shouldDismissPointSheet(startY: number, currentY: number) {
   return currentY - startY >= POINT_SHEET_DISMISS_DISTANCE
+}
+
+export function shouldExpandPointSheet(startY: number, currentY: number) {
+  return startY - currentY >= POINT_SHEET_EXPAND_DISTANCE
+}
+
+export function isPointSheetBackgroundTap(distance: number, elapsed: number) {
+  return distance <= 8 && elapsed >= 0 && elapsed <= 500
 }
 
 export function RaidTemplatePointSheet({
@@ -33,32 +44,86 @@ export function RaidTemplatePointSheet({
   onUpdate: (patch: Partial<Pick<DraftRaidTemplatePoint, 'name' | 'address' | 'comment' | 'labelsConfirmed'>>) => void
 }) {
   const sheetRef = useRef<HTMLElement>(null)
-  const dragRef = useRef<{ pointerId: number; startY: number; currentY: number } | null>(null)
+  const dragRef = useRef<{ pointerId: number; startY: number; currentY: number; startHeight: number; maxHeight: number } | null>(null)
   const onCloseRef = useRef(onClose)
+  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closingRef = useRef(false)
+  const draggedHandle = useRef(false)
   const [dragOffset, setDragOffset] = useState(0)
+  const [dragHeight, setDragHeight] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [closing, setClosing] = useState(false)
   onCloseRef.current = onClose
+
+  const close = useCallback(() => {
+    if (closingRef.current) return
+    closingRef.current = true
+    dragRef.current = null
+    setDragging(false)
+    setClosing(true)
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    exitTimer.current = setTimeout(() => onCloseRef.current(), reducedMotion ? 0 : POINT_SHEET_EXIT_DURATION)
+  }, [])
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     sheetRef.current?.focus({ preventScroll: true })
     document.body.classList.add('rt-point-sheet-open')
     const handleKeyboard = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCloseRef.current()
+      if (event.key === 'Escape') close()
     }
+    let backgroundTouch: { pointerId: number; x: number; y: number; time: number; distance: number } | null = null
+    const isBackground = (target: EventTarget | null) => target instanceof Element
+      && !target.closest('.rt-point-sheet, .rt-map__controls, .rp-waypoint, button, a')
+    const startBackgroundTap = (event: PointerEvent) => {
+      // A second finger belongs to a map pinch, never to a dismissing tap.
+      if (backgroundTouch || !event.isPrimary || event.button !== 0 || !isBackground(event.target)) {
+        backgroundTouch = null
+        return
+      }
+      backgroundTouch = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp, distance: 0 }
+    }
+    const moveBackgroundTap = (event: PointerEvent) => {
+      if (!backgroundTouch || backgroundTouch.pointerId !== event.pointerId) return
+      backgroundTouch.distance = Math.max(backgroundTouch.distance, Math.hypot(event.clientX - backgroundTouch.x, event.clientY - backgroundTouch.y))
+    }
+    const finishBackgroundTap = (event: PointerEvent) => {
+      const touch = backgroundTouch
+      backgroundTouch = null
+      if (!touch || touch.pointerId !== event.pointerId || !isBackground(event.target)) return
+      const distance = Math.max(touch.distance, Math.hypot(event.clientX - touch.x, event.clientY - touch.y))
+      if (isPointSheetBackgroundTap(distance, event.timeStamp - touch.time)) close()
+    }
+    const cancelBackgroundTap = () => { backgroundTouch = null }
     window.addEventListener('keydown', handleKeyboard)
+    document.addEventListener('pointerdown', startBackgroundTap, true)
+    document.addEventListener('pointermove', moveBackgroundTap, true)
+    document.addEventListener('pointerup', finishBackgroundTap, true)
+    document.addEventListener('pointercancel', cancelBackgroundTap, true)
     return () => {
+      if (exitTimer.current !== null) clearTimeout(exitTimer.current)
       window.removeEventListener('keydown', handleKeyboard)
+      document.removeEventListener('pointerdown', startBackgroundTap, true)
+      document.removeEventListener('pointermove', moveBackgroundTap, true)
+      document.removeEventListener('pointerup', finishBackgroundTap, true)
+      document.removeEventListener('pointercancel', cancelBackgroundTap, true)
       document.body.classList.remove('rt-point-sheet-open')
       opener?.focus({ preventScroll: true })
     }
-  }, [])
+  }, [close])
 
   usePointSheetViewport(sheetRef, onHeightChange)
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return
-    dragRef.current = { pointerId: event.pointerId, startY: event.clientY, currentY: event.clientY }
+    if (closingRef.current || (event.pointerType === 'mouse' && event.button !== 0)) return
+    const sheet = sheetRef.current
+    if (!sheet) return
+    const startHeight = sheet.getBoundingClientRect().height
+    const maxHeight = Math.max(startHeight, (sheet.parentElement?.getBoundingClientRect().height ?? window.innerHeight) - 12)
+    dragRef.current = { pointerId: event.pointerId, startY: event.clientY, currentY: event.clientY, startHeight, maxHeight }
+    draggedHandle.current = false
+    setDragHeight(startHeight)
     event.currentTarget.setPointerCapture(event.pointerId)
     setDragging(true)
   }
@@ -67,20 +132,25 @@ export function RaidTemplatePointSheet({
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     drag.currentY = event.clientY
-    setDragOffset(Math.max(0, event.clientY - drag.startY))
+    const distance = event.clientY - drag.startY
+    if (Math.abs(distance) > 8) draggedHandle.current = true
+    setDragOffset(Math.max(0, distance))
+    setDragHeight(Math.min(drag.maxHeight, drag.startHeight + Math.max(0, -distance)))
   }
 
   const finishDrag = (event: ReactPointerEvent<HTMLElement>, allowDismiss: boolean) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     setDragging(false)
     if (allowDismiss && shouldDismissPointSheet(drag.startY, drag.currentY)) {
-      onCloseRef.current()
+      close()
       return
     }
+    if (allowDismiss && shouldExpandPointSheet(drag.startY, drag.currentY)) setExpanded(true)
     setDragOffset(0)
+    setDragHeight(null)
   }
 
   const submit = (event: FormEvent) => {
@@ -89,30 +159,40 @@ export function RaidTemplatePointSheet({
     onConfirm()
   }
 
-  const sheetStyle = { '--rt-point-sheet-drag': `${dragOffset}px` } as CSSProperties
+  const sheetStyle = {
+    '--rt-point-sheet-drag': `${dragOffset}px`,
+    ...(dragHeight === null ? {} : { height: `${dragHeight}px` }),
+  } as CSSProperties
 
   return <div className="rt-point-sheet-backdrop" role="presentation">
     <section
       aria-labelledby="rt-point-sheet-title"
-      className={`rt-point-sheet${dragging ? ' rt-point-sheet--dragging' : ''}`}
+      className={`rt-point-sheet${dragging ? ' rt-point-sheet--dragging' : ''}${expanded ? ' rt-point-sheet--expanded' : ''}${closing ? ' rt-point-sheet--closing' : ''}`}
       ref={sheetRef}
       role="dialog"
       style={sheetStyle}
       tabIndex={-1}
     >
       <header
+        aria-label={`Точка ${pointNumber}. Потяните вверх, чтобы развернуть, или вниз, чтобы закрыть`}
+        aria-expanded={expanded}
         className="rt-point-sheet__handle"
+        onClick={() => { if (!draggedHandle.current && !closingRef.current) setExpanded(true) }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') { event.preventDefault(); close() }
+          else if (event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpanded(true) }
+        }}
+        onLostPointerCapture={(event) => finishDrag(event, false)}
         onPointerCancel={(event) => finishDrag(event, false)}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
         onPointerUp={(event) => finishDrag(event, true)}
+        role="button"
+        tabIndex={0}
       >
         <span aria-hidden="true" className="rt-point-sheet__grabber" />
         <div className="rt-point-sheet__title-row">
           <h2 id="rt-point-sheet-title">Точка {pointNumber}</h2>
-          <button aria-label="Закрыть точку" className="rt-point-sheet__close" onPointerDown={(event) => event.stopPropagation()} onClick={onClose} type="button">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6" /></svg>
-          </button>
         </div>
       </header>
       <form onSubmit={submit}>

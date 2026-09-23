@@ -185,3 +185,22 @@ body.rt-point-sheet-open { overflow: hidden; }
 /* A focused field retains its quiet border; keyboard focus on buttons remains visible. */
 .rt-editor-shell :is(input, textarea):is(:focus, :focus-visible) { outline: none; box-shadow: none; border-color: var(--rt-line); }
 .rt-map--point-editing { top: var(--rt-viewport-top, 0px); bottom: auto; height: var(--rt-viewport-height, 100dvh); }
+
+/* The handle owns sheet gestures; fields scroll without moving the page. */
+.rt-point-sheet { transition: transform 160ms ease, height 160ms ease; }
+.rt-point-sheet--expanded, .rt-point-sheet--dragging { max-height: var(--rt-sheet-expanded-height, calc(100dvh - 12px)); }
+.rt-point-sheet--expanded { height: var(--rt-sheet-expanded-height, calc(100dvh - 12px)); }
+.rt-point-sheet--expanded form, .rt-point-sheet--dragging form { flex: 1; }
+.rt-point-sheet--expanded .rt-point-sheet__body, .rt-point-sheet--dragging .rt-point-sheet__body { flex: 1; align-content: start; }
+.rt-point-sheet--dragging { transition: none; }
+.rt-point-sheet--closing { transform: translateY(calc(100% + 40px)); pointer-events: none; }
+.rt-point-sheet__handle { min-height: 56px; padding-bottom: 8px; }
+.rt-point-sheet__handle:focus-visible { outline: 2px solid var(--rt-red-dark); outline-offset: 2px; border-radius: 12px; }
+.rt-point-sheet__body, .rt-point-sheet textarea { overscroll-behavior: none; }
+.rt-point-sheet__body { touch-action: pan-y; }
+.rt-point-sheet__actions { touch-action: none; }
+.rt-editor-shell[data-point-sheet-editing='true'] .rt-point-sheet-backdrop { pointer-events: auto; }
+.rt-editor-shell[data-point-sheet-keyboard='true'] .rt-point-sheet { padding-bottom: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .rt-point-sheet { transition: none; }
+}
