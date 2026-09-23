@@ -87,6 +87,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
   const [saveError, setSaveError] = useState<string | null>(null)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const submittedRef = useRef(false)
   const [pointSheetHeight, setPointSheetHeight] = useState(0)
   const coordinateFingerprint = draft.points.map((point) => `${point.latitude}:${point.longitude}`).join('|')
   const selectedPoint = draft.points.find((point) => point.clientId === draft.selectedPointId) ?? null
@@ -108,7 +109,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
   useEffect(() => {
     setLocalState('saving')
     const timer = window.setTimeout(() => {
-      setLocalState(saveRaidTemplateDraft(draft) ? 'saved' : 'failed')
+      if (!submittedRef.current) setLocalState(saveRaidTemplateDraft(draft) ? 'saved' : 'failed')
     }, 250)
     return () => window.clearTimeout(timer)
   }, [draft])
@@ -130,6 +131,18 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
     // Only coordinate/order changes make the current route estimate stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coordinateFingerprint])
+
+  useEffect(() => {
+    // Flush the latest edit if the tab closes before the debounced save runs.
+    const flush = () => { if (!submittedRef.current) saveRaidTemplateDraft(draftRef.current) }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   const requestGeocode = useCallback(async (point: Pick<DraftRaidTemplatePoint, 'clientId' | 'latitude' | 'longitude'>) => {
     const requestId = randomId()
@@ -253,6 +266,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
           longitude,
         })),
       }, current.idempotencyKey)
+      submittedRef.current = true
       clearRaidTemplateDraft(identityId, kabanda.id)
       window.location.assign(`${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=raids`)
     } catch (error) {
@@ -280,7 +294,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
 
     <section className="rt-editor__basics" aria-labelledby="rt-basics-heading">
       <div className="rt-editor__section-head">
-        <span aria-hidden="true">1</span><div><h2 id="rt-basics-heading">О маршруте</h2><p>Так он будет выглядеть в каталоге.</p></div>
+        <span aria-hidden="true">1</span><div><h2 id="rt-basics-heading">О маршруте</h2></div>
       </div>
       <div className="rt-editor-field">
         <label htmlFor="rt-template-title">Название маршрута</label>
@@ -296,7 +310,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
       </div>
       <div className="rt-editor-field">
         <label htmlFor="rt-template-description">Описание <span>Необязательно</span></label>
-        <textarea id="rt-template-description" rows={3} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути, почему стоит проехать этот маршрут и что взять с собой" />
+        <textarea id="rt-template-description" rows={3} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути" />
       </div>
       <div className="rt-editor-field">
         <span className="rt-editor-field__label">Обложка маршрута</span>
@@ -366,7 +380,6 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         dispatch({ type: 'select-point', pointId: null })
       }}
       onDelete={() => deletePoint(selectedPoint.clientId)}
-      onRetryGeocode={() => void requestGeocode(selectedPoint)}
       onHeightChange={setPointSheetHeight}
       onUpdate={(patch) => dispatch({ type: 'update-point', pointId: selectedPoint.clientId, patch })}
       point={selectedPoint}

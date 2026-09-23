@@ -17,6 +17,17 @@ const points: DraftRaidTemplatePoint[] = [
 ]
 
 describe('raid template point controls', () => {
+  it('allows confirmation without an address or geocoder and keeps the map outside the dialog', () => {
+    const markup = renderToStaticMarkup(<RaidTemplatePointSheet
+      point={{ ...points[0]!, address: '', geocodeStatus: 'failed', labelsConfirmed: false }} pointNumber={1}
+      onClose={() => undefined} onConfirm={() => undefined} onDelete={() => undefined}
+      onHeightChange={() => undefined} onUpdate={() => undefined}
+    />)
+    expect(markup).not.toContain('disabled')
+    expect(markup).not.toContain('aria-modal="true"')
+    expect(markup).toContain('Можно оставить пустым')
+  })
+
   it('keeps a compact drag handle with keyboard instructions and editing on the row', () => {
     const markup = renderToStaticMarkup(<RaidTemplatePointList
       onMove={() => undefined}
@@ -38,7 +49,6 @@ describe('raid template point controls', () => {
       onConfirm={() => undefined}
       onDelete={() => undefined}
       onHeightChange={() => undefined}
-      onRetryGeocode={() => undefined}
       onUpdate={() => undefined}
       point={points[1]!}
       pointNumber={2}

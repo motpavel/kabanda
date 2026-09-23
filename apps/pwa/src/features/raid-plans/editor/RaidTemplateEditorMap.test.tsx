@@ -41,21 +41,12 @@ describe('raid template editor map controls', () => {
     expect(center[1]).toBe(point.longitude)
   })
 
-  it('exposes the add-at-center action to keyboard users and disables it at the point limit', () => {
-    const renderControls = (canAddPoint: boolean) => renderToStaticMarkup(<RaidTemplateMapControls
-      canAddPoint={canAddPoint}
-      locating={false}
-      onAddPointAtCenter={() => undefined}
-      onChangeZoom={() => undefined}
-      onLocate={() => undefined}
-      zoom={12}
+  it('keeps only zoom and location controls with centered SVG icons', () => {
+    const markup = renderToStaticMarkup(<RaidTemplateMapControls
+      locating={false} onChangeZoom={() => undefined} onLocate={() => undefined} zoom={12}
     />)
-
-    const enabledMarkup = renderControls(true)
-    expect(enabledMarkup).toContain('aria-label="Добавить точку в центре карты"')
-    expect(enabledMarkup).not.toContain('class="rt-map__add-point" disabled=""')
-
-    const disabledMarkup = renderControls(false)
-    expect(disabledMarkup).toContain('class="rt-map__add-point" disabled=""')
+    expect(markup).toContain('Приблизить карту')
+    expect(markup).toContain('Отдалить карту')
+    expect(markup).not.toContain('Добавить точку в центре')
   })
 })

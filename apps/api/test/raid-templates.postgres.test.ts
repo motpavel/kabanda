@@ -92,6 +92,16 @@ function legacyFingerprint(kabandaId: string, value: CreateRaidTemplate): string
 }
 
 describePostgres('raid template PostgreSQL invariants', () => {
+  it('persists and reloads forest points without postal addresses', async () => {
+    const { ownerId, kabandaId } = await createKabanda('forest')
+    const value = input('Лесной круг')
+    value.points = value.points.map(point => ({ ...point, address: '' }))
+    const created = await raidTemplates!.createTemplate(ownerId, kabandaId, value, randomUUID())
+    const loaded = await raidTemplates!.getTemplate(ownerId, created.template.id)
+    expect(loaded.points.map(point => point.address)).toEqual(['', ''])
+    expect(loaded.points.map(point => point.latitude)).toEqual(value.points.map(point => point.latitude))
+  })
+
   it('persists author description in detail and catalogue and fingerprints edits', async () => {
     const { ownerId, kabandaId } = await createKabanda('description')
     const value = { ...input(), description: 'По берегу.\nБерём воду и встречаем закат.' }

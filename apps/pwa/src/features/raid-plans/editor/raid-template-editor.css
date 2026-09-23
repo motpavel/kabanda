@@ -89,7 +89,7 @@
 .rt-map { position: relative; height: clamp(320px, 48dvh, 440px); overflow: hidden; border: 1px solid var(--rt-line); border-radius: 16px; background: #e8e6e3; }
 .rt-map__stage { position: absolute; inset: 0; width: 100%; height: 100%; }
 .rt-map--point-editing { position: fixed; z-index: 90; inset: 0; width: 100%; height: 100dvh; border: 0; border-radius: 0; }
-.rt-map--point-editing .rt-map__instruction, .rt-map--point-editing .rt-map__controls { opacity: 0; pointer-events: none; }
+.rt-map--point-editing .rt-map__controls { bottom: calc(var(--rt-sheet-height, 0px) + 12px); }
 .rt-map__status { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 24px; color: var(--rt-muted); background: #f0f0f3; font-size: .85rem; text-align: center; }
 .rt-map__status strong { color: var(--rt-ink); font-size: 1rem; }
 .rt-map__status button { min-height: 48px; margin-top: 4px; border: 0; border-radius: 12px; padding: 10px 18px; color: #fff; background: var(--rt-red); font-weight: 650; }
@@ -113,7 +113,7 @@
 .rt-point-card__drag { display: grid; place-items: center; align-self: stretch; min-width: 44px; min-height: 48px; border: 0; border-radius: 12px; color: #9497a0; background: transparent; touch-action: none; user-select: none; cursor: grab !important; }
 .rt-point-card__drag:active { cursor: grabbing !important; }
 .rt-point-card__drag svg { width: 24px; height: 24px; fill: currentColor; stroke: none; }
-.rt-point-card__main { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; border: 0; border-radius: 10px; padding: 8px 0; color: inherit; background: transparent; text-align: left; }
+.rt-point-card__main { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: center; border: 0; border-radius: 10px; padding: 8px 0; color: inherit; background: transparent; text-align: left; }
 .rt-point-card__number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: #fff; background: var(--rt-red); box-shadow: 0 3px 8px #ed302b26; font-size: .85rem; line-height: 1; font-weight: 750; font-variant-numeric: tabular-nums; }
 .rt-point-card__copy { display: grid; min-width: 0; gap: 5px; padding-top: 3px; overflow-wrap: anywhere; }
 .rt-point-card__copy strong { font-size: .88rem; line-height: 1.4; }
@@ -128,8 +128,8 @@
 .rt-editor__action[hidden] { display: none; }
 .rt-editor__save { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 52px; border: 0; border-radius: 16px; padding: 12px 16px; color: #fff; background: var(--rt-red); font-size: .95rem; font-weight: 750; }
 .rt-editor__save svg { width: 20px; flex: 0 0 20px; }
-.rt-point-sheet-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; align-items: end; padding-top: max(24px, env(safe-area-inset-top)); background: transparent; }
-.rt-point-sheet { --rt-point-sheet-drag: 0px; display: grid; width: min(100%, 640px); max-height: min(70dvh, 500px); overflow-y: auto; gap: 10px; justify-self: center; border: 1px solid #2021260f; border-radius: 24px 24px 0 0; padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -10px 40px #20212626; transform: translateY(var(--rt-point-sheet-drag)); transition: transform 160ms ease; }
+.rt-point-sheet-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; align-items: end; padding-top: max(24px, env(safe-area-inset-top)); background: transparent; pointer-events: none; }
+.rt-point-sheet { pointer-events: auto; --rt-point-sheet-drag: 0px; display: grid; width: min(100%, 640px); max-height: min(58dvh, 460px); overflow-y: auto; gap: 10px; justify-self: center; border: 1px solid #2021260f; border-radius: 24px 24px 0 0; padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -10px 40px #20212626; transform: translateY(var(--rt-point-sheet-drag)); transition: transform 160ms ease; }
 .rt-point-sheet--dragging { transition: none; }
 .rt-point-sheet__grabber { width: 36px; height: 4px; justify-self: center; border-radius: 999px; background: #d4d4db; }
 .rt-point-sheet__handle { display: grid; gap: 4px; cursor: grab; touch-action: none; user-select: none; }
@@ -166,3 +166,16 @@ body.rt-point-sheet-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .rt-point-card, .rt-point-sheet { transition: none; }
 }
+
+/* Explicit icon metrics override shared button padding and line boxes. */
+.rt-editor-shell :is(.rt-map__controls button, .rt-point-sheet__close, .rt-point-sheet__delete, .rt-point-card__drag) { padding: 0; margin: 0; min-width: 0; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.rt-editor-shell :is(.rt-map__controls button, .rt-point-sheet__close, .rt-point-sheet__delete, .rt-point-card__drag, .rt-editor-nav__back) svg { display: block; flex-shrink: 0; margin: 0; }
+.rt-editor-shell :is(input, textarea)::placeholder { color: #8b8e97; font-size: 14px; font-weight: 400; opacity: 1; }
+.rt-editor-shell :is(input, textarea) { font-weight: 400; }
+.rt-point-sheet__field-head label span { margin-left: 6px; color: var(--rt-muted); font-size: .7rem; font-weight: 400; }
+.rt-point-sheet__hint { padding: 0; background: transparent; font-size: .72rem; }
+.rt-map--point-editing .rt-map__instruction { top: max(12px, env(safe-area-inset-top)); font-weight: 400; font-size: .72rem; }
+.rt-point-card--dragged { transition: box-shadow 180ms ease; }
+.rt-point-card { will-change: transform; }
+.rt-point-sheet__field-head > label { display: flex; align-items: baseline; gap: 6px; }
+.rt-point-sheet__field-head label span { display: inline; margin: 0; }

@@ -12,3 +12,15 @@ Validation:
 - Browser with local synthetic API and real map: checked 320, 390 and 1100px widths, no horizontal overflow; added two stops, confirmed/closed the sheet, reordered stops by dragging the right handle and by keyboard, uploaded a cover and changed visibility. Reload restored text, cover, stop order and visibility.
 - Synthetic save failure and missing-title validation kept the draft, focused the message and placed it above the footer.
 - Production user data was not used for local fixtures. A physical phone/keyboard was not tested. The product remains light-theme only; reduced-motion rules are preserved.
+
+## Interaction refinement
+
+The point sheet is non-modal and its transparent frame passes pointer events to the map. Zoom/location controls stay above the sheet, and map clicks cannot create extra points until editing ends. Zoom level is preserved on selection. The ambiguous add-at-center button was removed. All icon-only buttons explicitly reset inherited padding and center their SVGs; card numbers align to the vertical center.
+
+Reordering now previews positions using transforms, following the pointer while siblings move smoothly. The draft order commits on pointer release, with a settling animation; cancellation restores the order. Reduced-motion and keyboard reorder remain supported.
+
+Addresses are optional across client, API contract and PostgreSQL (migration 0021 relaxes the length check without rewriting data). Missing-geocoder warnings no longer block confirmation. Placeholders are smaller, lighter and shorter. Removed the catalogue helper text. Drafts flush on page hide, except after successful submission.
+
+Manual local browser check: three-point route including “Лесная поляна” with blank address, pan/zoom with sheet open, no accidental extra points, drag reorder, confirmation and reload. API tests cover empty/omitted address and coordinate validation; PostgreSQL test covers persistence and reload. Real touchscreen/pinch gestures require a phone; desktop pointer drag and zoom controls were exercised.
+
+References: Google My Maps “Add places to your map” (direct placement and naming); Mapbox “Create a draggable Marker” (coordinate-based placement).

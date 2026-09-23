@@ -33,6 +33,14 @@ function point(id: string, name = id): DraftRaidTemplatePoint {
 }
 
 describe('raid template editor reducer', () => {
+  it('confirms points without an address and ignores a later geocoder response', () => {
+    let current = draft([{ ...point('a'), address: '', labelsConfirmed: false, geocodeRequestId: 'pending' }, point('b')])
+    current = raidTemplateDraftReducer(current, { type: 'confirm-point-labels', pointId: 'a' })
+    current = raidTemplateDraftReducer(current, { type: 'resolve-geocode', pointId: 'a', requestId: 'pending', name: 'Позднее имя', address: 'Поздний адрес' })
+    expect(current.points[0]?.address).toBe('')
+    expect(raidTemplateDraftErrors(current)).toEqual([])
+  })
+
   it('changes route access without touching the route content', () => {
     const initial = draft([point('a'), point('b')])
     const updated = raidTemplateDraftReducer(initial, { type: 'set-scope', scope: 'all_authenticated' })
@@ -124,7 +132,7 @@ describe('raid template editor reducer', () => {
   it('blocks save until two points have user-confirmed labels', () => {
     expect(raidTemplateDraftErrors(draft([point('a')]))).toContain('Добавьте хотя бы две точки.')
     expect(raidTemplateDraftErrors(draft([point('a'), { ...point('b'), labelsConfirmed: false }]))).toContain(
-      'Подтвердите название и адрес каждой точки.',
+      'Подтвердите каждую точку.',
     )
     expect(raidTemplateDraftErrors(draft([point('a'), point('b')]))).toEqual([])
   })

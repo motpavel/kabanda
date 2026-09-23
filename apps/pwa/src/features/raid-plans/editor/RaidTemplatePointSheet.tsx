@@ -21,7 +21,6 @@ export function RaidTemplatePointSheet({
   onConfirm,
   onDelete,
   onHeightChange,
-  onRetryGeocode,
   onUpdate,
 }: {
   point: DraftRaidTemplatePoint
@@ -30,7 +29,6 @@ export function RaidTemplatePointSheet({
   onConfirm: () => void
   onDelete: () => void
   onHeightChange: (height: number) => void
-  onRetryGeocode: () => void
   onUpdate: (patch: Partial<Pick<DraftRaidTemplatePoint, 'name' | 'address' | 'comment' | 'labelsConfirmed'>>) => void
 }) {
   const sheetRef = useRef<HTMLElement>(null)
@@ -46,18 +44,6 @@ export function RaidTemplatePointSheet({
     document.body.classList.add('rt-point-sheet-open')
     const handleKeyboard = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCloseRef.current()
-      if (event.key !== 'Tab') return
-      const focusable = sheetRef.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled)')
-      if (!focusable?.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last?.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first?.focus()
-      }
     }
     window.addEventListener('keydown', handleKeyboard)
     return () => {
@@ -111,16 +97,15 @@ export function RaidTemplatePointSheet({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (!point.name.trim() || !point.address.trim()) return
+    if (!point.name.trim()) return
     onConfirm()
   }
 
   const sheetStyle = { '--rt-point-sheet-drag': `${dragOffset}px` } as CSSProperties
 
-  return <div className="rt-point-sheet-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+  return <div className="rt-point-sheet-backdrop" role="presentation">
     <section
       aria-labelledby="rt-point-sheet-title"
-      aria-modal="true"
       className={`rt-point-sheet${dragging ? ' rt-point-sheet--dragging' : ''}`}
       ref={sheetRef}
       role="dialog"
@@ -142,9 +127,8 @@ export function RaidTemplatePointSheet({
           </button>
         </div>
       </header>
-      {point.geocodeStatus !== 'ready' && <p className="rt-point-sheet__hint">
-        {point.geocodeStatus === 'pending' && 'Определяем название и адрес…'}
-        {point.geocodeStatus === 'failed' && <>Адрес не найден. Введите его или <button onClick={onRetryGeocode} type="button">повторите поиск</button>.</>}
+      {point.geocodeStatus === 'pending' && <p className="rt-point-sheet__hint">
+        Определяем название и адрес…
       </p>}
       <form onSubmit={submit}>
         <label htmlFor="rt-point-name">Название точки</label>
@@ -157,7 +141,7 @@ export function RaidTemplatePointSheet({
           value={point.name}
         />
         <div className="rt-point-sheet__field-head">
-          <label htmlFor="rt-point-address">Адрес</label>
+          <label htmlFor="rt-point-address">Адрес <span>Необязательно</span></label>
           <a className="rt-point-sheet__attribution" href="https://www.openstreetmap.org/copyright" rel="noreferrer" target="_blank">
             © OpenStreetMap
           </a>
@@ -167,7 +151,7 @@ export function RaidTemplatePointSheet({
           id="rt-point-address"
           maxLength={240}
           onChange={(event) => onUpdate({ address: event.target.value, labelsConfirmed: false })}
-          required
+          placeholder="Можно оставить пустым"
           value={point.address}
         />
         <label htmlFor="rt-point-comment">Комментарий</label>
@@ -175,12 +159,12 @@ export function RaidTemplatePointSheet({
           id="rt-point-comment"
           maxLength={500}
           onChange={(event) => onUpdate({ comment: event.target.value })}
-          placeholder="Что важно знать в этой точке"
+          placeholder="Ориентир или заметка"
           rows={1}
           value={point.comment}
         />
         <div className="rt-point-sheet__actions">
-          <button className="rt-point-sheet__confirm" disabled={!point.name.trim() || !point.address.trim()} type="submit">
+          <button className="rt-point-sheet__confirm" disabled={!point.name.trim()} type="submit">
             {point.labelsConfirmed ? 'Готово' : 'Подтвердить'}
           </button>
           <button aria-label={`Удалить точку ${pointNumber}`} className="rt-point-sheet__delete" onClick={onDelete} type="button">

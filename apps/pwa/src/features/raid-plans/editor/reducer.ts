@@ -126,8 +126,8 @@ export function raidTemplateDraftErrors(draft: RaidTemplateDraft): string[] {
   if (!draft.coverImage) errors.push('Добавьте обложку маршрута.')
   if (draft.points.length < RAID_TEMPLATE_MIN_POINTS) errors.push('Добавьте хотя бы две точки.')
   if (draft.points.length > RAID_TEMPLATE_MAX_POINTS) errors.push(`Можно добавить не больше ${RAID_TEMPLATE_MAX_POINTS} точек.`)
-  if (draft.points.some((point) => !point.name.trim() || !point.address.trim())) errors.push('Проверьте название и адрес каждой точки.')
-  if (draft.points.some((point) => !point.labelsConfirmed)) errors.push('Подтвердите название и адрес каждой точки.')
+  if (draft.points.some((point) => !point.name.trim())) errors.push('Добавьте название каждой точки.')
+  if (draft.points.some((point) => !point.labelsConfirmed)) errors.push('Подтвердите каждую точку.')
   return errors
 }
 
