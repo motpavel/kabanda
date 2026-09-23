@@ -99,9 +99,6 @@ importers:
       '@motpavel/storage-relay-web':
         specifier: file:../../infra/yandex/vendor/motpavel-storage-relay-web-0.3.1.tgz
         version: file:infra/yandex/vendor/motpavel-storage-relay-web-0.3.1.tgz
-      '@protomaps/basemaps':
-        specifier: ^5.7.2
-        version: 5.7.2
       dexie:
         specifier: ^4.4.5
         version: 4.4.5
@@ -111,9 +108,6 @@ importers:
       maplibre-gl:
         specifier: ^6.6.0
         version: 6.6.0
-      pmtiles:
-        specifier: ^4.5.0
-        version: 4.5.0
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -1362,10 +1356,6 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  '@protomaps/basemaps@5.7.2':
-    resolution: {integrity: sha512-K1Yk6bWdULulYg+R2QRVXx4NzJZan5YQhpejEG0c1/sXruJrfPIPZuakpf3jwAgVmjIRVQwAv+yRafDeN0aaUQ==}
-    hasBin: true
-
   '@rolldown/binding-android-arm-eabi@1.2.6':
     resolution: {integrity: sha512-b+jTcARdTiFLI6jB4a5XjTm0RWd6KcRfQj/I2356fxUZemiho9zQLxo0RtCuMDAyKcLo6cEltkgbQp6d1+sjjQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -2241,9 +2231,6 @@ packages:
       picomatch:
         optional: true
 
-  fflate@0.8.3:
-    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
-
   filelist@1.0.6:
     resolution: {integrity: sha512-5giy2PkLYY1cP39p17Ech+2xlpTRL9HLspOfEgm0L6CwBXBTgsK5ou0JtzYuepxkaQ/tvhCFIJ5uXo0OrM2DxA==}
 
@@ -2817,9 +2804,6 @@ packages:
     resolution: {integrity: sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==}
     engines: {node: '>=20'}
     hasBin: true
-
-  pmtiles@4.5.0:
-    resolution: {integrity: sha512-CBeD4SoUluFziGdy/8k7FOjQxQy486n+929W/tWophauvMICpkZ26vGBWhDt/6b1FZQWNaf4jFdT/5+q0Wii5w==}
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -4742,8 +4726,6 @@ snapshots:
     dependencies:
       playwright: 1.62.1
 
-  '@protomaps/basemaps@5.7.2': {}
-
   '@rolldown/binding-android-arm-eabi@1.2.6':
     optional: true
 
@@ -5544,8 +5526,6 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  fflate@0.8.3: {}
-
   filelist@1.0.6:
     dependencies:
       minimatch: 5.1.9
@@ -6105,10 +6085,6 @@ snapshots:
       playwright-core: 1.62.1
     optionalDependencies:
       fsevents: 2.3.2
-
-  pmtiles@4.5.0:
-    dependencies:
-      fflate: 0.8.3
 
   possible-typed-array-names@1.1.0: {}
 

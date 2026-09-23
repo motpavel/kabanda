@@ -1,4 +1,4 @@
-import type { YandexMap, DisplayMapRuntime, YandexPolyline } from '../../kabandas/yandex-maps'
+import type { YandexMap, YandexMapsRuntime, YandexPolyline } from '../../kabandas/yandex-maps'
 import type { RouteTrackPoint } from '../types'
 import { displayTrackSegment } from './track-display'
 
@@ -13,7 +13,7 @@ function sameSegment(left: readonly RouteTrackPoint[], right: readonly RouteTrac
 }
 
 /** Keep map objects alive; unchanged, completed segments need no smoothing or repaint. */
-export function updateTrackLayers(map: YandexMap, runtime: DisplayMapRuntime, layers: TrackLayers, segments: readonly (readonly RouteTrackPoint[])[]) {
+export function updateTrackLayers(map: YandexMap, runtime: YandexMapsRuntime, layers: TrackLayers, segments: readonly (readonly RouteTrackPoint[])[]) {
   const paths = new Map<number, readonly RouteTrackPoint[]>()
   let previous: RouteTrackPoint | undefined
   segments.forEach((points, index) => {

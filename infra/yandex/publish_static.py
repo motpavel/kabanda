@@ -38,7 +38,7 @@ MIME = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".svg": "image/svg+xml", ".ico": "image/x-icon",
     ".wasm": "application/wasm", ".woff": "font/woff", ".woff2": "font/woff2",
-    ".ttf": "font/ttf", ".kmap": "application/octet-stream",
+    ".ttf": "font/ttf",
 }
 HASHED = re.compile(r"[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.[a-z0-9]+$")
 WEBSITE = {"IndexDocument": {"Suffix": "index.html"}, "ErrorDocument": {"Key": "index.html"}}

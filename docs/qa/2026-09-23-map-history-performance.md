@@ -21,3 +21,9 @@
 ## Limits
 
 Browser QA used desktop Chromium, including actual map tiles, with synthetic geolocation. Physical iPhone frame timing and real mobile network tile delivery were not measured. These changes remove application-side marker/geometry/camera churn; they do not cache third-party map tiles or promise faster tile delivery from the provider.
+
+## Yandex retained; free-map sheet follow-up
+
+Yandex remains the provider for normal, raid and route-editor maps. The alternative city-package implementation was withdrawn; no PMTiles/Protomaps dependency, automatic city download or public alternate-map route is in the shipped application. Startup releases only the abandoned public `kabanda-city-map` database; private caches are untouched.
+
+Free-map short blank taps now dismiss the point sheet while drag/pinch/marker/control gestures remain distinct. The redundant unvisited line above point history is removed. The updated PWA suite passes745tests in127files; TypeScript passes. Mobile390px QA uses the actual Yandex SDK with synthetic local team/point data.

@@ -1,8 +1,5 @@
-import { loadOfflineMapRuntime } from '../../offline-map/runtime'
-import { OfflineMapStatus } from '../../offline-map/OfflineMapStatus'
-import { useMapArchiveRecovery } from '../../offline-map/useMapArchiveRecovery'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { type YandexMap, type YandexPlacemark, type YandexPolyline, type DisplayMapRuntime } from '../../kabandas/yandex-maps'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { loadYandexMaps, type YandexMap, type YandexPlacemark, type YandexPolyline, type YandexMapsRuntime } from '../../kabandas/yandex-maps'
 import { MapCamera } from '../../kabandas/map-camera'
 import { MapMarkers } from '../../kabandas/map-markers'
 import type { OneShotCoordinate } from '../../checkins/types'
@@ -53,7 +50,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<YandexMap | null>(null)
-  const runtimeRef = useRef<DisplayMapRuntime | null>(null)
+  const runtimeRef = useRef<YandexMapsRuntime | null>(null)
   const trackLayers = useRef<TrackLayers>(new Map())
   const endpoints = useRef(new Map<string, YandexPlacemark>())
   const pointMarkers = useRef<MapMarkers<RaidMapPoint> | null>(null)
@@ -79,12 +76,6 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const [following, setFollowing] = useState(false)
   const gesture = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
   const [provider, setProvider] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const [mapAttempt, setMapAttempt] = useState(0)
-  const retryMap = useCallback(() => {
-    setProvider('loading')
-    setMapAttempt(attempt => attempt + 1)
-  }, [])
-  useMapArchiveRecovery(provider === 'failed', retryMap)
   const { track, points: allPoints, dataState, positions, snapshotNavigator, routePreviewScope, routePreviewIssuedAt } = useRaidMapData(identityId, raidId, live, completed, savedSnapshot, snapshotDenied, snapshotVerified)
   const points = useMemo(() => pointsForRaidMap(allPoints, completed), [allPoints, completed])
   // A heartbeat changes serverAt, not geometry. Do not resmooth the entire
@@ -110,7 +101,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     let active = true
     const resize = new ResizeObserver(() => mapRef.current?.container?.fitToViewport?.())
     resize.observe(container)
-    void loadOfflineMapRuntime().then(runtime => {
+    void loadYandexMaps(import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? '').then(runtime => {
       if (!active) return
       runtimeRef.current = runtime
       mapRef.current = new runtime.Map(container, { center: IZHEVSK_CENTER, zoom: 12, controls: [],
@@ -130,7 +121,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       mapRef.current?.destroy(); mapRef.current = null; runtimeRef.current = null
       trackLayers.current.clear(); endpoints.current.clear(); riders.current.clear(); plannedLine.current = null; plannedCoordinates.current = ''
     }
-  }, [mapAttempt])
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
@@ -320,10 +311,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     if (map) camera.current?.zoom(Math.max(3, Math.min(19, map.getZoom() + delta)))
   }
   return <div className="route-live-map-shell">
-    <div className="raid-map-notices">
     {((planned && !completed) || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned && !completed ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
-      <OfflineMapStatus />
-    </div>
     <div className="route-live-map" ref={containerRef}
       onPointerDownCapture={event => {
         if (event.target instanceof Element && event.target.closest('[data-raid-point]')) { gesture.current = null; return }
@@ -364,7 +352,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       <button aria-label="Показать моё местоположение" aria-pressed={following} className="raid-map-controls__follow" disabled={!location || provider !== 'ready'} onClick={() => setFollowing(current => !current)} type="button"><RaidControlIcon name="location" /></button>
     </nav>
     {provider === 'loading' && <p className="route-live-map__state" role="status">Загружаем карту…</p>}
-    {provider === 'failed' && <p className="route-live-map__state route-live-map__state--error" role="alert">Карта не загрузилась.{live ? ' Трек продолжает записываться.' : ' Проверьте соединение.'} <button type="button" onClick={retryMap}>Повторить загрузку карты</button></p>}
+    {provider === 'failed' && <p className="route-live-map__state route-live-map__state--error" role="alert">Карта не загрузилась.{live ? ' Трек продолжает записываться.' : ' Проверьте соединение и откройте рейд снова.'}</p>}
     {provider === 'ready' && dataState === 'loading' && <p className="route-live-map__state" role="status">Открываем точки рейда…</p>}
     {provider === 'ready' && dataState === 'failed' && !track && <p className="route-live-map__state route-live-map__state--error" role="alert">Не удалось загрузить карту рейда. Повторим автоматически.</p>}
     {track?.truncated && <p className="route-live-map__state route-live-map__state--notice">Подгружаем продолжение длинного трека…</p>}
