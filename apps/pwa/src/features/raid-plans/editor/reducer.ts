@@ -1,3 +1,4 @@
+import { compactRouteAddress } from './compact-address'
 import {
   RAID_TEMPLATE_MAX_POINTS,
   RAID_TEMPLATE_MIN_POINTS,
@@ -76,7 +77,7 @@ export function raidTemplateDraftReducer(draft: RaidTemplateDraft, action: RaidT
           return {
             ...point,
             name: isFallbackPointName(point.name) && action.name ? action.name : point.name,
-            address: point.address.trim() || action.address,
+            address: point.address.trim() || compactRouteAddress(action.address),
             geocodeStatus: 'ready',
             geocodeRequestId: null,
           }

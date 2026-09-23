@@ -24,3 +24,11 @@ Addresses are optional across client, API contract and PostgreSQL (migration 002
 Manual local browser check: three-point route including “Лесная поляна” with blank address, pan/zoom with sheet open, no accidental extra points, drag reorder, confirmation and reload. API tests cover empty/omitted address and coordinate validation; PostgreSQL test covers persistence and reload. Real touchscreen/pinch gestures require a phone; desktop pointer drag and zoom controls were exercised.
 
 References: Google My Maps “Add places to your map” (direct placement and naming); Mapbox “Create a draggable Marker” (coordinate-based placement).
+
+## Keyboard and address follow-up
+
+The sheet uses VisualViewport height/offsetTop, freezes the page at its previous scroll position, and restores that position on close. Only the fields scroll; the header and confirmation actions stay in the sheet. Resize/scroll/focus listeners reveal the focused field inside that body and are removed on unmount. Inputs keep a neutral border without blue focus outlines.
+
+Reverse geocoding now uses structured street and house-number fields. Missing streets yield an empty optional address. Existing editor drafts and legacy geocoder responses compact their address labels without districts, postcodes or country.
+
+Validated keyboard geometry for overlay keyboards, iOS viewport panning, Android layout resizing, dismissal and pinch zoom. Browser checks at 390×420 and 390×300 showed the sheet bottom matching the visible height, focused fields above the fixed actions, document scroll unchanged, and no input outline/shadow. A physical phone's native keyboard was not available for testing.

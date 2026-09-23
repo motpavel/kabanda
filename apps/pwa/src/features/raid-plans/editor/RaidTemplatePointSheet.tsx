@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import type { DraftRaidTemplatePoint } from '../types'
+import { usePointSheetViewport } from './usePointSheetViewport'
 
 const POINT_SHEET_DISMISS_DISTANCE = 72
 
@@ -53,20 +54,7 @@ export function RaidTemplatePointSheet({
     }
   }, [])
 
-  useEffect(() => {
-    const sheet = sheetRef.current
-    if (!sheet) return
-    const reportHeight = () => onHeightChange(Math.ceil(sheet.getBoundingClientRect().height))
-    reportHeight()
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(reportHeight)
-    observer?.observe(sheet)
-    window.visualViewport?.addEventListener('resize', reportHeight)
-    return () => {
-      observer?.disconnect()
-      window.visualViewport?.removeEventListener('resize', reportHeight)
-      onHeightChange(0)
-    }
-  }, [onHeightChange])
+  usePointSheetViewport(sheetRef, onHeightChange)
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -127,10 +115,9 @@ export function RaidTemplatePointSheet({
           </button>
         </div>
       </header>
-      {point.geocodeStatus === 'pending' && <p className="rt-point-sheet__hint">
-        Определяем название и адрес…
-      </p>}
       <form onSubmit={submit}>
+        <div className="rt-point-sheet__body">
+          {point.geocodeStatus === 'pending' && <p className="rt-point-sheet__hint">Определяем название и адрес…</p>}
         <label htmlFor="rt-point-name">Название точки</label>
         <input
           autoComplete="off"
@@ -163,6 +150,7 @@ export function RaidTemplatePointSheet({
           rows={1}
           value={point.comment}
         />
+        </div>
         <div className="rt-point-sheet__actions">
           <button className="rt-point-sheet__confirm" disabled={!point.name.trim()} type="submit">
             {point.labelsConfirmed ? 'Готово' : 'Подтвердить'}

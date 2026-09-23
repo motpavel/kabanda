@@ -17,7 +17,7 @@
 }
 .rt-editor-shell *, .rt-editor-shell *::before, .rt-editor-shell *::after { box-sizing: border-box; }
 .rt-editor-shell :is(button, input, textarea) { font: inherit; }
-.rt-editor-shell :is(button, a, input, textarea):focus-visible { outline: 2px solid #245fc4; outline-offset: 3px; }
+.rt-editor-shell :is(button, a):focus-visible { outline: 2px solid var(--rt-red-dark); outline-offset: 3px; }
 .rt-editor-shell button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .rt-editor-shell button:disabled { cursor: default; opacity: .45; }
 .rt-editor-shell button:active:not(:disabled) { opacity: .75; }
@@ -128,8 +128,8 @@
 .rt-editor__action[hidden] { display: none; }
 .rt-editor__save { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 52px; border: 0; border-radius: 16px; padding: 12px 16px; color: #fff; background: var(--rt-red); font-size: .95rem; font-weight: 750; }
 .rt-editor__save svg { width: 20px; flex: 0 0 20px; }
-.rt-point-sheet-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; align-items: end; padding-top: max(24px, env(safe-area-inset-top)); background: transparent; pointer-events: none; }
-.rt-point-sheet { pointer-events: auto; --rt-point-sheet-drag: 0px; display: grid; width: min(100%, 640px); max-height: min(58dvh, 460px); overflow-y: auto; gap: 10px; justify-self: center; border: 1px solid #2021260f; border-radius: 24px 24px 0 0; padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -10px 40px #20212626; transform: translateY(var(--rt-point-sheet-drag)); transition: transform 160ms ease; }
+.rt-point-sheet-backdrop { position: fixed; z-index: 100; top: var(--rt-viewport-top, 0px); left: 0; right: 0; height: var(--rt-viewport-height, 100dvh); display: grid; align-items: end; background: transparent; pointer-events: none; }
+.rt-point-sheet { pointer-events: auto; --rt-point-sheet-drag: 0px; display: flex; flex-direction: column; width: min(100%, 640px); max-height: var(--rt-sheet-max-height, min(58dvh, 460px)); overflow: hidden; gap: 10px; justify-self: center; border: 1px solid #2021260f; border-radius: 24px 24px 0 0; padding: 8px 18px calc(16px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -10px 40px #20212626; transform: translateY(var(--rt-point-sheet-drag)); transition: transform 160ms ease; }
 .rt-point-sheet--dragging { transition: none; }
 .rt-point-sheet__grabber { width: 36px; height: 4px; justify-self: center; border-radius: 999px; background: #d4d4db; }
 .rt-point-sheet__handle { display: grid; gap: 4px; cursor: grab; touch-action: none; user-select: none; }
@@ -140,8 +140,10 @@
 .rt-point-sheet__close svg { width: 19px; height: 19px; }
 .rt-point-sheet__hint { margin: 0; border-radius: 11px; padding: 10px 12px; color: var(--rt-muted); background: #f5f5f7; font-size: .78rem; line-height: 1.5; }
 .rt-point-sheet__hint button { min-height: 44px; border: 0; padding: 4px; color: var(--rt-red-dark); background: transparent; font-weight: 650; text-decoration: underline; }
-.rt-point-sheet form { display: grid; gap: 8px; margin: 0; }
-.rt-point-sheet form > label, .rt-point-sheet__field-head > label { margin: 0; color: #454750; font-size: .78rem; font-weight: 650; }
+.rt-point-sheet form { display: flex; flex-direction: column; min-height: 0; gap: 8px; margin: 0; }
+.rt-point-sheet__body { display: grid; gap: 8px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.rt-point-sheet__handle, .rt-point-sheet__actions { flex-shrink: 0; }
+.rt-point-sheet__body > label, .rt-point-sheet__field-head > label { margin: 0; color: #454750; font-size: .78rem; font-weight: 650; }
 .rt-point-sheet :is(input, textarea) { min-height: 46px; padding-block: 9px; }
 .rt-point-sheet textarea { min-height: 46px; max-height: 112px; resize: vertical; }
 .rt-point-sheet__field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -179,3 +181,7 @@ body.rt-point-sheet-open { overflow: hidden; }
 .rt-point-card { will-change: transform; }
 .rt-point-sheet__field-head > label { display: flex; align-items: baseline; gap: 6px; }
 .rt-point-sheet__field-head label span { display: inline; margin: 0; }
+
+/* A focused field retains its quiet border; keyboard focus on buttons remains visible. */
+.rt-editor-shell :is(input, textarea):is(:focus, :focus-visible) { outline: none; box-shadow: none; border-color: var(--rt-line); }
+.rt-map--point-editing { top: var(--rt-viewport-top, 0px); bottom: auto; height: var(--rt-viewport-height, 100dvh); }
