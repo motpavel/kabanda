@@ -1,6 +1,7 @@
+import { clearViewedMedia, readViewedMedia, saveViewedMedia } from './viewed-media-store'
 import { clearRouteCovers, readRouteCover, saveRouteCover } from './route-cover-store'
 import { requestApi } from './api-transport'
-import { useEffect, useRef, useState, type ImgHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ImgHTMLAttributes } from 'react'
 import { IDENTITY_CHANGED_EVENT } from '../features/offline/ledger'
 
 type Entry = { url: string; bytes: number }
@@ -52,7 +53,7 @@ export function observeImageVisibility(element: Element, load: () => void): () =
 }
 
 export function clearPrivateImageCache(clearPersistent = true) {
-  if (clearPersistent) void clearRouteCovers()
+  if (clearPersistent) { void clearRouteCovers(); void clearViewedMedia() }
   generation += 1
   for (const controller of downloadControllers) controller.abort(new Error('Image identity changed'))
   downloadControllers.clear()
@@ -80,8 +81,8 @@ export function isPrivateCover(src: string): boolean {
 
 function keyFor(identityId: string, src: string, revision: string) { return JSON.stringify([identityId, src, revision]) }
 
-/** Media stays in memory; authorized catalog covers may reuse account-scoped IndexedDB bytes. */
-export async function loadPrivateCover(identityId: string, src: string, revision = '', persistAuthorizedCover = false): Promise<string> {
+/** Opt-in, bounded persistence for viewed media and authorized catalog covers. */
+export async function loadPrivateCover(identityId: string, src: string, revision = '', persistAuthorizedCover = false, persistViewedMedia = false): Promise<string> {
   if (!isPrivateCover(src)) return src
   if (identity !== identityId) throw new Error('Image identity changed')
   const key = keyFor(identityId, src, revision)
@@ -93,9 +94,10 @@ export async function loadPrivateCover(identityId: string, src: string, revision
   const controller = new AbortController()
   downloadControllers.add(controller)
   const mayPersist = persistAuthorizedCover && Boolean(revision) && /^\/(?:kabanda\/)?api\/raid-templates\/[^/?#]+\/cover$/.test(src)
+  const mayPersistMedia = persistViewedMedia && Boolean(revision) && /^\/(?:kabanda\/)?api\/raids\/[^/?#]+\/(?:media\/[^/?#]+|points\/[^/?#]+\/materials\/[^/?#]+)\/content$/.test(src)
   const valid = () => started === generation && identity === identityId
   const task = withDownloadSlot(controller.signal, async () => {
-    let blob = mayPersist ? await readRouteCover(key) : undefined
+    let blob = mayPersist ? await readRouteCover(key) : mayPersistMedia ? await readViewedMedia(key) : undefined
     if (!valid()) throw new Error('Image identity changed')
     if (!blob) {
       const response = await requestApi(src, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
@@ -104,7 +106,9 @@ export async function loadPrivateCover(identityId: string, src: string, revision
         throw new Error('Cover unavailable')
       }
       blob = await response.blob()
+      if (!blob.type.startsWith('image/') || blob.size > MAX_BYTES) throw new Error('Unsupported cover')
       if (mayPersist && blob.type.startsWith('image/')) await saveRouteCover(key, blob, valid)
+      if (mayPersistMedia && blob.type.startsWith('image/')) await saveViewedMedia(key, blob, valid)
     }
     if (started !== generation || identity !== identityId) throw new Error('Image identity changed')
     if (!blob.type.startsWith('image/') || blob.size > MAX_BYTES) throw new Error('Unsupported cover')
@@ -123,8 +127,16 @@ export async function loadPrivateCover(identityId: string, src: string, revision
   try { return await task } finally { downloadControllers.delete(controller); if (pending.get(key) === task) pending.delete(key) }
 }
 
-export function CachedImage({ identityId, src, revision = '', persistAuthorizedCover = false, fallbackSrc, ...props }: ImgHTMLAttributes<HTMLImageElement> & { identityId: string; src: string; revision?: string; persistAuthorizedCover?: boolean; fallbackSrc?: string }) {
+function subscribeImageIdentity(listener: () => void) {
+  window.addEventListener(IDENTITY_CHANGED_EVENT, listener)
+  return () => window.removeEventListener(IDENTITY_CHANGED_EVENT, listener)
+}
+
+export function CachedImage({ identityId, src, revision = '', persistAuthorizedCover = false, persistViewedMedia = false, fallbackSrc, ...props }: ImgHTMLAttributes<HTMLImageElement> & { identityId: string; src: string; revision?: string; persistAuthorizedCover?: boolean; persistViewedMedia?: boolean; fallbackSrc?: string }) {
   const privateCover = isPrivateCover(src)
+  // Saved views can mount before /me finishes activating the image identity.
+  // Wait for that activation and retry then, never on an access-denial clear.
+  const identityReady = useSyncExternalStore(subscribeImageIdentity, () => identity === identityId, () => false)
   const key = keyFor(identityId, src, revision)
   const imageRef = useRef<HTMLImageElement>(null)
   const [visibleKey, setVisibleKey] = useState<string | null>(null)
@@ -138,14 +150,14 @@ export function CachedImage({ identityId, src, revision = '', persistAuthorizedC
     return entry ? { key, url: entry.url } : null
   })
   useEffect(() => {
-    if (!privateCover || !mayLoad) return
+    if (!privateCover || !mayLoad || !identityReady) return
     let active = true
     const invalidate = () => { if (active) setLoaded(null) }
     window.addEventListener(CACHE_CHANGED, invalidate)
-    void loadPrivateCover(identityId, src, revision, persistAuthorizedCover).then((url) => {
+    void loadPrivateCover(identityId, src, revision, persistAuthorizedCover, persistViewedMedia).then((url) => {
       if (active) setLoaded({ key, url })
     }).catch(() => { if (active) setLoaded(fallbackSrc ? { key, url: fallbackSrc } : null) })
     return () => { active = false; window.removeEventListener(CACHE_CHANGED, invalidate) }
-  }, [fallbackSrc, identityId, key, mayLoad, persistAuthorizedCover, privateCover, revision, src])
+  }, [fallbackSrc, identityId, identityReady, key, mayLoad, persistAuthorizedCover, persistViewedMedia, privateCover, revision, src])
   return <img {...props} ref={imageRef} src={privateCover ? (loaded?.key === key ? loaded.url : undefined) : src} />
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { pointProgressSchema } from '@kabanda/contracts/exploration'
 import { ReadCache } from '../../lib/read-cache'
 import { ApiError, evictApiReads } from '../../lib/http'
@@ -15,8 +15,9 @@ import { useVisibleRead } from './read-refresh'
 import type { RaidProjection } from './types'
 import type { ProductionResourceState } from './production-model'
 
-type State<T> = { data: T | null; status: ProductionResourceState; message: string | null; savedAt: string | null }
-type Kind = 'actionable' | 'raid' | 'history' | 'progress' | 'point-progress' | 'result'
+type State<T> = { data: T | null; status: ProductionResourceState; message: string | null; savedAt: string | null; refreshing?: boolean }
+type Kind = 'actionable' | 'raid' | 'history' | 'progress' | 'point-progress' | 'result' | 'raid-view' | 'point-history'
+const isView = (kind: Kind) => kind === 'raid-view' || kind === 'point-history'
 type KabandaRole = 'owner' | 'member'
 const entries = new Map<string, RaidResource<unknown>>()
 const deniedTeams = new Set<string>()
@@ -26,6 +27,10 @@ const deniedTeams = new Set<string>()
 let revocationEpoch = 0
 const teamRevocationEpochs = new Map<string, number>()
 const teamKey = (identityId: string, kabandaId: string) => JSON.stringify([identityId, kabandaId])
+function parentDenied(identity: string, team: string, raidId: string) {
+  return entries.get(raidReadKey(identity, raidId, 'raid', null))?.state.status === 'access-error' ||
+    entries.get(raidReadKey(identity, raidId, 'result', { kabandaId: team }))?.state.status === 'access-error'
+}
 const online = () => typeof navigator === 'undefined' || navigator.onLine
 const actionableMembership = (raid: RaidProjection, identityId: string, role?: KabandaRole): boolean | null => {
   if (!actionableStates.has(raid.state)) return false
@@ -43,11 +48,13 @@ export class RaidResource<T> {
   private activeReaders = 0
   private reads = new ReadCache()
   private pending: Promise<void> | null = null
+  private receivedAt = 0
+  private hydration: Promise<void> | null = null
   private hydrated = false
   private retired = false
   private writes: Promise<unknown> = Promise.resolve()
   constructor(readonly identityId: string, public kabandaId: string, readonly kind: Kind,
-    readonly id: string, readonly key: string, private load: () => Promise<T>, public kabandaRole?: KabandaRole) {}
+    readonly id: string, readonly key: string, private load: () => Promise<T>, public kabandaRole?: KabandaRole, private validate?: (value: unknown) => boolean) {}
   registerKabandaRole(role?: KabandaRole) { if (role) this.kabandaRole = role }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   snapshot = () => this.state
@@ -91,9 +98,10 @@ export class RaidResource<T> {
     })
   }
   accept(value: T, persist = true, status: ProductionResourceState = 'ready') {
-    if (this.retired) return
+    if (this.retired || (this.validate && !this.validate(value))) return
     if (this.kind === 'result' && (!validResult(value) || value.raid.id !== this.id || value.raid.kabandaId !== this.kabandaId)) return
     const owner = this.kind === 'raid' && isRaidProjection(value) ? value.kabandaId : this.kabandaId
+    if (this.kind === 'raid-view' && parentDenied(this.identityId, this.kabandaId, this.id)) { this.deny(); return }
     if (owner && deniedTeams.has(teamKey(this.identityId, owner))) {
       this.kabandaId = owner
       this.deny()
@@ -104,6 +112,7 @@ export class RaidResource<T> {
     this.pending = null
     this.hydrated = true
     if (this.kind === 'raid' && isRaidProjection(value)) this.kabandaId = value.kabandaId
+    this.receivedAt = Date.now()
     this.set({ data: value, status, message: null, savedAt: null })
     if (persist) this.persist(value, this.reads.fence())
   }
@@ -116,7 +125,7 @@ export class RaidResource<T> {
     this.reads.invalidate()
     this.pending = null
     this.hydrated = true
-    this.set({ ...this.state, status: this.state.data === null ? 'loading' : 'stale', message: null })
+    this.set({ ...this.state, status: this.state.data === null ? 'loading' : 'stale', message: null, refreshing: false })
     // A previous page of history/statistics is now known to be obsolete.
     if (discardDisk) this.writes = this.writes.catch(() => undefined).then(async () => {
       await raidReadDb.snapshots.delete(this.key)
@@ -133,18 +142,25 @@ export class RaidResource<T> {
     this.set({ data: null, status: 'access-error', savedAt: null, message: 'Доступ отозван или ресурс недоступен.' })
     // A detail denial must also fence its pending result and disk hydration.
     // Do not leave a hidden result ready to reappear on the next visit.
-    if (this.kind === 'raid') for (const entry of entries.values()) {
-      if (entry.identityId === this.identityId && entry.kind === 'result' && entry.id === this.id) entry.deny()
+    if (this.kind === 'raid' || this.kind === 'result') for (const entry of entries.values()) {
+      if (entry.identityId === this.identityId && (entry.kind === 'raid-view' || (this.kind === 'raid' && entry.kind === 'result')) && entry.id === this.id) entry.deny()
     }
     this.writes = this.writes.catch(() => undefined).then(async () => {
       await raidReadDb.snapshots.delete(this.key)
       if (this.kind === 'raid' || this.kind === 'result') {
+        await raidReadDb.snapshots.where('identityId').equals(this.identityId).filter(row => {
+          const key = JSON.parse(row.key)
+          return key[2] === 'raid-view' && key[1] === this.id
+        }).delete()
         const key = JSON.stringify([this.identityId, this.id])
         await Promise.all([offlineDb.raidProjections.delete(key), offlineDb.raidMapCache.delete(key), offlineDb.raidResults.delete(key)])
       }
     }).catch(() => undefined)
   }
-  async hydrate() {
+  hydrate(): Promise<void> {
+    return this.hydration ??= this.restore()
+  }
+  private async restore() {
     if (this.hydrated || this.state.status === 'access-error') return
     this.hydrated = true
     const current = this.reads.fence()
@@ -172,20 +188,34 @@ export class RaidResource<T> {
       }
       if (!current() || this.state.data !== null) return
       if (this.kind === 'raid' && isRaidProjection(value)) this.kabandaId = value.kabandaId
-      if (deniedTeams.has(teamKey(this.identityId, this.kabandaId))) { this.deny(); return }
+      if ((this.kind === 'raid-view' && parentDenied(this.identityId, this.kabandaId, this.id)) || deniedTeams.has(teamKey(this.identityId, this.kabandaId))) { this.deny(); return }
       const resultContextMatches = this.kind !== 'result' ||
         (validResult(value) && value.raid.id === this.id && value.raid.kabandaId === this.kabandaId)
-      if (resultContextMatches && validSnapshot(this.kind, value) && savedAt) this.set({ data: value as T, status: 'stale',
+      if (resultContextMatches && (this.validate ? this.validate(value) : validSnapshot(this.kind, value)) && savedAt) this.set({ data: value as T, status: 'stale',
         message: this.state.message ?? (online() ? null : 'Нет соединения. Показана сохранённая копия.'), savedAt })
       else if (!online()) this.set({ ...this.state, status: 'error', message: 'Нет соединения и сохранённой копии.' })
     } catch { if (current() && !online()) this.set({ ...this.state, status: 'error', message: 'Не удалось прочитать сохранённую копию.' }) }
   }
+  refreshIfStale = (maxAgeMs: number): Promise<void> => {
+    if (this.state.status === 'ready' && Date.now() - this.receivedAt < maxAgeMs) return Promise.resolve()
+    return this.refresh()
+  }
   refresh = (): Promise<void> => {
     if (this.retired) return Promise.resolve()
+    if (this.kind === 'raid-view' && parentDenied(this.identityId, this.kabandaId, this.id)) { this.deny(); return Promise.resolve() }
     if (this.pending) return this.pending
+    this.set({ ...this.state, refreshing: true })
     const current = this.reads.fence()
     const startedRevocationEpoch = revocationEpoch
-    const pending = this.reads.read(this.key, this.load).then(value => {
+    const pending = this.reads.read(this.key, async () => {
+      // Restore pagination before the loader chooses its window. No network result
+      // can be overwritten by a slower disk read.
+      if (isView(this.kind)) await this.hydrate()
+      if (!current()) throw new TypeError('View read superseded')
+      const value = await this.load()
+      if (this.validate && !this.validate(value)) throw new TypeError('Invalid view snapshot')
+      return value
+    }).then(value => {
       if (!current()) return
       const owner = this.kind === 'raid' && isRaidProjection(value) ? value.kabandaId : this.kabandaId
       if (owner && (teamRevocationEpochs.get(teamKey(this.identityId, owner)) ?? 0) > startedRevocationEpoch) {
@@ -210,7 +240,7 @@ export class RaidResource<T> {
       if (!current()) return
       if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
         if (this.kind === 'raid') { this.deny(); clearPrivateImageCache(); await removeFromLists(this.identityId, this.id) }
-        else if (this.kind === 'result') { this.deny(); clearPrivateImageCache() }
+        else if (this.kind === 'result' || isView(this.kind)) { this.deny(); clearPrivateImageCache() }
         else if (this.kind === 'point-progress' && reason.code === 'POINT_COLLECTION_UNAVAILABLE') this.deny()
         else await revokeTeam(this.identityId, this.kabandaId)
         return
@@ -219,10 +249,12 @@ export class RaidResource<T> {
       if (!current() || this.state.status === 'access-error') return
       this.set({ ...this.state, status: this.state.data === null ? 'error' : 'stale',
         message: online() ? 'Не удалось обновить данные.' : 'Нет соединения. Показана сохранённая копия.' })
-    }).finally(() => { if (this.pending === pending) this.pending = null })
+    }).finally(() => { if (this.pending === pending) { this.pending = null; this.set({ ...this.state, refreshing: false }) } })
     this.pending = pending
     return pending
   }
+  waitForRead = () => this.pending ?? Promise.resolve()
+  canEvict = () => this.listeners.size === 0 && this.activeReaders === 0 && this.pending === null
   settled = () => this.writes
 }
 
@@ -245,13 +277,20 @@ function validSnapshot(kind: Kind, value: unknown): boolean {
 
 /** Feature read models use the same lifecycle, identity, revocation and disk
  * fences. They must not create a parallel permission/cache store. */
-export function resource<T>(identityId: string, kabandaId: string, kind: Kind, id: string, params: unknown, load: () => Promise<T>) {
-  const key = raidReadKey(identityId, kind === 'raid' || kind === 'result' ? id : kabandaId, kind, params)
+export function resource<T>(identityId: string, kabandaId: string, kind: Kind, id: string, params: unknown, load: () => Promise<T>, validate?: (value: unknown) => boolean) {
+  const key = raidReadKey(identityId, kind === 'raid' || kind === 'result' || kind === 'raid-view' ? id : kabandaId, kind, params)
   let entry = entries.get(key)
   if (!entry) {
-    entry = new RaidResource(identityId, kabandaId, kind, id, key, load)
+    if (isView(kind)) {
+      const views = [...entries.values()].filter(value => isView(value.kind))
+      let excess = views.length - 149
+      for (const old of views) if (excess > 0 && old.canEvict()) {
+        old.retire(); entries.delete(old.key); excess--
+      }
+    }
+    entry = new RaidResource(identityId, kabandaId, kind, id, key, load, undefined, validate)
     entries.set(key, entry)
-    if (deniedTeams.has(teamKey(identityId, kabandaId)) || (kind === 'result' &&
+    if (deniedTeams.has(teamKey(identityId, kabandaId)) || (kind === 'raid-view' && parentDenied(identityId, kabandaId, id)) || (kind === 'result' &&
       entries.get(raidReadKey(identityId, id, 'raid', null))?.state.status === 'access-error')) entry.deny()
   }
   return entry as RaidResource<T>
@@ -377,6 +416,13 @@ subscribeConfirmedWrites(event => {
   // Do not interpret queued operations or a GPS sample as a confirmed visit.
   const visit = /^\/api\/raids\/([^/]+)\/(?:check-ins(?:\/|$)|check-in-claims\/[^/]+\/confirm$|check-in-fallbacks(?:\/|$))/.exec(event.path)
   if (visit) invalidatePointProgress(event.identityId, raidResource(event.identityId, visit[1]!).kabandaId || undefined)
+  const content = /^\/api\/raids\/([^/]+)\/(?:points\/[^/]+\/materials(?:\/|$)|media(?:\/|$)|check-ins(?:\/|$)|check-in-claims(?:\/|$)|check-in-fallbacks(?:\/|$)|finalization(?:\/|$))/.exec(event.path)
+  if (content) for (const entry of entries.values()) {
+    if (entry.identityId !== event.identityId || !isView(entry.kind)) continue
+    if (entry.kind === 'raid-view' && entry.id !== decodeURIComponent(content[1]!)) continue
+    entry.invalidate()
+    entry.refreshIfObserved()
+  }
   if (!event.body || typeof event.body !== 'object') return
   const raid = (event.body as { raid?: unknown }).raid
   // Presence samples and route batches intentionally do not trigger list/history reloads.
@@ -436,11 +482,30 @@ if (typeof window !== 'undefined') {
   })
 }
 
-export function useRaidResource<T>(entry: RaidResource<T>, active: boolean, interval: number | null) {
+export function useRaidResource<T>(entry: RaidResource<T>, active: boolean, interval: number | null, maxAgeMs = 0) {
   const state = useSyncExternalStore(entry.subscribe, entry.snapshot, entry.snapshot)
   useEffect(() => active ? entry.retainActiveReader() : undefined, [active, entry])
   useEffect(() => { void entry.hydrate() }, [entry])
-  const refresh = useVisibleRead(entry.refresh, entry.key, active, interval)
+  const load = useCallback(() => entry.refreshIfStale(maxAgeMs), [entry, maxAgeMs])
+  useVisibleRead(load, entry.key, active, interval)
+  const refresh = entry.refresh
+  useEffect(() => {
+    if (!active || maxAgeMs === 0) return
+    let lastResume = -Infinity
+    const resume = () => {
+      if (!online() || document.visibilityState !== 'visible' || Date.now() - lastResume < 1000) return
+      lastResume = Date.now()
+      void entry.refresh()
+    }
+    // Returning to the app rechecks access even inside the navigation TTL.
+    window.addEventListener('focus', resume)
+    window.addEventListener('online', resume)
+    document.addEventListener('visibilitychange', resume)
+    return () => {
+      window.removeEventListener('focus', resume); window.removeEventListener('online', resume)
+      document.removeEventListener('visibilitychange', resume)
+    }
+  }, [entry, active, maxAgeMs])
   return { ...state, refresh }
 }
 export function useActionableRaids(identityId: string, kabandaId: string, role: KabandaRole, active = true) {

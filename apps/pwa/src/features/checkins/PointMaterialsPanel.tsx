@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ApiError, requestJson } from '../../lib/http'
-import { CachedImage, clearPrivateImageCache } from '../../lib/CachedImage'
-import { getActiveIdentityId } from '../offline/ledger'
+import { CachedImage } from '../../lib/CachedImage'
+import { materialsResource, useViewWindow, COMPLETED_REFRESH_MS } from '../results/view-resources'
 import { enqueueField, pumpFieldOperations, type FieldOperation } from '../raids/field-outbox'
 import { hasQuotaForMedia, prepareMediaFile, sha256Hex } from './platform'
 import { consumeSelectedFile } from './selected-file'
@@ -15,7 +14,6 @@ export type PointMaterial = {
   id: string; pointSnapshotId: string; authorUserId: string; authorName: string
   kind: 'comment' | 'photo'; body: string; ready: boolean; width: number | null; height: number | null; createdAt: string
 }
-type Page = { materials: PointMaterial[]; nextCursor: string | null; canWrite?: boolean }
 type LocalPhotoPreview = { id: string; url: string; createdAt: number; operationId: string | null; error: boolean }
 type PhotoViewer = { kind: 'saved'; item: PointMaterial } | { kind: 'local'; preview: LocalPhotoPreview }
 
@@ -25,97 +23,58 @@ export function mergePointMaterials(current: readonly PointMaterial[], page: rea
   return combined.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true })
 }
 
-export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false, actionsAtEnd = false, actionContainer }: {
+export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, visible, canWrite, operations, compact = false, actionsAtEnd = false, completed = false, readOnly = false, actionContainer }: {
   identityId: string; kabandaId: string; raidId: string; pointId: string; visible: boolean
-  canWrite: boolean; operations: readonly FieldOperation[]; compact?: boolean; actionsAtEnd?: boolean; commentsExpanded?: boolean; actionContainer?: HTMLElement | null
+  canWrite: boolean; completed?: boolean; readOnly?: boolean; operations: readonly FieldOperation[]; compact?: boolean; actionsAtEnd?: boolean; commentsExpanded?: boolean; actionContainer?: HTMLElement | null
 }) {
   const [composerOpen, setComposerOpen] = useState(false)
   const composerId = useId()
   const commentRef = useRef<HTMLTextAreaElement>(null)
-  const [items, setItems] = useState<PointMaterial[]>([])
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [denied, setDenied] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const entry = useMemo(() => materialsResource(identityId, kabandaId, raidId, pointId), [identityId, kabandaId, raidId, pointId])
+  const state = useViewWindow(entry, visible && !readOnly, completed ? COMPLETED_REFRESH_MS : 5000)
+  const items = state.data?.items ?? []
+  const cursor = state.data?.nextCursor
+  const denied = state.status === 'access-error'
+  const loaded = state.data !== null
+  const loading = state.loadingMore || state.status === 'loading'
+  const error = state.message
   const [busy, setBusy] = useState(false)
   const [text, setText] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [photoPreviews, setPhotoPreviews] = useState<LocalPhotoPreview[]>([])
   const [photoViewer, setPhotoViewer] = useState<PhotoViewer | null>(null)
   const [enqueuedComments, setEnqueuedComments] = useState<FieldOperation[]>([])
-  const [permission, setPermission] = useState<{ scope: string; allowed: boolean } | null>(null)
   const previewUrls = useRef(new Set<string>())
   const scope = JSON.stringify([identityId, raidId, pointId])
   const currentScope = useRef(scope)
   currentScope.current = scope
   // Missing permission from an older server is not authorization. The caller's
   // role gate can further restrict writes, never grant them without a visit.
-  const mayWrite = canWrite && !denied && permission?.scope === scope && permission.allowed
+  const mayWrite = canWrite && !readOnly && !denied && state.status === 'ready' && state.data?.canWrite === true
   const mayWriteRef = useRef(mayWrite)
   mayWriteRef.current = mayWrite
   const generation = useRef(0)
-  const headKey = useRef<string | null>(null)
-  const flight = useRef<AbortController | null>(null)
   const path = `/api/raids/${encodeURIComponent(raidId)}/points/${encodeURIComponent(pointId)}/materials`
   const queue = operations.filter(row => row.identityId === identityId && row.raidId === raidId && row.pointId === pointId)
   const accepted = queue.filter(row => row.status === 'accepted').map(row => row.operationId).join(':')
 
-  const refresh = async (after: string | null = null) => {
-    if (!visible || flight.current || !navigator.onLine || document.visibilityState !== 'visible') return
-    const current = generation.current
-    const controller = new AbortController()
-    flight.current = controller
-    setLoading(true)
-    const deadline = setTimeout(() => controller.abort(), 15_000)
-    try {
-      const page = await requestJson<Page>(`${path}${after ? `?cursor=${encodeURIComponent(after)}` : ''}`, { signal: controller.signal })
-      if (current !== generation.current || currentScope.current !== scope || controller.signal.aborted || await getActiveIdentityId() !== identityId) return
-      if (!Array.isArray(page.materials) || page.materials.some(item => item.pointSnapshotId !== pointId || !item.ready || !item.id) ||
-        (page.nextCursor !== null && typeof page.nextCursor !== 'string') || (after !== null && page.nextCursor === after) ||
-        (page.canWrite !== undefined && typeof page.canWrite !== 'boolean')) {
-        throw new TypeError('Invalid material list')
-      }
-      setItems(previous => mergePointMaterials(previous, page.materials, after !== null))
-      setPermission({ scope, allowed: page.canWrite === true })
-      const nextHead = page.materials.map(item => item.id).join(':')
-      if (after !== null || headKey.current !== nextHead) setCursor(page.nextCursor)
-      if (after === null) headKey.current = nextHead
-      // An unchanged five-second head refresh must not reset a user's older
-      // page cursor. A changed head reopens its gap without dropping old rows.
-      setLoaded(true); setError(null); setDenied(false)
-    } catch (reason) {
-      if (current !== generation.current || currentScope.current !== scope) return
-      if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
-        setItems([]); setCursor(null); setDenied(true); setPermission(null); headKey.current = null; clearPrivateImageCache()
-      }
-      setError('Материалы точки не удалось загрузить. Сохранённые на телефоне действия не удалены.')
-    } finally {
-      clearTimeout(deadline)
-      if (flight.current === controller) flight.current = null
-      if (current === generation.current && currentScope.current === scope) setLoading(false)
-    }
-  }
   useEffect(() => {
     generation.current++
-    flight.current?.abort(); flight.current = null; headKey.current = null
-    setItems([]); setCursor(null); setLoaded(false); setError(null); setDenied(false); setMessage(null); setText(''); setPhotoPreviews([]); setPhotoViewer(null)
-    setPermission(null); setEnqueuedComments([]); setComposerOpen(false)
+    setMessage(null); setText(''); setPhotoPreviews([]); setPhotoViewer(null)
+    setEnqueuedComments([]); setComposerOpen(false)
     return () => {
-      generation.current++; flight.current?.abort(); flight.current = null
+      generation.current++
       for (const url of previewUrls.current) URL.revokeObjectURL(url)
       previewUrls.current.clear()
     }
   }, [scope])
+  const previousAccepted = useRef(accepted)
   useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const interval = setInterval(() => void refresh(), 5000)
-    const resume = () => void refresh()
-    window.addEventListener('online', resume)
-    document.addEventListener('visibilitychange', resume)
-    return () => { clearInterval(interval); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume) }
-  }, [scope, visible, accepted])
+    if (previousAccepted.current === accepted) return
+    previousAccepted.current = accepted
+    entry.invalidate()
+    if (visible && !readOnly && navigator.onLine) void entry.refresh()
+  }, [entry, visible, readOnly, accepted])
 
   useEffect(() => {
     const savedPhotos = operations.filter(operation => operation.identityId === identityId && operation.raidId === raidId && operation.pointId === pointId && operation.kind === 'photo' && operation.blob)
@@ -221,11 +180,11 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
       </button>
     })}
     {photos.map(item => <button key={item.id} type="button" className="point-materials__thumb" onClick={() => setPhotoViewer({ kind: 'saved', item })} aria-label="Открыть фото на весь экран">
-      <CachedImage identityId={identityId} src={`${path}/${encodeURIComponent(item.id)}/content`} width={item.width ?? 240} height={item.height ?? 240} alt="" loading="lazy" />
+      <CachedImage identityId={identityId} persistViewedMedia revision={item.createdAt} src={`${path}/${encodeURIComponent(item.id)}/content`} width={item.width ?? 240} height={item.height ?? 240} alt="" loading="lazy" />
     </button>)}
   </div> : null
   const viewer = photoViewer && !denied ? <FullscreenPhoto createdAt={photoViewer.kind === 'saved' ? photoViewer.item.createdAt : photoViewer.preview.createdAt} onClose={() => setPhotoViewer(null)}>
-    {photoViewer.kind === 'saved' ? <CachedImage identityId={identityId} src={`${path}/${encodeURIComponent(photoViewer.item.id)}/content`} width={photoViewer.item.width ?? 1280} height={photoViewer.item.height ?? 960} alt={photoViewer.item.body || 'Фото точки'} draggable={false} />
+    {photoViewer.kind === 'saved' ? <CachedImage identityId={identityId} persistViewedMedia revision={photoViewer.item.createdAt} src={`${path}/${encodeURIComponent(photoViewer.item.id)}/content`} width={photoViewer.item.width ?? 1280} height={photoViewer.item.height ?? 960} alt={photoViewer.item.body || 'Фото точки'} draggable={false} />
       : <img src={photoViewer.preview.url} alt="Выбранное фото" draggable={false} />}
   </FullscreenPhoto> : null
   const composer = compact && mayWrite && <div id={composerId} className="point-materials__compose" hidden={!composerOpen}>
@@ -247,8 +206,8 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
     </section>}
     {!loaded && !error && !comments.length && <p className="kb-muted">{navigator.onLine ? 'Загружаем материалы…' : 'Для загрузки материалов нужно соединение.'}</p>}
     {loaded && !denied && !mayWrite && (items.length > 0 || comments.length > 0 || visiblePhotoPreviews.length > 0) && <PointMaterialsHint />}
-    {cursor && <button type="button" disabled={loading} onClick={() => void refresh(cursor)}>Показать предыдущие материалы</button>}
-    {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void refresh()}>Повторить</button></p>}
+    {cursor && <button type="button" disabled={loading || state.status !== 'ready'} onClick={() => void state.more()}>Показать предыдущие материалы</button>}
+    {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void state.refresh()}>Повторить</button></p>}
     {!compact && mayWrite && <div className="point-materials__compose">
       <label>Комментарий или подпись к фото<textarea maxLength={2000} rows={3} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
       <div><button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>

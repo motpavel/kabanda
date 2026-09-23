@@ -109,7 +109,7 @@ function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
         </details>}
       </div>
       {state.savedAt && !denied && <p className="kb-stale" key="saved">Сохранённая копия от {new Date(state.savedAt).toLocaleString('ru-RU')}.</p>}
-      {!denied && <CompletedRaidRoute key="route" identityId={identityId} raid={raid} operations={queue.rows} canAddMaterials={canAddMaterials} />}
+      {!denied && <CompletedRaidRoute key="route" identityId={identityId} raid={raid} operations={queue.rows} canAddMaterials={canAddMaterials} staleOnly={staleOnly} />}
       {!result && loading && <p className="kb-muted" role="status" key="loading">Загружаем статистику…</p>}
       {error && <div className="kb-error" role="alert" key="error"><p>{error}</p><button type="button" disabled={loading || !online || staleOnly} onClick={() => void retry()}>Повторить загрузку итогов</button></div>}
       {result && <section className="kb-card result-analytics" key="metrics"><ResultSectionHeading icon="analytics">Кабаналитика</ResultSectionHeading>
@@ -121,7 +121,7 @@ function ResultContent({ identityId, raid, staleOnly }: ResultProps) {
         <table className="result-people__table"><thead><tr><th scope="col">Участник</th><th scope="col">Точки</th><th scope="col">Фото</th></tr></thead>
           <tbody>{result.participants.map(participant => <tr key={participant.userId}><th scope="row">{participant.displayName}</th><td>{participant.metrics.uniquePoints}</td><td>{participant.metrics.photos}</td></tr>)}</tbody>
         </table></section>}
-      <CompletedRaidGallery key="gallery" identityId={identityId} raidId={raid.id} enabled={!denied && !staleOnly} refreshKey={queue.rows.filter(row => row.kind === 'photo' && row.status === 'accepted').map(row => row.operationId).join(':')} onAccessDenied={() => entry.deny()} />
+      <CompletedRaidGallery key="gallery" identityId={identityId} kabandaId={raid.kabandaId} raidId={raid.id} enabled={!denied} staleOnly={staleOnly} refreshKey={queue.rows.filter(row => row.kind === 'photo' && row.status === 'accepted').map(row => row.operationId).join(':')} onAccessDenied={() => entry.deny()} />
       {card && canUseResult && <section className="kb-card result-share" key="share"><img src={card.url} width="1080" height="1350" alt="Карточка с итогами рейда" /><div className="result-share__actions"><button className="result-share__button" type="button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Открываем меню…' : 'Поделиться карточкой'}</button>{shareMessage && <p className="kb-muted" role="status">{shareMessage}</p>}</div></section>}
       {cardError && canUseResult && <div className="kb-notice" role="status" key="share-error">Карточку для друзей не удалось подготовить. <button type="button" onClick={() => setCardRetry(value => value + 1)}>Повторить подготовку карточки</button></div>}
 

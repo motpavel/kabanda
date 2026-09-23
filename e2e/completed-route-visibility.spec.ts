@@ -134,6 +134,7 @@ test('completed map and list keep only green visits, including team-only, with c
   // Team-only remains a visible green stop, but no longer permits contributing.
   await expect(detail.getByRole('button', { name: 'Комментарий', exact: true })).toHaveCount(0)
   await expect(detail.locator('input[type=file]')).toHaveCount(0)
+  await detail.getByRole('button', { name: 'Когда можно добавить фото и комментарии' }).click()
   await expect(detail).toContainText('Фото и комментарии можно добавить после вашей подтверждённой отметки')
   await expect(detail.locator('.point-materials__item p')).toHaveText('Комментарий: С кабаном Максом посетили')
   await expect(page.getByText('Запланировать следующий рейд', { exact: true })).toHaveCount(0)

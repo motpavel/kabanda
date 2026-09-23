@@ -91,13 +91,28 @@ export const raidReadKey = (identityId: string, kabandaId: string, kind: string,
 export async function readSnapshot(identityId: string, key: string) {
   if ((await getActiveIdentityId()) !== identityId) return null
   const record = await raidReadDb.snapshots.get(key)
-  return record?.identityId === identityId && (await getActiveIdentityId()) === identityId ? record : null
+  if (!record || record.identityId !== identityId || (await getActiveIdentityId()) !== identityId) return null
+  if (isViewKey(key) && (!Number.isFinite(Date.parse(record.savedAt)) || Date.now() - Date.parse(record.savedAt) > VIEW_MAX_AGE)) return null
+  return record
 }
 
 export async function writeSnapshot(record: RaidReadRecord, current: () => boolean) {
   if ((await getActiveIdentityId()) !== record.identityId || !current()) return
   await raidReadDb.transaction('rw', raidReadDb.snapshots, async () => {
-    if (current()) await raidReadDb.snapshots.put(record)
+    if (!current()) return
+    await raidReadDb.snapshots.put(record)
+    if (isViewKey(record.key)) {
+      const records = (await raidReadDb.snapshots.toArray()).filter(row => isViewKey(row.key))
+        .sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt))
+      let bytes = 0
+      const remove: string[] = []
+      for (const [index, row] of records.entries()) {
+        const size = JSON.stringify(row.value).length * 2
+        if (index >= 150 || bytes + size > 8 * 1024 * 1024 || Date.now() - Date.parse(row.savedAt) > VIEW_MAX_AGE) remove.push(row.key)
+        else bytes += size
+      }
+      await raidReadDb.snapshots.bulkDelete(remove)
+    }
   })
 }
 
@@ -106,4 +121,9 @@ export async function readActionableRaidProjections(identityId: string, kabandaI
   const record = await readSnapshot(identityId, raidReadKey(identityId, kabandaId, 'actionable'))
   if (!record || !Array.isArray(record.value) || !record.value.every(isRaidProjection)) return null
   return record.value.map(raid => ({ raid, savedAt: record.savedAt }))
+}
+
+const VIEW_MAX_AGE = 14 * 24 * 60 * 60 * 1000
+function isViewKey(key: string) {
+  try { return ['raid-view', 'point-history'].includes(JSON.parse(key)[2]) } catch { return false }
 }
