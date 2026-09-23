@@ -116,6 +116,27 @@ declare global {
 
 let runtimePromise: Promise<YandexMapsRuntime> | null = null
 
+/** Warm only the shared SDK, never create a hidden map or request location.
+ * Yield to the first screen and respect mobile data-saving preferences. */
+export function scheduleYandexMapsWarmup(apiKey: string): () => void {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+  if (!apiKey.trim() || runtimePromise || connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? '')) return () => {}
+  let cancelled = false
+  let idle: number | undefined
+  const warm = () => {
+    if (!cancelled && document.visibilityState === 'visible' && navigator.onLine !== false) void loadYandexMaps(apiKey).catch(() => {})
+  }
+  const timer = window.setTimeout(() => {
+    if (typeof window.requestIdleCallback === 'function') idle = window.requestIdleCallback(warm, { timeout: 3000 })
+    else warm()
+  }, 1500)
+  return () => {
+    cancelled = true
+    window.clearTimeout(timer)
+    if (idle !== undefined) window.cancelIdleCallback(idle)
+  }
+}
+
 export function yandexMapsApiUrl(apiKey: string) {
   const url = new URL('https://api-maps.yandex.ru/2.1/')
   url.searchParams.set('apikey', apiKey.trim())
@@ -128,16 +149,15 @@ export function loadYandexMaps(apiKey: string) {
   if (!key) return Promise.reject(new Error('Yandex Maps API key is not configured'))
   if (runtimePromise) return runtimePromise
 
-  runtimePromise = new Promise<YandexMapsRuntime>((resolve, reject) => {
+  const pending = new Promise<YandexMapsRuntime>((resolve, reject) => {
     const finish = () => {
       const runtime = window.ymaps
       if (!runtime) {
-        runtimePromise = null
+        document.querySelector<HTMLScriptElement>('script[data-kabanda-yandex-maps]')?.remove()
         reject(new Error('Yandex Maps API did not initialize'))
         return
       }
       runtime.ready(() => resolve(runtime), (error) => {
-        runtimePromise = null
         reject(error)
       })
     }
@@ -151,7 +171,7 @@ export function loadYandexMaps(apiKey: string) {
     if (existing) {
       existing.addEventListener('load', finish, { once: true })
       existing.addEventListener('error', () => {
-        runtimePromise = null
+        existing.remove()
         reject(new Error('Failed to load Yandex Maps API'))
       }, { once: true })
       return
@@ -163,12 +183,15 @@ export function loadYandexMaps(apiKey: string) {
     script.async = true
     script.addEventListener('load', finish, { once: true })
     script.addEventListener('error', () => {
-      runtimePromise = null
       script.remove()
       reject(new Error('Failed to load Yandex Maps API'))
     }, { once: true })
     document.head.append(script)
   })
 
-  return runtimePromise
+  runtimePromise = pending
+  // Also recover from a synchronous ready() failure during background warmup.
+  // Reset after assignment so opening the map can make another attempt.
+  void pending.catch(() => { if (runtimePromise === pending) runtimePromise = null })
+  return pending
 }

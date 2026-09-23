@@ -41,6 +41,11 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
   return location ? [location.latitude, location.longitude] : null
 }
 
+export function initialRaidMapView(points: readonly Pick<RouteTrackPoint, 'latitude' | 'longitude'>[], location: OneShotCoordinate | null, completed: boolean, viewport?: { width: number; height: number }) {
+  if (!completed && location) return { center: [location.latitude, location.longitude] as const, zoom: 15, source: 'location' as const }
+  return { ...routeTrackView(points, viewport), source: points.length ? 'overview' as const : 'default' as const }
+}
+
 export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSampleAt = null, planned = false,
   completed = false, savedSnapshot, snapshotDenied = false, snapshotVerified = false, localRoutePreview = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
 }: {
@@ -81,6 +86,15 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   // A heartbeat changes serverAt, not geometry. Do not resmooth the entire
   // recorded route while the user is panning an unchanged map.
   const geometryTrack = useMemo(() => track, [track?.segments, track?.startPoint, track?.endPoint, track?.truncated])
+  const initialGeometry = useMemo(() => {
+    if (completed) return completedRouteBoundsPoints(geometryTrack, points)
+    const recorded = geometryTrack ? [...geometryTrack.segments.flat(), ...trackEndpoints(geometryTrack, false).map(endpoint => endpoint.point)] : []
+    return recorded.length ? recorded : points
+  }, [completed, geometryTrack, points])
+  // Data/GPS may arrive while the SDK is loading. Read the latest values once
+  // it is ready instead of first requesting tiles for the default city view.
+  const initialData = useRef({ points: initialGeometry, location, completed })
+  initialData.current = { points: initialGeometry, location, completed }
 
   useEffect(() => {
     firstView.current = false; firstLocation.current = false; flock.current.reset(); viewerCoordinate.current = null
@@ -104,7 +118,11 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     void loadYandexMaps(import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? '').then(runtime => {
       if (!active) return
       runtimeRef.current = runtime
-      mapRef.current = new runtime.Map(container, { center: IZHEVSK_CENTER, zoom: 12, controls: [],
+      const data = initialData.current
+      const view = initialRaidMapView(data.points, data.location, data.completed, data.completed ? container.getBoundingClientRect() : undefined)
+      firstView.current = view.source !== 'default'
+      firstLocation.current = view.source === 'location'
+      mapRef.current = new runtime.Map(container, { center: view.center, zoom: view.zoom, controls: [],
         behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, { suppressMapOpenBlock: true })
       camera.current = new MapCamera(mapRef.current, () => matchMedia('(prefers-reduced-motion: reduce)').matches)
       pointMarkers.current = new MapMarkers(mapRef.current, runtime,
