@@ -17,6 +17,7 @@ describe('point sheet keyboard viewport', () => {
   })
   it('recovers after keyboard dismissal and does not treat page pinch as a keyboard', () => {
     expect(pointSheetViewport(844, { height: 844, offsetTop: 0, scale: 1 })).toEqual({ top: 0, height: 844, maxSheetHeight: 460 })
+    expect(pointSheetViewport(844, { height: 844, offsetTop: 90, scale: 1 })).toEqual(pointSheetViewport(844))
     expect(pointSheetViewport(844, { height: 422, offsetTop: 100, scale: 2 })).toEqual(pointSheetViewport(844))
   })
 })
