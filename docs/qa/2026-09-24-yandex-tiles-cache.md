@@ -38,3 +38,9 @@ Before release, validate the real key, browser CORS access, Yandex SDK custom-la
 The replacement key now returns HTTP 200, image/png and Access-Control-Allow-Origin: *. A local harness using the actual Yandex JS SDK, actual cache adapter and real Tiles API passed in mobile Chromium and iPhone-profile WebKit: the custom layer rendered, the marker and center were retained, a 512 px tile was decoded from cache, and the same tile remained a cache hit after page reload. Yandex attribution was visible in the WebKit screenshot. This supersedes the missing-key/CORS uncertainty above, but does not establish physical-device offline behavior or production integration.
 
 The working key is stored outside the repository. Publication was not performed: both the direct deployment SSH connection and the configured jump-host connection closed before authentication. Production remains unchanged.
+
+## Publication completed
+
+SSH access recovered on the next retry. After fresh read-only verification of the exact bucket and public-access settings in the authenticated cloud console, release `09b9ec90a5b39594c87f3776bc3a049e2f771fe7` was published to `https://kabanda.website.yandexcloud.net/app` with the working Tiles key. All 73 public objects matched the local build byte-for-byte (directory aliases were verified through the storage endpoint).
+
+Production checks in mobile Chromium and iPhone-profile WebKit both decoded a real 512 px tile: the first request was HTTP 200 / cache miss and the second HTTP 200 / cache hit. The server build configuration and private local public-build configuration retain the key for subsequent releases; no credential was committed. Rollback snapshot: `/var/backups/kabanda/kabanda-tiles-09b9ec9/static/kabanda-static-m1hzujxm.json`. The earlier SSH publication blocker is resolved.
