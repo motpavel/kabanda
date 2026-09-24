@@ -1,4 +1,5 @@
 import type { YandexMap, YandexMapsRuntime } from '../yandex-maps'
+import { DecodedTiles } from './decoded-tiles'
 import { nearbyTiles, tileAt, tilePath } from './coordinates'
 
 function workerAvailable(): Promise<boolean> {
@@ -17,6 +18,8 @@ function workerAvailable(): Promise<boolean> {
  * real, readable API image has passed through the installed cache worker. */
 export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime, container: HTMLElement): () => void {
   if (typeof __YANDEX_TILES_ENABLED__ === 'undefined' || !__YANDEX_TILES_ENABLED__ || !('serviceWorker' in navigator) || !map.setType || !runtime.Layer || !runtime.MapType || !runtime.vow) return () => {}
+  const decoded = new DecodedTiles()
+  const requested = new Set<string>()
   const mapId = crypto.randomUUID()
   const base = import.meta.env.BASE_URL
   const scale = window.devicePixelRatio > 1 ? 2 : 1
@@ -29,13 +32,14 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
   const fallback = () => {
     retryAfter = Date.now() + 60_000
     stopWarmup()
+    decoded.clear(); requested.clear()
     if (!enabled || disposed) return
     enabled = false
     void Promise.resolve(map.setType!('yandex#map')).catch(() => {})
   }
   const schedule = () => {
     stopWarmup()
-    if (!visible()) return
+    if (!visible()) { decoded.clear(); return }
     if (!enabled) { void enable(); return }
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
     if (!navigator.onLine || connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType ?? '')) return
@@ -45,12 +49,15 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
       const rect = container.getBoundingClientRect()
       const tiles = nearbyTiles(map.getCenter(), map.getZoom(), rect.width, rect.height)
       void (async () => {
-        for (const tile of tiles) {
+        // Prepare recently displayed fragments first, then the small edge
+        // reserve. The current SDK frame is never invalidated or repainted.
+        const paths = [...requested].slice(-16)
+        requested.clear()
+        paths.push(...tiles.slice(0, 4).map(tile => tilePath(tile, scale, mapId, base)))
+        for (const path of new Set(paths)) {
           if (controller.signal.aborted || !visible()) return
           try {
-            const response = await fetch(`${tilePath(tile, scale, mapId, base)}&warm=1`, { signal: controller.signal, cache: 'no-store' })
-            if (!response.ok) return
-            await response.arrayBuffer()
+            await decoded.prepare(path, controller.signal)
           } catch { return }
         }
       })()
@@ -70,7 +77,12 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
         await response.arrayBuffer()
       } finally { clearTimeout(timeout) }
       if (!visible()) return
-      const layer = new Layer((number, zoom) => tilePath({ x: number[0], y: number[1], z: zoom }, scale, mapId, base), { tileSize: [256, 256] })
+      const layer = new Layer((number, zoom) => {
+        const path = tilePath({ x: number[0], y: number[1], z: zoom }, scale, mapId, base)
+        requested.delete(path); requested.add(path)
+        if (requested.size > 32) requested.delete(requested.values().next().value!)
+        return decoded.url(path)
+      }, { tileSize: [256, 256] })
       layer.getCopyrights = () => vow.resolve('<a href="https://yandex.ru/maps/" target="_blank" rel="noopener">© Яндекс</a>')
       layer.getZoomRange = () => vow.resolve([0, 20])
       const type = new MapType('Яндекс', [function () { return layer }])
@@ -94,7 +106,7 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
   document.addEventListener('visibilitychange', schedule)
   schedule()
   return () => {
-    disposed = true; stopWarmup(); probe?.abort(); resize.disconnect()
+    disposed = true; stopWarmup(); decoded.dispose(); requested.clear(); probe?.abort(); resize.disconnect()
     map.events.remove?.('boundschange', schedule)
     navigator.serviceWorker.removeEventListener('message', message)
     navigator.serviceWorker.removeEventListener('controllerchange', controllerChanged)

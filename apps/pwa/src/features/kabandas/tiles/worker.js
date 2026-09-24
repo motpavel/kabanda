@@ -81,7 +81,7 @@
             const size = meta.get('bytes');
             size.onsuccess = () => meta.put(Math.max(0, (size.result || 0) - value.bytes), 'bytes');
           } else {
-            result = value.body;
+            result = value;
             tiles.put({ ...value, used: Date.now() });
           }
         };
@@ -206,7 +206,7 @@
 
   async function respond(event, tile, url) {
     const hit = await cached(tile.key);
-    if (hit) return new Response(hit, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'hit' } });
+    if (hit) return new Response(hit.body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'hit', 'X-Kabanda-Tile-Expires': String(hit.created + TTL) } });
     try {
       const background = url.searchParams.get('warm') === '1';
       let entry = inflight.get(tile.key);
@@ -221,7 +221,7 @@
         void entry.promise.finally(() => inflight.delete(tile.key)).catch(() => {});
       } else if (!background) entry.foreground = true;
       const body = await entry.promise;
-      return new Response(body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'miss' } });
+      return new Response(body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'miss', 'X-Kabanda-Tile-Expires': String(Date.now() + TTL) } });
     } catch {
       const mapId = url.searchParams.get('map');
       if (mapId && url.searchParams.get('warm') !== '1') {
