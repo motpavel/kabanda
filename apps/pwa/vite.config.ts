@@ -140,6 +140,10 @@ export default defineConfig(({ mode }) => {
         ]
       },
       workbox: {
+        // Attach the first installed worker to the already-open page so map
+        // caching starts without a second launch. Updates still wait for the
+        // recording-aware gate to send SKIP_WAITING.
+        clientsClaim: true,
         globPatterns: ['**/*.{js,wasm,css,html,woff2}'],
         manifestTransforms: [async (entries) => ({
           manifest: entries.filter(({ url }) => {
