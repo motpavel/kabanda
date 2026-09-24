@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VisitHistoryWindow } from '../results/view-resources'
-import { PointVisitHistory, RaidPointVisitHistory } from './PointVisitHistory'
+import { PointVisitHistory } from './PointVisitHistory'
 
 const resourceState = vi.hoisted(() => ({ current: {
   data: null as VisitHistoryWindow | null,
@@ -20,7 +20,7 @@ describe('known point visit presentation', () => {
   it('immediately shows the known raid status while all-time history is still loading', () => {
     const html = renderToStaticMarkup(<PointVisitHistory {...props} currentRaidId="raid" knownVisit={unvisited} />)
     expect(html).toContain('В этом рейде кабанда здесь ещё не была.')
-    expect(html).toContain('Уточняем историю…')
+    expect(html).not.toContain('Уточняем историю…')
     expect(html).not.toContain('point-visit-history__loading')
     expect(html).not.toContain('Ваша кабанда здесь ещё не была.')
   })
@@ -67,8 +67,8 @@ describe('known point visit presentation', () => {
     resourceState.current.data = { personalCount: 0, visitors: [], entries: [], nextOffset: null, nextCursor: null, pageCount: 1 }
     resourceState.current.status = 'ready'
     const html = renderToStaticMarkup(<PointVisitHistory {...props} currentRaidId="raid" knownVisit={unvisited} />)
-    expect(html).toContain('Ваша кабанда здесь ещё не была.')
-    expect(html).not.toContain('В этом рейде')
+    expect(html).toContain('В этом рейде кабанда здесь ещё не была.')
+    expect(html).not.toContain('Ваша кабанда здесь ещё не была.')
   })
 
   it('keeps a new confirmed visit visible while cached empty history is revalidated', () => {
@@ -77,19 +77,21 @@ describe('known point visit presentation', () => {
     resourceState.current.refreshing = true
     const html = renderToStaticMarkup(<PointVisitHistory {...props} currentRaidId="raid" knownVisit={{ visitedByMe: true, visitedByTeam: true }} />)
     expect(html).toContain('Вы уже отмечены здесь в этом рейде.')
-    expect(html).toContain('Уточняем историю…')
+    expect(html).not.toContain('Уточняем историю…')
     expect(html).not.toContain('здесь ещё не была')
   })
 })
 
 
 describe('quiet map summaries', () => {
-  it('renders the raid projection without mounting or fetching all-time history', () => {
-    const html = renderToStaticMarkup(<RaidPointVisitHistory {...props} currentRaidId="raid" knownVisit={unvisited} />)
-    expect(html).toContain('В этом рейде кабанда здесь ещё не была.')
-    expect(html).not.toContain('Уточняем историю')
-    expect(html).not.toContain('point-visit-history__loading')
-    expect(html).toContain('<summary>История посещений</summary>')
+  it('shows visitor counts directly without an extra disclosure', () => {
+    resourceState.current.data = { personalCount: 2, visitors: [{ userId: 'me', displayName: 'Павел', count: 2 }],
+      entries: [], nextOffset: null, nextCursor: null, pageCount: 1 }
+    resourceState.current.status = 'ready'
+    const html = renderToStaticMarkup(<PointVisitHistory {...props} currentRaidId="raid" knownVisit={unvisited} showHeading={false} />)
+    expect(html).toContain('2 раза')
+    expect(html).not.toContain('<summary>История посещений</summary>')
+    expect(html).not.toContain('здесь ещё не была')
   })
   it('uses an explicit all-time zero projection immediately, without a loader', () => {
     const html = renderToStaticMarkup(<PointVisitHistory {...props} knownUnvisited />)

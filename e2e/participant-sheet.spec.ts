@@ -74,8 +74,9 @@ test('participant notification opens read-only attendance and comment without lo
  await expect(sheet.getByRole('button',{name:'Сохранить',exact:true})).toBeInViewport();
  await expect(sheet.locator('.raid-arrival-sheet__collapse')).toBeInViewport();
  await sheet.getByRole('textbox',{name:'Комментарий',exact:true}).blur();
- await sheet.getByText('История посещений',{exact:true}).click();
- await expect(sheet.getByText('2 раза',{exact:true})).toBeVisible();
+ await expect(sheet.getByText('2 раза',{exact:true}).first()).toBeVisible();
+ await sheet.locator('.point-visit-history__person').first().click();
+ await expect(sheet.locator('.point-visit-history__person').first()).toHaveAttribute('aria-expanded','true');
  await page.setViewportSize({width:390,height:844});
  await page.screenshot({animations:'disabled',path:'output/playwright/participant-history.png'});
  await sheet.getByRole('button',{name:'Свернуть точку'}).click();
@@ -223,8 +224,9 @@ test('team-only visit does not expose photo or comment actions, even though hist
   await expect(sheet.locator('input[type=file]')).toHaveCount(0)
   await expect(sheet.getByRole('button', { name: /Пометить/ })).toHaveCount(0)
   await expect(page.locator('.visit-toast')).toHaveCount(0)
-  await sheet.getByText('История посещений', { exact: true }).click()
-  await expect(sheet.getByText('3 раза', { exact: true })).toBeVisible()
+  await expect(sheet.locator('.point-visit-history__person')).toHaveCount(1)
+  await sheet.locator('.point-visit-history__person').first().click()
+  await expect(sheet.locator('.point-visit-history__person').first()).toHaveAttribute('aria-expanded','true')
   await page.screenshot({ path: info.outputPath('unvisited-read-only.png'), animations: 'disabled' })
 })
 
@@ -258,16 +260,16 @@ test('a refused queued comment keeps its actual text without a false success mes
 })
 
 
-test('raid summary stays stable and history is fetched only on expansion', async ({page}) => {
+test('raid visit counts appear directly without a second history disclosure', async ({page}) => {
  await page.emulateMedia({ reducedMotion: 'reduce' });
  const controls = await prepare(page, true, true, true);
  await page.getByRole('button', {name: /^Лесное озеро\./}).click();
  const sheet = page.locator('.point-info-sheet');
- await expect(sheet.getByText('В этом рейде кабанда здесь ещё не была.', {exact:true})).toBeVisible();
  await expect(sheet.getByText('Загружаем материалы…', {exact:true})).toHaveCount(0);
- await expect(sheet.locator('.point-visit-history__loading')).toHaveCount(0);
- expect(controls.historyRequests()).toBe(0);
- await sheet.getByText('История посещений', {exact:true}).click();
+ await expect(sheet.locator('details.point-visit-history__all-raids')).toHaveCount(0);
  await expect(sheet.locator('.point-visit-history__person')).toHaveCount(2);
- expect(controls.historyRequests()).toBe(1);
+ await expect(sheet.getByText('В этом рейде кабанда здесь ещё не была.', {exact:true})).toHaveCount(0);
+ expect(controls.historyRequests()).toBeGreaterThanOrEqual(1);
+ await sheet.locator('.point-visit-history__person').first().click();
+ await expect(sheet.locator('.point-visit-history__person').first()).toHaveAttribute('aria-expanded','true');
 });

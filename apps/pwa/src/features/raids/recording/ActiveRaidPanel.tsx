@@ -6,7 +6,7 @@ import { PointInfoSheet } from '../../checkins/PointInfoSheet'
 import { ParticipantVisit } from '../../checkins/ParticipantVisit'
 import { NavigatorVisitNotice } from '../../checkins/NavigatorVisitNotice'
 import { newPersonalVisit } from '../../checkins/visit-notifications'
-import { RaidPointVisitHistory } from '../../checkins/PointVisitHistory'
+import { PointVisitHistory } from '../../checkins/PointVisitHistory'
 import { PointMaterialsPanel } from '../../checkins/PointMaterialsPanel'
 import { TeamVisitPanel } from '../../checkins/TeamVisitPanel'
 import { selectActivePrimaryAction } from './state'
@@ -24,6 +24,7 @@ import { destinationKey, selectArrivalPoint } from './destination'
 import { retainStop, type StopContext, type StopPoint } from './stop-context'
 import { useLiveRaid } from '../use-live-raid'
 import { useFieldQueue } from '../use-field-queue'
+import { useNearbyPointHistory } from '../../results/useNearbyPointHistory'
 import { invalidatePointHistory } from '../resources'
 import { changedPointVisits, type PointVisitBaseline } from './point-history-changes'
 
@@ -92,6 +93,13 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const fieldHistoryPoint = historyPoint ? field.data?.points?.find(point => point.id === historyPoint.id) : undefined
   const latestHistoryPoint = fieldHistoryPoint ?? historyPoint
   const inspectedPoint = historyOpen ? latestHistoryPoint : null
+  const historyCandidates = useMemo(() => (field.data?.points ?? []).map(point => ({
+    id: point.sourcePointId, latitude: point.latitude, longitude: point.longitude,
+  })), [field.data?.points])
+  useNearbyPointHistory({ identityId, kabandaId: raid.kabandaId, points: historyCandidates,
+    anchor: proximity.coordinate, priorityPointId: inspectedPoint?.sourcePointId ?? destination?.sourcePointId,
+    active: !field.denied && !field.error && !staleProjection && field.data != null })
+
 
   useEffect(() => {
     const next = field.data?.raid
@@ -330,7 +338,7 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       {latestHistoryPoint && <>
         {!viewerIsNavigator && <ParticipantVisit identityId={identityId} raid={raid} point={latestHistoryPoint} />}
 
-        <RaidPointVisitHistory key={`${identityId}:${latestHistoryPoint.sourcePointId}:${latestHistoryPoint.lastAttemptId ?? inspectedVisited}`} identityId={identityId} kabandaId={raid.kabandaId}
+        <PointVisitHistory key={`${identityId}:${latestHistoryPoint.sourcePointId}:${latestHistoryPoint.lastAttemptId ?? inspectedVisited}`} identityId={identityId} kabandaId={raid.kabandaId}
             pointId={latestHistoryPoint.sourcePointId} currentRaidId={raid.id} showHeading={false} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen}
             knownVisit={viewerIsNavigator && !field.denied ? { visitedByMe: latestHistoryPoint.visitedByMe, visitedByTeam: latestHistoryPoint.visitedByTeam,
               stale: staleProjection || !!field.error || !navigator.onLine || !field.receivedAt || now - field.receivedAt > 15_000 } : undefined} />
