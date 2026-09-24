@@ -32,3 +32,9 @@ Before release, validate the real key, browser CORS access, Yandex SDK custom-la
 - https://yandex.ru/maps-api/docs/tiles-api/request.html
 - https://yandex.ru/maps-api/docs/tiles-api/quickstart.html
 - https://yandex.ru/legal/maps_api/ru — temporary storage conditions must remain applicable; the configured seven-day TTL is below the stated 30-day ceiling, not permission for unrestricted bulk downloading.
+
+## Live API follow-up, 24 September
+
+The replacement key now returns HTTP 200, image/png and Access-Control-Allow-Origin: *. A local harness using the actual Yandex JS SDK, actual cache adapter and real Tiles API passed in mobile Chromium and iPhone-profile WebKit: the custom layer rendered, the marker and center were retained, a 512 px tile was decoded from cache, and the same tile remained a cache hit after page reload. Yandex attribution was visible in the WebKit screenshot. This supersedes the missing-key/CORS uncertainty above, but does not establish physical-device offline behavior or production integration.
+
+The working key is stored outside the repository. Publication was not performed: both the direct deployment SSH connection and the configured jump-host connection closed before authentication. Production remains unchanged.
