@@ -18,7 +18,7 @@ function worker(fetcher = vi.fn(async (_url: unknown, _options?: unknown) => ima
     addEventListener: (type: string, handler: (event: any) => void) => listeners.set(type, handler),
     clients: { get: async () => ({ postMessage: (message: unknown) => messages.push(message) }) },
   }
-  runInNewContext(source, { self: scope, indexedDB: idb, IDBKeyRange, fetch: fetcher, URL, Response, Blob, Uint8Array, AbortController, setTimeout, clearTimeout, Date, Promise })
+  runInNewContext(source, { self: scope, indexedDB: idb, IDBKeyRange, fetch: fetcher, URL, Response, Blob, Uint8Array, AbortController, setTimeout, clearTimeout, Date, Promise, performance })
   const get = (path = tile, method = 'GET') => {
     let response: Promise<Response> | undefined
     listeners.get('fetch')?.({ request: new Request(new URL(path, origin), { method }), clientId: 'client', respondWith: (value: Promise<Response>) => { response = value } })
