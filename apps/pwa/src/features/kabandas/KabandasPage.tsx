@@ -596,8 +596,7 @@ function KabandaWorkspace({
           )}
           <PointInfoSheet open={mapActive && Boolean(selectedPoint)} onClose={() => setSelectedPointId(null)} title={selectedPoint?.name ?? ''}>
             {selectedPoint?.hours && <p className="kb-point-hours"><span>Часы работы</span><strong>{selectedPoint.hours}</strong></p>}
-            {selectedPoint && mapVisitState(selectedPoint) !== 'unvisited' && <p className="kb-point-visit-state" data-visit-state={mapVisitState(selectedPoint)}>{visitStateLabel(mapVisitState(selectedPoint))}</p>}
-            {mapActive && selectedHistoryId && <PointVisitHistory compactLoading key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}
+            {mapActive && selectedHistoryId && <PointVisitHistory compactLoading knownUnvisited={Boolean(selectedPoint && mapVisitState(selectedPoint) === 'unvisited')} key={`${user.id}:${kabanda.id}:${selectedHistoryId}`} identityId={user.id} kabandaId={kabanda.id} pointId={selectedHistoryId} onOpenRaid={() => undefined} />}
           </PointInfoSheet>
         </div>
       </section>

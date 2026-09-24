@@ -52,15 +52,29 @@ function ParticipantVisits({ identityId, kabandaId, pointId, userId, active, cur
   </div>
 }
 
-export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, knownVisit, compactLoading = false, active = true, showHeading = true, onOpenRaid }: {
+/** Current-raid projection is authoritative for this raid, never for all-time visits.
+ * Fetch the latter only when the user explicitly opens it. */
+export function RaidPointVisitHistory(props: Parameters<typeof PointVisitHistory>[0]) {
+  const [expanded, setExpanded] = useState(false)
+  return <section className="point-history-section" aria-label="Посещение точки">
+    {props.knownVisit && <KnownRaidVisit visit={props.knownVisit} />}
+    <details className="point-visit-history__all-raids" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+      <summary>История посещений</summary>
+      {expanded && <PointVisitHistory {...props} knownVisit={undefined} showHeading={false} />}
+    </details>
+  </section>
+}
+
+export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidId, knownVisit, knownUnvisited = false, compactLoading = false, active = true, showHeading = true, onOpenRaid }: {
   kabandaId: string; pointId: string; identityId: string; currentRaidId?: string; knownVisit?: KnownRaidPointVisit
-  compactLoading?: boolean; active?: boolean; showHeading?: boolean; onOpenRaid?: () => void
+  knownUnvisited?: boolean; compactLoading?: boolean; active?: boolean; showHeading?: boolean; onOpenRaid?: () => void
 }) {
   const entry = useMemo(() => visitHistoryResource(identityId, kabandaId, pointId), [identityId, kabandaId, pointId])
   const state = useRaidResource(entry, active, null, COMPLETED_REFRESH_MS)
   const history = state.data
   const error = state.message
   const busy = state.status === 'loading'
+  const showKnownEmpty = knownUnvisited && !currentRaidId && state.status !== 'access-error' && !history
   const summary = currentRaidId && state.status !== 'access-error' ? knownVisit : undefined
   const [openedIds, setOpenedIds] = useState<Set<string>>(() => new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -79,11 +93,11 @@ export function PointVisitHistory({ kabandaId, pointId, identityId, currentRaidI
   return <section className="point-visit-history point-history-section" aria-label="История посещений точки">
     {showHeading && <header><h3>История посещений</h3></header>}
     {showKnownVisit && summary && <KnownRaidVisit visit={summary} />}
-    {busy && !history && ((summary || compactLoading)
+    {busy && !history && !showKnownEmpty && ((summary || compactLoading)
       ? <p className="point-visit-history__pending" role="status">Уточняем историю…</p> : <LoadingHistory />)}
     {showKnownVisit && history && state.refreshing && <p className="point-visit-history__pending" role="status">Уточняем историю…</p>}
     {error && <p role="alert">Не удалось загрузить историю. <button type="button" onClick={() => void state.refresh()}>Повторить</button></p>}
-    {history && !visitors.length && !showKnownVisit && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
+    {(showKnownEmpty || (history && !visitors.length && !showKnownVisit)) && <div className="point-visit-history__empty"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg><p>Ваша кабанда здесь ещё не была. <PointMaterialsHint /></p></div>}
     <ul className="point-visit-history__people">{visitors.map((visitor) => {
       const expanded = expandedId === visitor.userId
       const detailId = `point-visits-${pointId}-${visitor.userId}`

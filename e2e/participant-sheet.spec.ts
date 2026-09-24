@@ -7,6 +7,7 @@ import { installYandexMapsMock } from './support.js'
 // real SW/auth/offline recovery remains covered by its separate existing suites.
 test.use({ serviceWorkers: 'block' })
 async function prepare(page: Page, navigatorView = false, includeViewer = true) {
+ let historyRequests = 0;
  let attempt: string | null = null; let visitedAt: string | null = null;
  const context = page.context();
  await installYandexMapsMock(context);
@@ -26,6 +27,7 @@ async function prepare(page: Page, navigatorView = false, includeViewer = true) 
  const raid={id:raidId,kabandaId:teamId,title:'Лесной маршрут',state:'active',version:3,scheduledAt:null,description:null,organizerUserId:ids[0],navigatorUserId:ids[0],navigatorReady:true,navigatorBlockers:[],navigatorWarnings:[],navigatorLease:null,finalization:null,participants:members,allowedActions:[],routeStatus:{status:'awaiting_lease',acceptedSampleCount:0,missingSequenceCount:0,lastSampleAt:null,lastReceivedAt:null}};
  await page.route('**/api/**',async route=>{
  const path=route.request().url().replace(/^https?:\/\/[^/]+/, '').split('?')[0],now=new Date().toISOString();
+ if(path.endsWith('/history')) historyRequests++;
  if(path.includes('/route/lease/'))return route.fulfill({status:409,json:{error:{code:'NAVIGATOR_LEASE_HELD',message:'Synthetic device'}}});
  const point={id:pointId,sourcePointId:pointId,name:'Лесное озеро',latitude:56.86012,longitude:53.21,position:0,visitedByMe:Boolean(attempt)&&includeViewer,visitedByTeam:Boolean(attempt),lastAttemptId:attempt,myLastVisitAttemptId:includeViewer?attempt:null,lastVisitedAt:visitedAt,repeatAvailableAt:visitedAt ? new Date(Date.parse(visitedAt)+300000).toISOString():null,lastVisitParticipantIds:attempt?ids.slice(0,3).filter(id=>includeViewer||id!==viewerId):[]};
  const body=path==='/api/me'?{user:{id:viewerId,displayName:navigatorView?'Павел':'Илья',username:'pavel',email:'pavel@example.test',identityKind:'verified',avatarUrl:null}}
@@ -45,7 +47,7 @@ async function prepare(page: Page, navigatorView = false, includeViewer = true) 
  await page.goto(`/app?raid=${raidId}`);
  await expect(page.locator('.raid-active-map')).toBeVisible();
  await page.waitForResponse(response => response.url().includes('/live'));
- return { raidId, pointId, viewerId, mark: (id: string) => { attempt=id; visitedAt=new Date().toISOString() } };
+ return { raidId, pointId, viewerId, historyRequests: () => historyRequests, mark: (id: string) => { attempt=id; visitedAt=new Date().toISOString() } };
 }
 
 test('participant notification opens read-only attendance and comment without losing sheet chrome', async ({page}) => {
@@ -67,10 +69,11 @@ test('participant notification opens read-only attendance and comment without lo
  await expect(sheet.locator('.raid-arrival-sheet__collapse')).toBeInViewport();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.screenshot({animations:'disabled',path:'output/playwright/participant-comment-320.png'});
- await sheet.getByRole('button',{name:'Добавить комментарий',exact:true}).scrollIntoViewIfNeeded();
- await expect(sheet.getByRole('button',{name:'Добавить комментарий',exact:true})).toBeInViewport();
+ await expect(sheet.getByRole('button',{name:'Добавить комментарий',exact:true})).toHaveCount(0);
+ await expect(sheet.locator('.raid-arrival-sheet__footer').getByRole('button',{name:'Сохранить',exact:true})).toBeVisible();
+ await expect(sheet.getByRole('button',{name:'Сохранить',exact:true})).toBeInViewport();
  await expect(sheet.locator('.raid-arrival-sheet__collapse')).toBeInViewport();
- await sheet.getByRole('button',{name:'Комментарий',exact:true}).click();
+ await sheet.getByRole('textbox',{name:'Комментарий',exact:true}).blur();
  await sheet.getByText('История посещений',{exact:true}).click();
  await expect(sheet.getByText('2 раза',{exact:true})).toBeVisible();
  await page.setViewportSize({width:390,height:844});
@@ -178,7 +181,7 @@ test('comment text appears immediately without disclosure or saved notice and su
     const sheet = page.locator('.point-info-sheet')
     await sheet.getByRole('button', { name: 'Комментарий', exact: true }).click()
     await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).fill(body)
-    await sheet.getByRole('button', { name: 'Добавить комментарий', exact: true }).click()
+    await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click()
     await expect.poll(() => started).toBe(true)
     const comments = sheet.getByRole('region', { name: 'Комментарии точки', exact: true })
     await expect(comments).toBeVisible()
@@ -241,7 +244,7 @@ test('a refused queued comment keeps its actual text without a false success mes
   const sheet = page.locator('.point-info-sheet')
   await sheet.getByRole('button', { name: 'Комментарий', exact: true }).click()
   await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Мой текст не должен исчезнуть')
-  await sheet.getByRole('button', { name: 'Добавить комментарий', exact: true }).click()
+  await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click()
   const row = sheet.locator('.point-materials__item')
   await expect(row).toHaveAttribute('data-comment-state', 'rejected')
   await expect(row.locator('p')).toHaveText('Комментарий: Мой текст не должен исчезнуть')
@@ -253,3 +256,17 @@ test('a refused queued comment keeps its actual text without a false success mes
   await expect(page.locator('.point-materials__item p')).toHaveText('Комментарий: Мой текст не должен исчезнуть')
   expect(posts).toBe(1)
 })
+
+
+test('raid summary stays stable and history is fetched only on expansion', async ({page}) => {
+ const controls = await prepare(page, true);
+ await page.getByRole('button', {name: /Лесное озеро/}).first().click();
+ const sheet = page.locator('.point-info-sheet');
+ await expect(sheet.getByText('В этом рейде кабанда здесь ещё не была.', {exact:true})).toBeVisible();
+ await expect(sheet.getByText('Загружаем материалы…', {exact:true})).toHaveCount(0);
+ await expect(sheet.locator('.point-visit-history__loading')).toHaveCount(0);
+ expect(controls.historyRequests()).toBe(0);
+ await sheet.getByText('История посещений', {exact:true}).click();
+ await expect(sheet.getByText('3 раза', {exact:true})).toBeVisible();
+ expect(controls.historyRequests()).toBe(1);
+});

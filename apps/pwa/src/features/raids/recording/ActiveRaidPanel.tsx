@@ -6,7 +6,7 @@ import { PointInfoSheet } from '../../checkins/PointInfoSheet'
 import { ParticipantVisit } from '../../checkins/ParticipantVisit'
 import { NavigatorVisitNotice } from '../../checkins/NavigatorVisitNotice'
 import { newPersonalVisit } from '../../checkins/visit-notifications'
-import { PointVisitHistory } from '../../checkins/PointVisitHistory'
+import { RaidPointVisitHistory } from '../../checkins/PointVisitHistory'
 import { PointMaterialsPanel } from '../../checkins/PointMaterialsPanel'
 import { TeamVisitPanel } from '../../checkins/TeamVisitPanel'
 import { selectActivePrimaryAction } from './state'
@@ -337,13 +337,10 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
       {latestHistoryPoint && <>
         {!viewerIsNavigator && <ParticipantVisit identityId={identityId} raid={raid} point={latestHistoryPoint} />}
 
-        <section className="point-history-section" aria-label="История посещений">
-          <h3>История посещений</h3>
-          <PointVisitHistory key={`${identityId}:${latestHistoryPoint.sourcePointId}:${latestHistoryPoint.lastAttemptId ?? inspectedVisited}`} identityId={identityId} kabandaId={raid.kabandaId}
+        <RaidPointVisitHistory key={`${identityId}:${latestHistoryPoint.sourcePointId}:${latestHistoryPoint.lastAttemptId ?? inspectedVisited}`} identityId={identityId} kabandaId={raid.kabandaId}
             pointId={latestHistoryPoint.sourcePointId} currentRaidId={raid.id} showHeading={false} onOpenRaid={() => setHistoryOpen(false)} active={historyOpen && !actionsOpen}
-            knownVisit={fieldHistoryPoint && !field.denied ? { visitedByMe: fieldHistoryPoint.visitedByMe, visitedByTeam: fieldHistoryPoint.visitedByTeam,
+            knownVisit={viewerIsNavigator && !field.denied ? { visitedByMe: latestHistoryPoint.visitedByMe, visitedByTeam: latestHistoryPoint.visitedByTeam,
               stale: staleProjection || !!field.error || !navigator.onLine || !field.receivedAt || now - field.receivedAt > 15_000 } : undefined} />
-        </section>
         {fieldMode && <PointMaterialsPanel compact actionContainer={historyMaterialActions} key={`history:${identityId}:${raid.id}:${latestHistoryPoint.id}`} identityId={identityId} kabandaId={raid.kabandaId}
           raidId={raid.id} pointId={latestHistoryPoint.id} visible={historyOpen && !actionsOpen} canWrite={activeMember && !field.denied} operations={queue.rows} />}
       </>}

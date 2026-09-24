@@ -106,3 +106,6 @@
 .point-history-section .point-visit-history__people > li + li::before { margin-inline: 0; }
 
 .point-visit-history__chevron--right { transform: rotate(-90deg); }
+
+.point-visit-history__all-raids > summary { min-height: 44px; align-content: center; color: #626b77; font-size: .85rem; cursor: pointer; }
+.point-visit-history__all-raids > .point-history-section { margin-top: 0; padding-top: 0; border-top: 0; }

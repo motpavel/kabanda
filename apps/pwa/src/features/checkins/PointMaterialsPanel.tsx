@@ -163,8 +163,8 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M8 5 10 3h4l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg>
         {busy ? 'Сохраняем…' : 'Добавить фото'}<input aria-label="Добавить фото" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { void consumeSelectedFile(event.currentTarget, save) }} />
       </label>
-      <button type="button" aria-expanded={composerOpen} aria-controls={composerId} onClick={() => setComposerOpen(value => !value)}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a9 9 0 0 1-9 9 10 10 0 0 1-4-.9L3 21l1.4-4.8A9 9 0 1 1 21 11.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>Комментарий
+      <button type="button" aria-expanded={composerOpen} aria-controls={composerId} disabled={busy || (composerOpen && !text.trim())} onClick={() => composerOpen ? void save() : setComposerOpen(true)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{composerOpen ? <path d="m5 12 4 4L19 6" /> : <><path d="M21 11.5a9 9 0 0 1-9 9 10 10 0 0 1-4-.9L3 21l1.4-4.8A9 9 0 1 1 21 11.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></>}</svg>{composerOpen ? busy ? 'Сохраняем…' : 'Сохранить' : 'Комментарий'}
       </button>
     </div> : null
   const photos = denied ? [] : items.filter(item => item.kind === 'photo')
@@ -192,7 +192,6 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
   </FullscreenPhoto> : null
   const composer = compact && mayWrite && <div id={composerId} className="point-materials__compose" hidden={!composerOpen}>
       <label>Комментарий<textarea ref={commentRef} maxLength={2000} rows={2} value={text} disabled={busy} onChange={event => setText(event.target.value)} /></label>
-      <button type="button" disabled={busy || !text.trim()} onClick={() => void save()}>Добавить комментарий</button>
     </div>
   return <section className={`point-materials${compact ? ' point-materials--compact' : ''}`} aria-label="Фото и комментарии точки">
     {actionContainer ? createPortal(actions, actionContainer) : !actionsAtEnd && actions}
@@ -207,7 +206,7 @@ export function PointMaterialsPanel({ identityId, kabandaId, raidId, pointId, vi
         </small>
       </article>)}
     </section>}
-    {!loaded && !error && !comments.length && <p className="kb-muted">{navigator.onLine ? 'Загружаем материалы…' : 'Для загрузки материалов нужно соединение.'}</p>}
+    {!loaded && !error && !comments.length && !navigator.onLine && !readOnly && <p className="kb-muted">Для загрузки материалов нужно соединение.</p>}
     {loaded && !denied && !mayWrite && (items.length > 0 || comments.length > 0 || visiblePhotoPreviews.length > 0) && <PointMaterialsHint />}
     {cursor && <button type="button" disabled={loading || state.status !== 'ready'} onClick={() => void state.more()}>Показать предыдущие материалы</button>}
     {error && <p role="status">{error} <button type="button" disabled={loading || !navigator.onLine} onClick={() => void state.refresh()}>Повторить</button></p>}

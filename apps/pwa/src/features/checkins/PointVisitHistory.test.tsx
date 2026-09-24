@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VisitHistoryWindow } from '../results/view-resources'
-import { PointVisitHistory } from './PointVisitHistory'
+import { PointVisitHistory, RaidPointVisitHistory } from './PointVisitHistory'
 
 const resourceState = vi.hoisted(() => ({ current: {
   data: null as VisitHistoryWindow | null,
@@ -78,6 +78,27 @@ describe('known point visit presentation', () => {
     const html = renderToStaticMarkup(<PointVisitHistory {...props} currentRaidId="raid" knownVisit={{ visitedByMe: true, visitedByTeam: true }} />)
     expect(html).toContain('Вы уже отмечены здесь в этом рейде.')
     expect(html).toContain('Уточняем историю…')
+    expect(html).not.toContain('здесь ещё не была')
+  })
+})
+
+
+describe('quiet map summaries', () => {
+  it('renders the raid projection without mounting or fetching all-time history', () => {
+    const html = renderToStaticMarkup(<RaidPointVisitHistory {...props} currentRaidId="raid" knownVisit={unvisited} />)
+    expect(html).toContain('В этом рейде кабанда здесь ещё не была.')
+    expect(html).not.toContain('Уточняем историю')
+    expect(html).not.toContain('point-visit-history__loading')
+    expect(html).toContain('<summary>История посещений</summary>')
+  })
+  it('uses an explicit all-time zero projection immediately, without a loader', () => {
+    const html = renderToStaticMarkup(<PointVisitHistory {...props} knownUnvisited />)
+    expect(html).toContain('Ваша кабанда здесь ещё не была.')
+    expect(html).not.toContain('point-visit-history__loading')
+  })
+  it('does not expose the saved empty projection after access revocation', () => {
+    resourceState.current.status = 'access-error'
+    const html = renderToStaticMarkup(<PointVisitHistory {...props} knownUnvisited />)
     expect(html).not.toContain('здесь ещё не была')
   })
 })
