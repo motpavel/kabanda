@@ -1,0 +1,9 @@
+# Quiet point sheets and footer comment saving
+
+Raid point sheets show the current-raid projection directly. All-time visit history is disclosed explicitly, with no mounted history resource before expansion. Removed the raid's speculative all-time history prefetch, since the initial sheet no longer consumes it. Non-navigators retain their attendance list without a second copy of the visit status. On the free map, removed the separate visited badge and use explicit all-time zero progress to render the empty state immediately while history revalidates. Unknown or access-denied state is not treated as zero.
+
+The compact materials composer now changes its existing footer action from Comment to Save (with a check icon). The duplicate save action inside the scrollable body is gone. Blank text and in-flight submissions disable Save. The growing textarea, durable outbox, actual saved-text display and write-permission gates are unchanged. Removed the transient online materials loading paragraph; offline and error states remain visible.
+
+Validation: 781 unit tests in 132 files and TypeScript passed. Mobile Chromium and iPhone-profile WebKit exercise 320/390 px sheets, footer visibility with long text, delayed reconciliation, rejection preservation, attendance permissions and navigation. The new history request-count check covers zero requests before disclosure and one after. Test fixtures were updated for retained-marker property reads, the removed hint, a distant point (nearby points intentionally open the arrival sheet), and the fixture's actual visitor counts. These are synthetic browser checks, not a new physical iPhone keyboard measurement.
+
+Publication: the production build and publisher dry-run were prepared. Server SSH connections close before authentication through both the direct address and configured jump host. This change has not been published while that connection is unavailable. The existing map optimization remains the live release.

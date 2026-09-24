@@ -24,7 +24,6 @@ import { destinationKey, selectArrivalPoint } from './destination'
 import { retainStop, type StopContext, type StopPoint } from './stop-context'
 import { useLiveRaid } from '../use-live-raid'
 import { useFieldQueue } from '../use-field-queue'
-import { useNearbyPointHistory } from '../../results/useNearbyPointHistory'
 import { invalidatePointHistory } from '../resources'
 import { changedPointVisits, type PointVisitBaseline } from './point-history-changes'
 
@@ -93,12 +92,6 @@ export function ActiveRaidPanel({ identityId, raid, staleProjection, serverPrima
   const fieldHistoryPoint = historyPoint ? field.data?.points?.find(point => point.id === historyPoint.id) : undefined
   const latestHistoryPoint = fieldHistoryPoint ?? historyPoint
   const inspectedPoint = historyOpen ? latestHistoryPoint : null
-  const historyCandidates = useMemo(() => (field.data?.points ?? []).map(point => ({
-    id: point.sourcePointId, latitude: point.latitude, longitude: point.longitude,
-  })), [field.data?.points])
-  useNearbyPointHistory({ identityId, kabandaId: raid.kabandaId, points: historyCandidates,
-    anchor: proximity.coordinate, priorityPointId: inspectedPoint?.sourcePointId ?? destination?.sourcePointId,
-    active: !field.denied && !field.error && !staleProjection && field.data != null })
 
   useEffect(() => {
     const next = field.data?.raid
