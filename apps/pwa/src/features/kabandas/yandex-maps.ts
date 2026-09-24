@@ -4,7 +4,6 @@
 export const MOBILE_YANDEX_MAP_OPTIONS = {
   suppressMapOpenBlock: true,
   layerLoadTilesInAction: true,
-  groundPaneViewportMargin: 128,
 }
 
 /** JavaScript API 2.1 boundary order: [latitude, longitude]. */
@@ -48,6 +47,7 @@ export type YandexPlacemark = {
 }
 
 export type YandexMap = {
+  panes?: { append: (key: string, pane: object) => void; get: (key: string) => { getZIndex: () => number } }
   setType?: (type: string | YandexMapType) => PromiseLike<void> | void
   container?: {
     fitToViewport?: () => void
@@ -91,6 +91,7 @@ export type YandexMultiRoute = {
 }
 
 export type YandexMapsRuntime = {
+  pane?: { MovablePane: new (map: YandexMap, options: { margin: number; zIndex: number }) => object }
   Layer?: new (url: (number: readonly [number, number], zoom: number) => string, options?: Record<string, unknown>) => YandexTileLayer
   MapType?: new (name: string, layers: (() => YandexTileLayer)[]) => YandexMapType
   vow?: { resolve: (value: unknown) => PromiseLike<unknown> }

@@ -22,6 +22,7 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
   if (typeof __YANDEX_TILES_ENABLED__ === 'undefined' || !__YANDEX_TILES_ENABLED__ || !('serviceWorker' in navigator) || !map.setType || !runtime.Layer || !runtime.MapType || !runtime.vow) { diagnostic.state('Обычный Яндекс, кэш не настроен'); return diagnostic.dispose }
   const decoded = new DecodedTiles()
   const requested = new Set<string>()
+  let reservePane: object | undefined
   const mapId = crypto.randomUUID()
   const base = import.meta.env.BASE_URL
   const scale = window.devicePixelRatio > 1 ? 2 : 1
@@ -80,6 +81,12 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
         await response.arrayBuffer()
       } finally { clearTimeout(timeout) }
       if (!visible()) return
+      // The SDK theme reads ground-pane margin at pane construction, not from
+      // map options. A public MovablePane gives this layer a real render reserve.
+      if (!reservePane && runtime.pane?.MovablePane && map.panes) {
+        reservePane = new runtime.pane.MovablePane(map, { margin: 256, zIndex: map.panes.get('ground').getZIndex() })
+        map.panes.append(`kabanda-tiles-${mapId}`, reservePane)
+      }
       const layer = new Layer((number, zoom) => {
         const path = tilePath({ x: number[0], y: number[1], z: zoom }, scale, mapId, base)
         requested.delete(path); requested.add(path)
@@ -87,7 +94,7 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
         const url = decoded.url(path)
         diagnostic.request(url !== path)
         return diagnostic.active() && url === path ? `${path}&debug=1` : url
-      }, { tileSize: [256, 256], loadTilesInAction: true })
+      }, { tileSize: [256, 256], loadTilesInAction: true, ...(reservePane ? { pane: reservePane } : {}) })
       layer.getCopyrights = () => vow.resolve('<a href="https://yandex.ru/maps/" target="_blank" rel="noopener">© Яндекс</a>')
       layer.getZoomRange = () => vow.resolve([0, 20])
       const type = new MapType('Яндекс', [function () { return layer }])
