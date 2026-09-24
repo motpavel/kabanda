@@ -1,4 +1,5 @@
 import type { YandexMap, YandexMapsRuntime } from '../yandex-maps'
+import { mapDiagnostics } from './map-diagnostics'
 import { DecodedTiles } from './decoded-tiles'
 import { nearbyTiles, tileAt, tilePath } from './coordinates'
 
@@ -17,7 +18,8 @@ function workerAvailable(): Promise<boolean> {
 /** Opt-in official Yandex raster layer. The regular map stays visible until a
  * real, readable API image has passed through the installed cache worker. */
 export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime, container: HTMLElement): () => void {
-  if (typeof __YANDEX_TILES_ENABLED__ === 'undefined' || !__YANDEX_TILES_ENABLED__ || !('serviceWorker' in navigator) || !map.setType || !runtime.Layer || !runtime.MapType || !runtime.vow) return () => {}
+  const diagnostic = mapDiagnostics(map, container)
+  if (typeof __YANDEX_TILES_ENABLED__ === 'undefined' || !__YANDEX_TILES_ENABLED__ || !('serviceWorker' in navigator) || !map.setType || !runtime.Layer || !runtime.MapType || !runtime.vow) { diagnostic.state('Обычный Яндекс, кэш не настроен'); return diagnostic.dispose }
   const decoded = new DecodedTiles()
   const requested = new Set<string>()
   const mapId = crypto.randomUUID()
@@ -30,6 +32,7 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
   const visible = () => !disposed && document.visibilityState === 'visible' && container.getBoundingClientRect().width > 0 && container.getBoundingClientRect().height > 0
   const stopWarmup = () => { clearTimeout(timer); warmup?.abort(); warmup = undefined }
   const fallback = () => {
+    diagnostic.state('Обычный Яндекс: резерв после ошибки')
     retryAfter = Date.now() + 60_000
     stopWarmup()
     decoded.clear(); requested.clear()
@@ -68,12 +71,12 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
     enabling = true
     retryAfter = Date.now() + 60_000
     try {
-      if (!await workerAvailable() || !visible()) return
+      if (!await workerAvailable() || !visible()) { diagnostic.state('Обычный Яндекс: SW недоступен'); return }
       const controller = new AbortController(); probe = controller
       const timeout = setTimeout(() => controller.abort(), 10_000)
       try {
         const response = await fetch(tilePath(tileAt(map.getCenter(), map.getZoom()), scale, mapId, base), { signal: controller.signal, cache: 'no-store' })
-        if (!response.ok || !response.headers.get('content-type')?.startsWith('image/png')) return
+        if (!response.ok || !response.headers.get('content-type')?.startsWith('image/png')) { diagnostic.state(`Обычный Яндекс: проверка ${response.status}`); return }
         await response.arrayBuffer()
       } finally { clearTimeout(timeout) }
       if (!visible()) return
@@ -81,18 +84,23 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
         const path = tilePath({ x: number[0], y: number[1], z: zoom }, scale, mapId, base)
         requested.delete(path); requested.add(path)
         if (requested.size > 32) requested.delete(requested.values().next().value!)
-        return decoded.url(path)
+        const url = decoded.url(path)
+        diagnostic.request(url !== path)
+        return diagnostic.active() && url === path ? `${path}&debug=1` : url
       }, { tileSize: [256, 256] })
       layer.getCopyrights = () => vow.resolve('<a href="https://yandex.ru/maps/" target="_blank" rel="noopener">© Яндекс</a>')
       layer.getZoomRange = () => vow.resolve([0, 20])
       const type = new MapType('Яндекс', [function () { return layer }])
+      diagnostic.layer(layer)
       enabled = true
       await map.setType!(type)
+      diagnostic.state('Tiles API + локальный кэш')
       schedule()
     } catch { fallback() }
     finally { enabling = false }
   }
   const message = (event: MessageEvent) => {
+    if (event.data?.type === 'KABANDA_TILE_TIMING' && event.data.mapId === mapId) diagnostic.response(event.data.source, event.data.ms)
     if (event.data?.type === 'KABANDA_YANDEX_TILE_FAILURE' && event.data.mapId === mapId) fallback()
   }
   const resume = () => { retryAfter = 0; schedule() }
@@ -106,7 +114,7 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
   document.addEventListener('visibilitychange', schedule)
   schedule()
   return () => {
-    disposed = true; stopWarmup(); decoded.dispose(); requested.clear(); probe?.abort(); resize.disconnect()
+    diagnostic.dispose(); disposed = true; stopWarmup(); decoded.dispose(); requested.clear(); probe?.abort(); resize.disconnect()
     map.events.remove?.('boundschange', schedule)
     navigator.serviceWorker.removeEventListener('message', message)
     navigator.serviceWorker.removeEventListener('controllerchange', controllerChanged)

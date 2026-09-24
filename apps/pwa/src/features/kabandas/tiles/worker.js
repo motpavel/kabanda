@@ -205,7 +205,15 @@
   }
 
   async function respond(event, tile, url) {
+    const started = performance.now();
+    const report = source => {
+      if (url.searchParams.get('debug') !== '1') return;
+      event.waitUntil(self.clients.get(event.clientId).then(client => client?.postMessage({
+        type: 'KABANDA_TILE_TIMING', mapId: url.searchParams.get('map'), source, ms: performance.now() - started,
+      })).catch(() => {}));
+    };
     const hit = await cached(tile.key);
+    if (hit) report('hit');
     if (hit) return new Response(hit.body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'hit', 'X-Kabanda-Tile-Expires': String(hit.created + TTL) } });
     try {
       const background = url.searchParams.get('warm') === '1';
@@ -221,8 +229,10 @@
         void entry.promise.finally(() => inflight.delete(tile.key)).catch(() => {});
       } else if (!background) entry.foreground = true;
       const body = await entry.promise;
+      report('miss');
       return new Response(body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'miss', 'X-Kabanda-Tile-Expires': String(Date.now() + TTL) } });
     } catch {
+      report('error');
       const mapId = url.searchParams.get('map');
       if (mapId && url.searchParams.get('warm') !== '1') {
         const client = await self.clients.get(event.clientId);

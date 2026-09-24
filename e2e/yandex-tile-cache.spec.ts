@@ -57,3 +57,20 @@ test('unavailable API notifies the affected map and never replaces a saved image
   expect(await read(page)).toMatchObject({ status: 200, cache: 'hit', decoded: true })
   expect((await read(page, '/_yandex_tiles/v1/21/0/0.png')).status).toBe(400)
 })
+
+test('local timing messages are opt-in and contain no tile coordinates', async ({ page }) => {
+  await install(page)
+  await page.evaluate(() => {
+    (window as any).tileTimings = []
+    navigator.serviceWorker.addEventListener('message', event => {
+      if (event.data?.type === 'KABANDA_TILE_TIMING') (window as any).tileTimings.push(event.data)
+    })
+  })
+  await read(page)
+  expect(await page.evaluate(() => (window as any).tileTimings)).toEqual([])
+  await read(page, `${path}&debug=1`)
+  await expect.poll(() => page.evaluate(() => (window as any).tileTimings.length)).toBe(1)
+  const timing = await page.evaluate(() => (window as any).tileTimings[0])
+  expect(timing).toEqual({ type: 'KABANDA_TILE_TIMING', mapId: 'mobile', source: 'hit', ms: expect.any(Number) })
+  expect(timing.ms).toBeGreaterThanOrEqual(0)
+})

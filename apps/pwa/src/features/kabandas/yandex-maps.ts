@@ -24,6 +24,8 @@ export type YandexOptionManager = {
 
 export type YandexMapObject = object
 export type YandexTileLayer = {
+  events?: YandexEventManager
+  getTileStatus?: () => { readyTileNumber: number; totalTileNumber: number }
   getCopyrights?: () => PromiseLike<unknown>
   getZoomRange?: () => PromiseLike<unknown>
 }
