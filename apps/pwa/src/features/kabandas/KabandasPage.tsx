@@ -1,3 +1,4 @@
+import { MOBILE_YANDEX_MAP_OPTIONS } from './yandex-maps'
 import '../../app/fonts.css'
 import { AlphaDiagnosticsConsent } from '../../app/AlphaDiagnosticsConsent'
 import { RiderLoader } from '../../app/RiderLoader'
@@ -961,7 +962,7 @@ function PointsMap({ visible, points, selectedId, onSelect, setProviderState, me
         controls: [],
         behaviors: ['default', 'scrollZoom'],
         type: 'yandex#map',
-      }, { suppressMapOpenBlock: true })
+      }, MOBILE_YANDEX_MAP_OPTIONS)
       map.events.add('boundschange', (event) => {
         const nextCenter = event.get('newCenter') as readonly [number, number] | undefined
         const nextZoom = event.get('newZoom') as number | undefined

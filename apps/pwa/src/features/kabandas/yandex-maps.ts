@@ -1,3 +1,12 @@
+/** The SDK mobile theme disables in-gesture tile loads and viewport reserve.
+ * Keep a small rendered border and load during camera movement on modern PWA
+ * devices; the cached layer still bounds upstream concurrency separately. */
+export const MOBILE_YANDEX_MAP_OPTIONS = {
+  suppressMapOpenBlock: true,
+  layerLoadTilesInAction: true,
+  groundPaneViewportMargin: 128,
+}
+
 /** JavaScript API 2.1 boundary order: [latitude, longitude]. */
 export type YandexCoordinates = readonly [number, number]
 
@@ -92,7 +101,7 @@ export type YandexMapsRuntime = {
     controls?: readonly string[]
     behaviors?: readonly string[]
     type?: string
-  }, options?: { suppressMapOpenBlock?: boolean }) => YandexMap
+  }, options?: Partial<typeof MOBILE_YANDEX_MAP_OPTIONS>) => YandexMap
   Placemark: new (coordinates: YandexCoordinates, properties?: Record<string, unknown>, options?: Record<string, unknown>) => YandexPlacemark
   Polyline: new (
     coordinates: readonly YandexCoordinates[],

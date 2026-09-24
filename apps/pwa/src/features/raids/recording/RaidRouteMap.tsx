@@ -1,3 +1,4 @@
+import { MOBILE_YANDEX_MAP_OPTIONS } from '../../kabandas/yandex-maps'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadYandexMaps, type YandexMap, type YandexPlacemark, type YandexPolyline, type YandexMapsRuntime } from '../../kabandas/yandex-maps'
 import { MapCamera } from '../../kabandas/map-camera'
@@ -125,7 +126,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       firstView.current = view.source !== 'default'
       firstLocation.current = view.source === 'location'
       mapRef.current = new runtime.Map(container, { center: view.center, zoom: view.zoom, controls: [],
-        behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, { suppressMapOpenBlock: true })
+        behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, MOBILE_YANDEX_MAP_OPTIONS)
       detachTiles = attachYandexTileCache(mapRef.current, runtime, container)
       camera.current = new MapCamera(mapRef.current, () => matchMedia('(prefers-reduced-motion: reduce)').matches)
       pointMarkers.current = new MapMarkers(mapRef.current, runtime,

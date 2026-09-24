@@ -1,3 +1,4 @@
+import { MOBILE_YANDEX_MAP_OPTIONS } from '../../kabandas/yandex-maps'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { YandexMap, YandexMapsRuntime } from '../../kabandas/yandex-maps'
 import { attachYandexTileCache } from '../../kabandas/tiles/yandex-tile-cache'
@@ -128,7 +129,7 @@ export function RaidTemplateEditorMap({
         controls: [],
         behaviors: ['default', 'scrollZoom'],
         type: 'yandex#map',
-      }, { suppressMapOpenBlock: true })
+      }, MOBILE_YANDEX_MAP_OPTIONS)
       map.events.add('boundschange', (event) => {
         const nextZoom = event.get<number | undefined>('newZoom')
         if (typeof nextZoom === 'number') setZoom(nextZoom)

@@ -87,7 +87,7 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
         const url = decoded.url(path)
         diagnostic.request(url !== path)
         return diagnostic.active() && url === path ? `${path}&debug=1` : url
-      }, { tileSize: [256, 256] })
+      }, { tileSize: [256, 256], loadTilesInAction: true })
       layer.getCopyrights = () => vow.resolve('<a href="https://yandex.ru/maps/" target="_blank" rel="noopener">© Яндекс</a>')
       layer.getZoomRange = () => vow.resolve([0, 20])
       const type = new MapType('Яндекс', [function () { return layer }])
