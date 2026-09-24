@@ -34,6 +34,8 @@
 .point-visit-history__loading span { width: 72%; height: 14px; border-radius: 5px; background: #f0f2ef; }
 .point-visit-history__loading span:first-child { width: 45%; }
 .point-visit-history__loading span:last-child { width: 58%; }
+.point-visit-history__pending { margin: 10px 0 0; color: #929a94; font-size: .8125rem; line-height: 1.45; }
+.point-visit-history__saved { display: block; margin-top: 3px; color: #929a94; font-size: .75rem; }
 .raid-point-history-sheet__action { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); padding: 16px 0 calc(18px + env(safe-area-inset-bottom)); margin-bottom: calc(-18px - env(safe-area-inset-bottom)); background: #fff; }
 @media (prefers-reduced-motion: reduce) { .point-visit-history__chevron { transition: none; } }
 

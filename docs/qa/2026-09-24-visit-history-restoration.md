@@ -1,0 +1,7 @@
+# Raid point visit list restoration
+
+The extra expandable “История посещений” wrapper introduced by release `91283db6941b7e0d317428fa860770652ae8fdb9` hid the participant counts that users need when opening a point. Remove that wrapper. `PointVisitHistory` again renders each visitor and count directly; tapping a visitor expands that person's raid list. Keep nearby history warming so repeated taps can use the cached summary immediately.
+
+For a point whose current raid projection is known, show that status while the all-time summary has not arrived. Once the summary arrives, visitor rows replace the status when visits exist. When the summary has no visitors, keep the same current-raid empty sentence rather than replacing it with a second empty sentence. Suppress the “Уточняем историю” text during this known-state transition. Access-denied states still suppress projected private status and show retry/error feedback.
+
+The compact materials composer and mobile keyboard handling remain as in the prior release. Release `36d5ba8afd0c2455ece6f757166bbb4aed81845b` was published. All 73 public files and the website `/app` document matched the build. The 781 unit tests and TypeScript passed. The 16 mobile Chromium/WebKit browser scenarios passed across the full run and targeted fixture correction: 14 in the full run and the two fixture-affected scenarios on rerun. The fixture error expected two visitors for a viewer with zero personal visits, while the API correctly returned one.

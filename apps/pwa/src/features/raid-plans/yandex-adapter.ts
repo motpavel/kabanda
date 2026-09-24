@@ -9,6 +9,7 @@ import {
   type YandexPlacemark,
 } from '../kabandas/yandex-maps'
 import type { RaidTemplateFailureCode } from './types'
+import './numbered-waypoint.css'
 
 const EARTH_RADIUS_METERS = 6_371_000
 
@@ -79,12 +80,22 @@ export function attachNumberedWaypointPlacemark(
   number: number,
   options: NumberedWaypointPlacemarkOptions = {},
 ): DisposeYandexAttachment {
+  const layout = runtime.templateLayoutFactory.createClass(
+    '<button type="button" class="rp-waypoint" data-selected="{{ properties.selected }}" aria-label="Точка {{ properties.number }}">' +
+    '<svg aria-hidden="true" viewBox="0 0 44 52"><path d="M22 48C18 42 4 31 4 21a18 18 0 1 1 36 0c0 10-14 21-18 27Z" /></svg>' +
+    '<span aria-hidden="true">{{ properties.number }}</span></button>',
+  )
   const placemark: YandexPlacemark = new runtime.Placemark(toYandexCoordinates(point), {
-    iconContent: String(number),
+    number: String(number), selected: Boolean(options.selected),
   }, {
-    preset: options.selected ? 'islands#redStretchyIcon' : 'islands#blueStretchyIcon',
+    iconLayout: layout,
+    // The SVG tip is (22, 48); the layout translates that exact point onto coords.
+    iconShape: { type: 'Rectangle', coordinates: [[-22, -48], [22, 4]] },
     hasBalloon: false,
+    hasHint: false,
     openBalloonOnClick: false,
+    interactiveZIndex: false,
+    zIndex: options.selected ? 40 : 30,
   })
 
   const handleSelect: YandexEventHandler | null = options.onSelect

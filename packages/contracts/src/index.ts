@@ -165,7 +165,7 @@ export const recordPointVisitSchema = z.object({
 
 export const raidTemplatePointInputSchema = z.object({
   name: z.string().trim().min(1).max(160),
-  address: z.string().trim().min(1).max(300),
+  address: z.string().trim().max(300).default(''),
   comment: z.string().trim().max(500).default(''),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),

@@ -1,5 +1,7 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath } from 'node:url'
 
@@ -10,10 +12,20 @@ const appVersion = /^[A-Za-z0-9._-]{1,64}$/.test(rawAppVersion) ? rawAppVersion 
 const swBuildAsset = `sw-build-${appVersion}.js`
 const optionalPrecacheJs = new Set<string>()
 
-function serviceWorkerBuildResponder(): Plugin {
+function serviceWorkerBuildResponder(tileWorker?: { fileName: string; source: string }): Plugin {
   return {
     name: 'kabanda-service-worker-build-responder',
+    configureServer(server) {
+      if (!tileWorker) return
+      server.middlewares.use((request, response, next) => {
+        if (new URL(request.url ?? '/', 'http://localhost').pathname !== `${base}${tileWorker.fileName}`) return next()
+        response.setHeader('Content-Type', 'text/javascript; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-store')
+        response.end(tileWorker.source)
+      })
+    },
     generateBundle(_options, bundle) {
+      if (tileWorker) this.emitFile({ type: 'asset', ...tileWorker })
       optionalPrecacheJs.clear()
       const corePrecacheJs = new Set<string>()
       const include = (fileName: string) => {
@@ -45,7 +57,12 @@ function serviceWorkerBuildResponder(): Plugin {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env }
+  const tilesKey = env.VITE_YANDEX_TILES_API_KEY?.trim() ?? ''
+  const tileSource = tilesKey ? `self.KABANDA_YANDEX_TILES=${JSON.stringify({ key: tilesKey })};\n` + readFileSync(new URL('./src/features/kabandas/tiles/worker.js', import.meta.url), 'utf8') : ''
+  const tileWorker = tileSource ? { fileName: `assets/yandex-tile-worker-${createHash('sha256').update(tileSource).digest('hex').slice(0, 12)}.js`, source: tileSource } : undefined
+  return {
   base,
   build: {
     rolldownOptions: {
@@ -73,10 +90,11 @@ export default defineConfig({
       appVersion,
     ),
     __ALPHA_DIAGNOSTICS__: JSON.stringify(process.env.VITE_ALPHA_DIAGNOSTICS === 'true'),
+    __YANDEX_TILES_ENABLED__: JSON.stringify(Boolean(tilesKey)),
   },
   plugins: [
     react(),
-    serviceWorkerBuildResponder(),
+    serviceWorkerBuildResponder(tileWorker),
     VitePWA({
       registerType: 'prompt',
       injectRegister: null,
@@ -122,6 +140,10 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Attach the first installed worker to the already-open page so map
+        // caching starts without a second launch. Updates still wait for the
+        // recording-aware gate to send SKIP_WAITING.
+        clientsClaim: true,
         globPatterns: ['**/*.{js,wasm,css,html,woff2}'],
         manifestTransforms: [async (entries) => ({
           manifest: entries.filter(({ url }) => {
@@ -133,8 +155,8 @@ export default defineConfig({
           warnings: [],
         })],
         cleanupOutdatedCaches: true,
-        importScripts: [swBuildAsset],
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/relay(?:\/|$)/, /^\/(?:kabanda\/)?lab(?:[/?]|$)/],
+        importScripts: [swBuildAsset, ...(tileWorker ? [tileWorker.fileName] : [])],
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/relay(?:\/|$)/, /^\/(?:kabanda\/)?_yandex_tiles\//, /^\/(?:kabanda\/)?lab(?:[/?]|$)/],
         // Only public, bundled art. Authenticated API, covers and map/GPS responses
         // remain network-only; never leak one member's data into a shared SW cache.
         runtimeCaching: [{
@@ -184,4 +206,5 @@ export default defineConfig({
       },
     },
   ]
+  }
 })

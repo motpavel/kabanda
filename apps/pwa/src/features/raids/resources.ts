@@ -400,6 +400,17 @@ async function revokeTeam(identityId: string, kabandaId: string) {
   ]).catch(() => undefined)
 }
 
+/** Live team visits can arrive without a write on this device. Refresh only
+ * existing windows for changed points, including expanded participant history. */
+export function invalidatePointHistory(identityId: string, kabandaId: string, pointIds: ReadonlySet<string>) {
+  for (const entry of entries.values()) {
+    if (entry.identityId !== identityId || entry.kabandaId !== kabandaId || entry.kind !== 'point-history' ||
+      !pointIds.has(entry.id) || entry.state.status === 'access-error') continue
+    entry.invalidate()
+    entry.refreshIfObserved()
+  }
+}
+
 subscribeConfirmedWrites(event => {
   if (!event.identityId) return
   const membership = /^\/api\/kabandas\/([^/]+)\/members\/([^/]+)$/.exec(event.path)

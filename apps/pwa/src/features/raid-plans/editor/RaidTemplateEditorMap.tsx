@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MOBILE_YANDEX_MAP_OPTIONS } from '../../kabandas/yandex-maps'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { YandexMap, YandexMapsRuntime } from '../../kabandas/yandex-maps'
+import { attachYandexTileCache } from '../../kabandas/tiles/yandex-tile-cache'
 import {
   attachBicycleRoute,
   attachNumberedWaypointPlacemark,
@@ -14,9 +16,8 @@ import type { DraftRaidTemplatePoint } from '../types'
 
 const INITIAL_CENTER = [56.8528, 53.2045] as const
 const INITIAL_ZOOM = 12
-const MIN_ZOOM = 10
+const MIN_ZOOM = 3
 const MAX_ZOOM = 18
-const POINT_EDIT_ZOOM = 15
 const WEB_MERCATOR_MAX_LATITUDE = 85.05112878
 
 type RequestGenerationRef = { current: number }
@@ -116,6 +117,7 @@ export function RaidTemplateEditorMap({
     const container = containerRef.current
     if (!container) return
     let active = true
+    let detachTiles = () => {}
     setProviderState('loading')
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? ''
 
@@ -127,12 +129,13 @@ export function RaidTemplateEditorMap({
         controls: [],
         behaviors: ['default', 'scrollZoom'],
         type: 'yandex#map',
-      }, { suppressMapOpenBlock: true })
+      }, MOBILE_YANDEX_MAP_OPTIONS)
       map.events.add('boundschange', (event) => {
         const nextZoom = event.get<number | undefined>('newZoom')
         if (typeof nextZoom === 'number') setZoom(nextZoom)
       })
       mapRef.current = map
+      detachTiles = attachYandexTileCache(map, runtime, container)
       runtimeRef.current = runtime
       setProviderState('ready')
     }).catch(() => {
@@ -148,6 +151,7 @@ export function RaidTemplateEditorMap({
     })
 
     return () => {
+      detachTiles()
       active = false
       invalidateLocationRequests(locationRequestGenerationRef)
       runtimeRef.current = null
@@ -166,7 +170,7 @@ export function RaidTemplateEditorMap({
       map.container?.fitToViewport?.()
       if (selectedLatitude === null || selectedLongitude === null) return
       const viewportHeight = viewport?.height ?? window.innerHeight
-      const targetZoom = Math.max(POINT_EDIT_ZOOM, map.getZoom())
+      const targetZoom = map.getZoom()
       map.setCenter(raidTemplateSelectedPointCenter(
         { latitude: selectedLatitude, longitude: selectedLongitude },
         targetZoom,
@@ -191,9 +195,9 @@ export function RaidTemplateEditorMap({
 
   useEffect(() => {
     const map = mapRef.current
-    if (providerState !== 'ready' || !map || !canAddPoint) return
+    if (providerState !== 'ready' || !map || !canAddPoint || selectedPointId) return
     return attachRaidPlanMapClick(map, (point) => addPointRef.current(point))
-  }, [canAddPoint, providerState])
+  }, [canAddPoint, providerState, selectedPointId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -283,14 +287,8 @@ export function RaidTemplateEditorMap({
     }, { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 })
   }, [])
 
-  const addPointAtCenter = useCallback(() => {
-    const map = mapRef.current
-    if (!map || !canAddPoint) return
-    const point = raidTemplatePointAtMapCenter(map)
-    if (point) addPointRef.current(point)
-  }, [canAddPoint])
 
-  return <div className={`rt-map${selectedPoint ? ' rt-map--point-editing' : ''}`} role="group" aria-label="Карта конструктора маршрута">
+  return <div className={`rt-map${selectedPoint ? ' rt-map--point-editing' : ''}`} style={{ '--rt-sheet-height': `${pointSheetHeight}px` } as CSSProperties} role="group" aria-label="Карта конструктора маршрута">
     <div className="rt-map__stage" ref={containerRef} />
     {providerState === 'loading' && <div className="rt-map__status" role="status">Загружаем карту…</div>}
     {providerState === 'failed' && <div className="rt-map__status rt-map__status--error" role="alert">
@@ -300,12 +298,10 @@ export function RaidTemplateEditorMap({
     </div>}
     {providerState === 'ready' && <>
       <div className="rt-map__instruction" aria-live="polite">
-        {canAddPoint ? 'Коснитесь карты или добавьте точку в центре' : 'Добавлено максимум 10 точек'}
+        {selectedPoint ? 'Можно двигать и приближать карту' : canAddPoint ? 'Коснитесь карты, чтобы добавить точку' : 'Добавлено максимум 10 точек'}
       </div>
       <RaidTemplateMapControls
-        canAddPoint={canAddPoint}
         locating={locating}
-        onAddPointAtCenter={addPointAtCenter}
         onChangeZoom={changeZoom}
         onLocate={locate}
         zoom={zoom}
@@ -315,37 +311,22 @@ export function RaidTemplateEditorMap({
 }
 
 export function RaidTemplateMapControls({
-  canAddPoint,
   locating,
-  onAddPointAtCenter,
   onChangeZoom,
   onLocate,
   zoom,
 }: {
-  canAddPoint: boolean
   locating: boolean
-  onAddPointAtCenter: () => void
   onChangeZoom: (delta: number) => void
   onLocate: () => void
   zoom: number
 }) {
   return <div aria-label="Управление картой" className="rt-map__controls" role="group">
-    <button aria-label="Приблизить карту" disabled={zoom >= MAX_ZOOM} onClick={() => onChangeZoom(1)} type="button">+</button>
-    <button aria-label="Отдалить карту" disabled={zoom <= MIN_ZOOM} onClick={() => onChangeZoom(-1)} type="button">−</button>
+    <button aria-label="Приблизить карту" disabled={zoom >= MAX_ZOOM} onClick={() => onChangeZoom(1)} type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg></button>
+    <button aria-label="Отдалить карту" disabled={zoom <= MIN_ZOOM} onClick={() => onChangeZoom(-1)} type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14" /></svg></button>
     <button aria-label="Показать моё местоположение" disabled={locating} onClick={onLocate} type="button">
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20.6 3.4 4.2 9.6a1 1 0 0 0 .1 1.9l6.2 2 2 6.3a1 1 0 0 0 1.9.1Z" /></svg>
     </button>
-    <button
-      aria-label="Добавить точку в центре карты"
-      className="rt-map__add-point"
-      disabled={!canAddPoint}
-      onClick={onAddPointAtCenter}
-      type="button"
-    >
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z" />
-        <path d="M12 7v6M9 10h6" />
-      </svg>
-    </button>
+
   </div>
 }

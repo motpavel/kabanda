@@ -1,5 +1,9 @@
+import { MOBILE_YANDEX_MAP_OPTIONS } from '../../kabandas/yandex-maps'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadYandexMaps, type YandexMap, type YandexPlacemark, type YandexPolyline, type YandexMapsRuntime } from '../../kabandas/yandex-maps'
+import { MapCamera } from '../../kabandas/map-camera'
+import { MapMarkers } from '../../kabandas/map-markers'
+import { attachYandexTileCache } from '../../kabandas/tiles/yandex-tile-cache'
 import type { OneShotCoordinate } from '../../checkins/types'
 import type { RaidLiveSnapshot } from '../live-feed'
 import type { RaidMapPoint, RouteTrackPoint } from '../types'
@@ -39,6 +43,11 @@ export function userMarkerCoordinate(location: OneShotCoordinate | null): readon
   return location ? [location.latitude, location.longitude] : null
 }
 
+export function initialRaidMapView(points: readonly Pick<RouteTrackPoint, 'latitude' | 'longitude'>[], location: OneShotCoordinate | null, completed: boolean, viewport?: { width: number; height: number }) {
+  if (!completed && location) return { center: [location.latitude, location.longitude] as const, zoom: 15, source: 'location' as const }
+  return { ...routeTrackView(points, viewport), source: points.length ? 'overview' as const : 'default' as const }
+}
+
 export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSampleAt = null, planned = false,
   completed = false, savedSnapshot, snapshotDenied = false, snapshotVerified = false, localRoutePreview = false, raidId, live, location, highlightedPointId, destinationPointId = null, onSelectPoint, onMapTap,
 }: {
@@ -51,7 +60,9 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const runtimeRef = useRef<YandexMapsRuntime | null>(null)
   const trackLayers = useRef<TrackLayers>(new Map())
   const endpoints = useRef(new Map<string, YandexPlacemark>())
-  const pointMarkers = useRef(new Map<string, { marker: YandexPlacemark; point: RaidMapPoint; signature: string }>())
+  const pointMarkers = useRef<MapMarkers<RaidMapPoint> | null>(null)
+  const camera = useRef<MapCamera | null>(null)
+  const plannedCoordinates = useRef('')
   const plannedLine = useRef<YandexPolyline | null>(null)
   const riders = useRef(new Map<string, YandexPlacemark>())
   const flock = useRef(new FlockDisplay())
@@ -64,7 +75,6 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const previewLayers = useRef<LiveRouteLayers | null>(null)
   const preview = useRef<LiveRouteTail | null>(null)
   if (!preview.current) preview.current = new LiveRouteTail(frame => previewLayers.current?.update(frame))
-  const followEnabled = useRef(false)
   const viewerCoordinate = useRef<readonly [number, number] | null>(null)
   const [markerNow, setMarkerNow] = useState(Date.now)
   const onSelect = useRef(onSelectPoint)
@@ -75,10 +85,22 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   const [provider, setProvider] = useState<'loading' | 'ready' | 'failed'>('loading')
   const { track, points: allPoints, dataState, positions, snapshotNavigator, routePreviewScope, routePreviewIssuedAt } = useRaidMapData(identityId, raidId, live, completed, savedSnapshot, snapshotDenied, snapshotVerified)
   const points = useMemo(() => pointsForRaidMap(allPoints, completed), [allPoints, completed])
+  // A heartbeat changes serverAt, not geometry. Do not resmooth the entire
+  // recorded route while the user is panning an unchanged map.
+  const geometryTrack = useMemo(() => track, [track?.segments, track?.startPoint, track?.endPoint, track?.truncated])
+  const initialGeometry = useMemo(() => {
+    if (completed) return completedRouteBoundsPoints(geometryTrack, points)
+    const recorded = geometryTrack ? [...geometryTrack.segments.flat(), ...trackEndpoints(geometryTrack, false).map(endpoint => endpoint.point)] : []
+    return recorded.length ? recorded : points
+  }, [completed, geometryTrack, points])
+  // Data/GPS may arrive while the SDK is loading. Read the latest values once
+  // it is ready instead of first requesting tiles for the default city view.
+  const initialData = useRef({ points: initialGeometry, location, completed })
+  initialData.current = { points: initialGeometry, location, completed }
 
   useEffect(() => {
     firstView.current = false; firstLocation.current = false; flock.current.reset(); viewerCoordinate.current = null
-    motion.current?.reset(); viewerMotionId.current = null; followEnabled.current = false
+    motion.current?.reset(); viewerMotionId.current = null; camera.current?.stop()
     preview.current?.reset(); previewStarted.current = false; navigatorMotionId.current = null; renderedRiders.current = new Map(); drawnTrackAnchor.current = null
     setFollowing(false)
   }, [identityId, raidId, completed])
@@ -93,27 +115,34 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
     const container = containerRef.current
     if (!container) return
     let active = true
-    const resize = new ResizeObserver(() => {
-      const map = mapRef.current
-      if (!map) return
-      const center = map.getCenter(), zoom = map.getZoom()
-      map.container?.fitToViewport?.()
-      map.setCenter(center, zoom, { duration: 0 })
-    })
+    let detachTiles = () => {}
+    const resize = new ResizeObserver(() => mapRef.current?.container?.fitToViewport?.())
     resize.observe(container)
     void loadYandexMaps(import.meta.env.VITE_YANDEX_MAPS_API_KEY?.trim() ?? '').then(runtime => {
       if (!active) return
       runtimeRef.current = runtime
-      mapRef.current = new runtime.Map(container, { center: IZHEVSK_CENTER, zoom: 12, controls: [],
-        behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, { suppressMapOpenBlock: true })
+      const data = initialData.current
+      const view = initialRaidMapView(data.points, data.location, data.completed, data.completed ? container.getBoundingClientRect() : undefined)
+      firstView.current = view.source !== 'default'
+      firstLocation.current = view.source === 'location'
+      mapRef.current = new runtime.Map(container, { center: view.center, zoom: view.zoom, controls: [],
+        behaviors: ['default', 'scrollZoom'], type: 'yandex#map' }, MOBILE_YANDEX_MAP_OPTIONS)
+      detachTiles = attachYandexTileCache(mapRef.current, runtime, container)
+      camera.current = new MapCamera(mapRef.current, () => matchMedia('(prefers-reduced-motion: reduce)').matches)
+      pointMarkers.current = new MapMarkers(mapRef.current, runtime,
+        '<button type="button" class="{{ properties.markerClass }}" data-raid-point="{{ properties.pointId }}" aria-label="{{ properties.ariaLabel }}"></button>',
+        point => onSelect.current(point))
       previewLayers.current = new LiveRouteLayers(mapRef.current, runtime)
       setProvider('ready')
     }).catch(() => { if (active) setProvider('failed') })
     return () => {
+      detachTiles()
       active = false; resize.disconnect(); motion.current?.reset(); preview.current?.reset()
       previewLayers.current?.clear(); previewLayers.current = null
+      camera.current?.stop(); camera.current = null
+      pointMarkers.current?.clear(); pointMarkers.current = null
       mapRef.current?.destroy(); mapRef.current = null; runtimeRef.current = null
-      trackLayers.current.clear(); endpoints.current.clear(); pointMarkers.current.clear(); riders.current.clear(); plannedLine.current = null
+      trackLayers.current.clear(); endpoints.current.clear(); riders.current.clear(); plannedLine.current = null; plannedCoordinates.current = ''
     }
   }, [])
 
@@ -130,9 +159,7 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       viewerCoordinate.current = viewer ?? null
       // Camera and icon consume the SAME rendered coordinate. Competing map
       // easing towards the raw target would make the boar drift off centre.
-      if (viewer && followEnabled.current && document.visibilityState === 'visible') {
-        map.setCenter(viewer, map.getZoom(), { duration: 0 })
-      }
+      if (viewer && document.visibilityState === 'visible') camera.current?.track(viewer)
     }, { now: () => performance.now(), request: callback => requestAnimationFrame(callback), cancel: handle => cancelAnimationFrame(handle) })
     motion.current = animation
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -157,13 +184,13 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   useEffect(() => {
     const map = mapRef.current, runtime = runtimeRef.current
     if (provider !== 'ready' || !map || !runtime) return
-    const segments = track?.segments.map(stabilizeStationarySegment) ?? []
+    const segments = geometryTrack?.segments.map(stabilizeStationarySegment) ?? []
     updateTrackLayers(map, runtime, trackLayers.current, segments)
     // Install canonical geometry first. A lastSampleAt in the fast feed is not
     // proof that the corresponding route page is already drawn.
-    const drawnEnd = track && !track.truncated ? segments.filter(segment => segment.length).at(-1)?.at(-1) : null
+    const drawnEnd = geometryTrack && !geometryTrack.truncated ? segments.filter(segment => segment.length).at(-1)?.at(-1) : null
     drawnTrackAnchor.current = drawnEnd ? { coordinate: [drawnEnd.latitude, drawnEnd.longitude], observedAt: Date.parse(drawnEnd.capturedAt) } : null
-    const nextEndpoints = track ? trackEndpoints(track, completed) : []
+    const nextEndpoints = geometryTrack ? trackEndpoints(geometryTrack, completed) : []
     for (const [kind, marker] of endpoints.current) if (!nextEndpoints.some(endpoint => endpoint.kind === kind)) {
       map.geoObjects.remove(marker); endpoints.current.delete(kind)
     }
@@ -181,46 +208,38 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       const view = routeTrackView([...segments.flat(), ...nextEndpoints.map(endpoint => endpoint.point)], completed ? containerRef.current?.getBoundingClientRect() : undefined)
       map.setCenter(view.center, view.zoom, { duration: 0 }); firstView.current = true
     }
-  }, [provider, track, completed])
+  }, [provider, geometryTrack, completed])
 
   useEffect(() => {
     const map = mapRef.current, runtime = runtimeRef.current
     if (provider !== 'ready' || !map || !runtime) return
-    const ids = new Set(points.map(point => point.id))
-    for (const [id, entry] of pointMarkers.current) if (!ids.has(id)) { map.geoObjects.remove(entry.marker); pointMarkers.current.delete(id) }
     if (planned && !completed && points.length > 1) {
       const coordinates = [...points].sort((a, b) => a.position - b.position).map(point => [point.latitude, point.longitude] as const)
-      if (plannedLine.current) plannedLine.current.geometry.setCoordinates(coordinates)
+      const signature = JSON.stringify(coordinates)
+      if (plannedLine.current) {
+        if (plannedCoordinates.current !== signature) plannedLine.current.geometry.setCoordinates(coordinates)
+      }
       else {
         plannedLine.current = new runtime.Polyline(coordinates, {}, { strokeColor: '#e84b43', strokeWidth: 3, strokeStyle: 'shortdash', zIndex: 1 })
         map.geoObjects.add(plannedLine.current)
       }
-    } else if (plannedLine.current) { map.geoObjects.remove(plannedLine.current); plannedLine.current = null }
-    for (const point of points) {
+      plannedCoordinates.current = signature
+    } else if (plannedLine.current) { map.geoObjects.remove(plannedLine.current); plannedLine.current = null; plannedCoordinates.current = '' }
+    pointMarkers.current?.update(points, point => {
       const highlighted = !completed && point.id === highlightedPointId, destination = !completed && point.id === destinationPointId
       const visited = point.visitedByMe || point.visitedByTeam
       const markerClass = `raid-live-point${visited ? ' raid-live-point--visited' : ''}${highlighted && !visited ? ' raid-live-point--nearby' : ''}${destination ? ' raid-live-point--destination' : ''}`
       const ariaLabel = `${point.name}. ${destination ? 'Цель рейда. ' : ''}${point.visitedByMe ? 'Вы уже были. История посещений' : point.visitedByTeam ? 'Кабанда уже была. История посещений' : highlighted ? 'Вы рядом, подтвердите посещение' : 'Точка рейда. История посещений'}`
-      const signature = JSON.stringify([markerClass, ariaLabel, point.latitude, point.longitude])
-      const previous = pointMarkers.current.get(point.id)
-      const shape = { type: 'Circle', coordinates: [0, 0], radius: highlighted && !visited && !destination ? 22 : 16 }
-      if (previous) {
-        previous.point = point
-        if (previous.signature === signature) continue
-        previous.signature = signature
-        previous.marker.properties.set('markerClass', markerClass); previous.marker.properties.set('ariaLabel', ariaLabel)
-        previous.marker.options.set('iconShape', shape); previous.marker.options.set('zIndex', highlighted ? 40 : destination ? 35 : 20)
-        previous.marker.geometry?.setCoordinates([point.latitude, point.longitude])
-        continue
+      return {
+        coordinate: [point.latitude, point.longitude],
+        properties: { markerClass, ariaLabel, pointId: point.id },
+        options: {
+          iconShape: { type: 'Circle', coordinates: [0, 0], radius: highlighted && !visited && !destination ? 22 : 16 },
+          hasBalloon: false, hasHint: false, interactiveZIndex: false,
+          zIndex: highlighted ? 40 : destination ? 35 : 20,
+        },
       }
-      const layout = runtime.templateLayoutFactory.createClass('<button type="button" class="{{ properties.markerClass }}" data-raid-point="{{ properties.pointId }}" aria-label="{{ properties.ariaLabel }}"></button>')
-      const marker = new runtime.Placemark([point.latitude, point.longitude], { markerClass, ariaLabel, pointId: point.id }, {
-        iconLayout: layout, iconShape: shape, hasBalloon: false, hasHint: false, interactiveZIndex: false, zIndex: highlighted ? 40 : destination ? 35 : 20,
-      })
-      const entry = { marker, point, signature }
-      marker.events.add('click', event => { event.stopPropagation?.(); onSelect.current(entry.point) })
-      pointMarkers.current.set(point.id, entry); map.geoObjects.add(marker)
-    }
+    })
     if (!completed && !firstView.current && points.length) {
       const view = routeTrackView(points, completed ? containerRef.current?.getBoundingClientRect() : undefined)
       map.setCenter(view.center, view.zoom, { duration: 0 }); firstView.current = true
@@ -254,7 +273,8 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
       const markerClass = `route-live-map__rider route-live-map__rider--${spec.kind}${spec.stale ? ' route-live-map__rider--stale' : ''}`
       const existing = riders.current.get(spec.id)
       if (existing) {
-        existing.properties.set('markerClass', markerClass); existing.properties.set('label', spec.label)
+        if (existing.properties.get('markerClass') !== markerClass) existing.properties.set('markerClass', markerClass)
+        if (existing.properties.get('label') !== spec.label) existing.properties.set('label', spec.label)
       } else {
         const layout = runtime.templateLayoutFactory.createClass('<span class="{{ properties.markerClass }}" role="img" aria-label="{{ properties.label }}" title="{{ properties.label }}"></span>')
         const marker = new runtime.Placemark(coordinate, { markerClass, label: spec.label }, {
@@ -302,16 +322,16 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
   }, [identityId, live, completed, localRoutePreview, location, markerNow, navigatorSampleAt, navigatorUserId, positions, provider, snapshotNavigator, track, routePreviewScope, routePreviewIssuedAt])
 
   useEffect(() => {
-    followEnabled.current = following
+    if (!following) { camera.current?.stop(); return }
     const map = mapRef.current, coordinate = viewerCoordinate.current
     if (!following || provider !== 'ready' || !map || !coordinate) return
     firstLocation.current = true; firstView.current = true
-    map.setCenter(coordinate, map.getZoom(), { duration: 0 })
+    camera.current?.center(coordinate, true)
   }, [following, provider])
-  const stopFollowing = () => { followEnabled.current = false; setFollowing(false); firstLocation.current = true; firstView.current = true }
+  const stopFollowing = () => { camera.current?.stop(); setFollowing(false); firstLocation.current = true; firstView.current = true }
   const zoom = (delta: number) => {
     const map = mapRef.current
-    if (map) map.setZoom(Math.max(3, Math.min(19, map.getZoom() + delta)), { duration: 180 })
+    if (map) camera.current?.zoom(Math.max(3, Math.min(19, map.getZoom() + delta)))
   }
   return <div className="route-live-map-shell">
     {((planned && !completed) || (track?.segments.length ?? 0) > 1) && <p className="raid-route-legend">{planned && !completed ? 'Цветной пунктир — план · ' : ''}Чёрная линия — записанный путь; серый пунктир — соединение без GPS</p>}
@@ -335,16 +355,16 @@ export function RaidRouteMap({ identityId, navigatorUserId = null, navigatorSamp
           })
           .filter(item => item.distance <= item.radius)
           .sort((a, b) => a.distance - b.distance)[0]
-        const entry = hit?.marker.dataset.raidPoint ? pointMarkers.current.get(hit.marker.dataset.raidPoint) : null
-        if (entry) onSelect.current(entry.point)
+        const entry = hit?.marker.dataset.raidPoint ? pointMarkers.current?.get(hit.marker.dataset.raidPoint) : null
+        if (entry) onSelect.current(entry)
         else onMapTap?.()
       }}
       onClickCapture={event => {
         const marker = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-raid-point]') : null
-        const entry = marker?.dataset.raidPoint ? pointMarkers.current.get(marker.dataset.raidPoint) : null
+        const entry = marker?.dataset.raidPoint ? pointMarkers.current?.get(marker.dataset.raidPoint) : null
         if (!entry) return
         event.stopPropagation()
-        onSelect.current(entry.point)
+        onSelect.current(entry)
       }}
       onPointerCancelCapture={() => { if (gesture.current) stopFollowing(); gesture.current = null }}
       onWheelCapture={stopFollowing} onDoubleClickCapture={stopFollowing}

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { DraftRaidTemplatePoint } from '../types'
 import { RaidTemplatePointList } from './RaidTemplatePointList'
-import { RaidTemplatePointSheet, shouldDismissPointSheet } from './RaidTemplatePointSheet'
+import { isPointSheetBackgroundTap, RaidTemplatePointSheet, shouldDismissPointSheet, shouldExpandPointSheet } from './RaidTemplatePointSheet'
 import { RaidTemplateScopeControl } from './RaidTemplateEditorPage'
 
 const points: DraftRaidTemplatePoint[] = [
@@ -17,9 +17,19 @@ const points: DraftRaidTemplatePoint[] = [
 ]
 
 describe('raid template point controls', () => {
-  it('keeps drag, move buttons, and edit cards available together', () => {
+  it('allows confirmation without an address or geocoder and keeps the map outside the dialog', () => {
+    const markup = renderToStaticMarkup(<RaidTemplatePointSheet
+      point={{ ...points[0]!, address: '', geocodeStatus: 'failed', labelsConfirmed: false }} pointNumber={1}
+      onClose={() => undefined} onConfirm={() => undefined} onDelete={() => undefined}
+      onHeightChange={() => undefined} onUpdate={() => undefined}
+    />)
+    expect(markup).not.toContain('disabled')
+    expect(markup).not.toContain('aria-modal="true"')
+    expect(markup).toContain('Можно оставить пустым')
+  })
+
+  it('keeps a compact drag handle with keyboard instructions and editing on the row', () => {
     const markup = renderToStaticMarkup(<RaidTemplatePointList
-      onDelete={() => undefined}
       onMove={() => undefined}
       onReorder={() => undefined}
       onSelect={() => undefined}
@@ -27,8 +37,9 @@ describe('raid template point controls', () => {
       selectedPointId={null}
     />)
     expect(markup).toContain('Перетащить точку 1')
-    expect(markup).toContain('Поднять точку 2 выше')
-    expect(markup).toContain('Опустить точку 1 ниже')
+    expect(markup).not.toContain('Поднять точку')
+    expect(markup).not.toContain('Удалить точку')
+    expect(markup).toContain('Для изменения порядка с клавиатуры')
     expect(markup).toContain('Проверьте')
   })
 
@@ -38,7 +49,6 @@ describe('raid template point controls', () => {
       onConfirm={() => undefined}
       onDelete={() => undefined}
       onHeightChange={() => undefined}
-      onRetryGeocode={() => undefined}
       onUpdate={() => undefined}
       point={points[1]!}
       pointNumber={2}
@@ -48,6 +58,8 @@ describe('raid template point controls', () => {
     expect(markup).toContain('Подтвердить')
     expect(markup).toContain('rows="1"')
     expect(markup).not.toContain('Закрыть карточку точки')
+    expect(markup).not.toContain('rt-point-sheet__close')
+    expect(markup).toContain('Потяните вверх, чтобы развернуть, или вниз, чтобы закрыть')
     expect(markup).not.toContain('Сервис адресов предложил подписи')
   })
 
@@ -55,6 +67,19 @@ describe('raid template point controls', () => {
     expect(shouldDismissPointSheet(100, 171)).toBe(false)
     expect(shouldDismissPointSheet(100, 172)).toBe(true)
     expect(shouldDismissPointSheet(100, 40)).toBe(false)
+  })
+
+  it('expands upward while keeping small drags and downward swipes distinct', () => {
+    expect(shouldExpandPointSheet(200, 153)).toBe(false)
+    expect(shouldExpandPointSheet(200, 152)).toBe(true)
+    expect(shouldExpandPointSheet(200, 272)).toBe(false)
+  })
+
+  it('closes on short background taps without treating map pans or long presses as taps', () => {
+    expect(isPointSheetBackgroundTap(8, 500)).toBe(true)
+    expect(isPointSheetBackgroundTap(9, 100)).toBe(false)
+    expect(isPointSheetBackgroundTap(0, 501)).toBe(false)
+    expect(isPointSheetBackgroundTap(0, -1)).toBe(false)
   })
 })
 

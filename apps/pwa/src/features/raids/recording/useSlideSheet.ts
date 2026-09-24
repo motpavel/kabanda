@@ -1,15 +1,9 @@
 import { useLayoutEffect, useRef, type PointerEvent, type MouseEvent } from 'react'
+import { useSheetViewport } from '../../../components/sheets/useSheetViewport'
 
 const duration = 260
 const offscreen = 'translate3d(0, calc(100% + 32px), 0)'
 const rest = 'translate3d(0, 0, 0)'
-
-function fitSheetViewport(element: HTMLElement) {
-  const viewport = window.visualViewport
-  if (!viewport || viewport.scale !== 1) return
-  element.style.setProperty('--sheet-viewport-height', `${viewport.height}px`)
-  element.style.setProperty('--sheet-keyboard-inset', `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`)
-}
 
 /** One mounted surface: drafts survive dismissal; modal focus survives exit. */
 export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: () => void) {
@@ -18,6 +12,8 @@ export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: (
   const gesture = useRef<{ id: number; start: number; last: number; time: number; velocity: number } | null>(null)
   const suppressClick = useRef(false)
   dismiss.current = onDismiss
+  useSheetViewport(ref, { open, contentSelector: '.raid-arrival-sheet__body, [data-sheet-body]',
+    allowMapSelector: '.route-live-map-shell, .route-live-map, .kb-yandex-map' })
 
   useLayoutEffect(() => {
     const element = ref.current
@@ -60,44 +56,9 @@ export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: (
 
   useLayoutEffect(() => {
     const element = ref.current
-    const viewport = window.visualViewport
-    if (!element || !open || !viewport) return
-    let frame = 0
-    const fitViewport = () => {
-      // Pin the sheet above the software keyboard without reacting to pinch zoom.
-      if (viewport.scale !== 1 || gesture.current) return
-      fitSheetViewport(element)
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const focused = document.activeElement
-        if (gesture.current || !(focused instanceof HTMLTextAreaElement) || !element.contains(focused)) return
-        const body = focused.closest<HTMLElement>('.raid-arrival-sheet__body')
-        if (!body) return
-        const fieldRect = focused.getBoundingClientRect()
-        const bodyRect = body.getBoundingClientRect()
-        // Scroll only the content, never the document or the sheet itself.
-        if (fieldRect.bottom > bodyRect.bottom) body.scrollTop += fieldRect.bottom - bodyRect.bottom + 12
-        else if (fieldRect.top < bodyRect.top) body.scrollTop -= bodyRect.top - fieldRect.top + 12
-      })
-    }
-    fitViewport()
-    viewport.addEventListener('resize', fitViewport)
-    viewport.addEventListener('scroll', fitViewport)
-    window.addEventListener('resize', fitViewport)
-    return () => {
-      cancelAnimationFrame(frame)
-      viewport.removeEventListener('resize', fitViewport)
-      viewport.removeEventListener('scroll', fitViewport)
-      window.removeEventListener('resize', fitViewport)
-    }
-  }, [open])
-
-  useLayoutEffect(() => {
-    const element = ref.current
     if (!element || !open) return
     let candidate: { id: number; x: number; y: number; handle: boolean } | null = null
     const restore = () => {
-      fitSheetViewport(element)
       element.style.transition = matchMedia('(prefers-reduced-motion: reduce)').matches
         ? 'none' : `transform ${duration}ms cubic-bezier(0.32, 0.72, 0, 1)`
       element.style.transform = rest
@@ -109,8 +70,7 @@ export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: (
       const target = event.target
       const handle = Boolean(target.closest('[data-sheet-drag]'))
       if (target.closest('button:not([data-sheet-drag]), input, textarea, select, a, label')) return
-      const body = target.closest<HTMLElement>('.raid-arrival-sheet__body')
-      if (!handle && (!body || body.scrollTop > 0)) return
+      if (!handle) return
       const touch = event.touches[0]!
       candidate = { id: touch.identifier, x: touch.clientX, y: touch.clientY, handle }
       suppressClick.current = false
@@ -165,7 +125,6 @@ export function useSlideSheet<T extends HTMLElement>(open: boolean, onDismiss: (
     if (!element) return
     element.style.transition = matchMedia('(prefers-reduced-motion: reduce)').matches
       ? 'none' : `transform ${duration}ms cubic-bezier(0.32, 0.72, 0, 1)`
-    fitSheetViewport(element)
     element.style.transform = rest
   }
   return {

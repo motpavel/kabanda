@@ -154,7 +154,7 @@ async function deliverPosition(page: Page, index: number) {
   }), index)
 }
 
-test('map retains camera, category and selection while refreshing the location marker on re-entry', async ({ page, context }) => {
+test('map retains its instance, camera and category, closes sheets and refreshes location on re-entry', async ({ page, context }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await installYandexMapsMock(context)
@@ -171,8 +171,8 @@ test('map retains camera, category and selection while refreshing the location m
   await deliverPosition(page, 0)
   expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
   await page.getByRole('link', { name: 'Рейды', exact: true }).click()
-  await expect(map).toHaveCount(0)
-  expect(await page.evaluate(() => (window as any).continuityMap.destroyed)).toBe(1)
+  await expect(map).toBeHidden()
+  expect(await page.evaluate(() => (window as any).continuityMap.destroyed)).toBe(0)
   await page.getByRole('link', { name: 'Карта', exact: true }).click()
   await expect(map).toBeVisible()
   expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
@@ -187,17 +187,18 @@ test('map retains camera, category and selection while refreshing the location m
   await expect(marker).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeVisible()
   await page.goBack()
-  await expect(map).toHaveCount(0)
+  await expect(map).toBeHidden()
   await page.goForward()
   await expect(map).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Категория точек' })).toHaveValue('attractions')
-  await expect(marker).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeVisible()
+  await expect(marker).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('heading', { name: 'Тестовая башня', exact: true })).toBeHidden()
   expect(await camera(page)).toEqual({ center: [56.9, 53.26], zoom: 16 })
+  expect(await page.evaluate(() => ({ created: (window as any).continuityMap.created, destroyed: (window as any).continuityMap.destroyed }))).toEqual({ created: 1, destroyed: 0 })
   expect(errors).toEqual([])
 })
 
-test('late location from a destroyed map is ignored while the re-opened map locates automatically', async ({ page, context }) => {
+test('late location from a hidden map is ignored and switching teams destroys the retained map', async ({ page, context }) => {
   await installYandexMapsMock(context)
   await mockScreens(page)
   await page.goto(`/app?kabanda=${teamId}`)
@@ -221,4 +222,30 @@ test('late location from a destroyed map is ignored while the re-opened map loca
     window.dispatchEvent(new PopStateEvent('popstate'))
   }, otherTeam)
   await expect.poll(() => camera(page)).toEqual({ center: [56.8528, 53.2045], zoom: 12 })
+  expect(await page.evaluate(() => (window as any).continuityMap.destroyed)).toBe(1)
+})
+
+test('list mode and an initially empty category preserve the same map', async ({ page, context }) => {
+  const gate = deferred()
+  await installYandexMapsMock(context)
+  await mockScreens(page, { points: gate.promise })
+  await page.goto(`/app?kabanda=${teamId}`)
+  await expect(page.getByRole('heading', { name: 'Соберёмся на прогулку?' })).toBeVisible()
+  await instrumentMap(page)
+  try {
+    await page.getByRole('link', { name: 'Карта', exact: true }).click()
+    const map = page.locator('[data-kabanda-map]')
+    await expect(map).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as any).continuityMap.created)).toBe(1)
+    await page.getByRole('button', { name: 'Список', exact: true }).click()
+    await expect(map).toBeHidden()
+    await page.getByRole('button', { name: 'Карта', exact: true }).click()
+    await expect(map).toBeVisible()
+    await page.getByRole('combobox', { name: 'Категория точек' }).selectOption('attractions')
+    await expect(page.getByText('Получаем достопримечательности…')).toBeVisible()
+    await expect(map).toBeVisible()
+    gate.resolve()
+    await expect(page.getByRole('button', { name: /^Тестовая башня\./ })).toBeVisible()
+    expect(await page.evaluate(() => ({ created: (window as any).continuityMap.created, destroyed: (window as any).continuityMap.destroyed }))).toEqual({ created: 1, destroyed: 0 })
+  } finally { gate.resolve() }
 })

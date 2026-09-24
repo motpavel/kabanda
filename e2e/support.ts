@@ -66,12 +66,14 @@ export async function installYandexMapsMock(context: BrowserContext): Promise<vo
       readonly settings: Record<string, unknown>
       readonly handlers: Record<string, PlacemarkHandler[]> = {}
       readonly properties = {
+        get: (name: string) => this.values[name],
         set: (name: string, value: unknown) => {
           this.values[name] = value
           this.syncElement()
         },
       }
       readonly options = {
+        get: (name: string) => this.settings[name],
         set: (name: string, value: unknown) => {
           this.settings[name] = value
         },

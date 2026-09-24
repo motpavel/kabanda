@@ -59,6 +59,7 @@ describe('attachNumberedWaypointPlacemark', () => {
       },
     }
     const runtime = {
+      templateLayoutFactory: { createClass: vi.fn(() => 'numbered-pin-layout') },
       Placemark: class {
         constructor() {
           return placemark

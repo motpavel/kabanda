@@ -1,4 +1,5 @@
 import type { RaidTemplateDraft } from '../types'
+import { compactRouteAddress } from './compact-address'
 
 const DRAFT_PREFIX = 'kabanda.raid-template-draft.v1'
 
@@ -88,7 +89,7 @@ function parseDraft(value: unknown, identityId: string, kabandaId: string): Raid
     title: draft.title!,
     description: typeof draft.description === 'string' ? draft.description.slice(0, 3000) : '',
     coverImage: draft.coverImage!,
-    points: draft.points!,
+    points: draft.points!.map(point => ({ ...point, address: compactRouteAddress(point.address) })),
     selectedPointId: draft.selectedPointId!,
     idempotencyKey: draft.idempotencyKey!,
     updatedAt: draft.updatedAt!,

@@ -17,7 +17,8 @@ export class RouteChangeBuffer {
   epoch: string | null = null
   cursor = '0'
   private records = new Map<string, RouteChangeRecord>()
-  clear() { this.records.clear(); this.epoch = null; this.cursor = '0' }
+  private projection: { value: RouteTrackProjection; at: number; nextFutureAt: number } | null = null
+  clear() { this.records.clear(); this.epoch = null; this.cursor = '0'; this.projection = null }
   accept(page: RouteChangePage, raidId: string): RouteTrackProjection {
     if (!page || page.schemaVersion !== 1 || page.raidId !== raidId || !/^[a-f0-9]{64}$/.test(page.epoch) ||
       !decimal(page.cursor) || typeof page.reset !== 'boolean' || typeof page.hasMore !== 'boolean' ||
@@ -39,6 +40,7 @@ export class RouteChangeBuffer {
     // Validate the complete page before mutating the buffer. A malformed page
     // must not discard an already displayed route or advance its cursor.
     if (page.reset) this.records.clear()
+    if (page.reset || page.records.length) this.projection = null
     this.epoch = page.epoch
     this.cursor = page.cursor
     for (const row of page.records) this.records.set(`${row.leaseId}:${row.sequence}`, row)
@@ -46,9 +48,21 @@ export class RouteChangeBuffer {
   }
   project(serverAt: string, truncated = false): RouteTrackProjection {
     const now = Date.parse(serverAt)
+    // Empty polling pages are frequent. Retain geometry until a record changes
+    // or the server clock makes a future-dated fix eligible. A clock rollback
+    // must still rebuild so a not-yet-eligible point cannot remain visible.
+    if (this.projection && now >= this.projection.at && now < this.projection.nextFutureAt) {
+      return { ...this.projection.value, serverAt, truncated }
+    }
+    let nextFutureAt = Infinity
     const rows = [...this.records.values()].sort((a, b) => a.generation - b.generation ||
       (BigInt(a.sequence) < BigInt(b.sequence) ? -1 : BigInt(a.sequence) > BigInt(b.sequence) ? 1 : 0))
-      .filter(row => row.visible && Date.parse(row.capturedAt) <= now)
+      .filter(row => {
+        if (!row.visible) return false
+        const capturedAt = Date.parse(row.capturedAt)
+        if (capturedAt > now) nextFutureAt = Math.min(nextFutureAt, capturedAt)
+        return capturedAt <= now
+      })
     const segments: RouteTrackPoint[][] = []
     let current: RouteTrackPoint[] = []
     let previous: RouteChangeRecord | undefined
@@ -61,7 +75,9 @@ export class RouteChangeBuffer {
       current.push(point)
       previous = row
     }
-    return { segments, startPoint: segments[0]?.[0] ?? null, endPoint: current.at(-1) ?? null,
+    const value = { segments, startPoint: segments[0]?.[0] ?? null, endPoint: current.at(-1) ?? null,
       pointCount: rows.length, truncated, updatedAt: rows.at(-1)?.capturedAt ?? null, serverAt }
+    this.projection = { value, at: now, nextFutureAt }
+    return value
   }
 }

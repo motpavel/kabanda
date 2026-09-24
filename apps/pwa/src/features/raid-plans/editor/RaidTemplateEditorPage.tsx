@@ -77,6 +77,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
     initialDraft.draft,
   )
   const draftRef = useRef(draft)
+  const saveFeedbackRef = useRef<HTMLDivElement>(null)
   const routeTimeoutRef = useRef<number | null>(null)
   const [routeEstimate, setRouteEstimate] = useState<DraftRouteEstimate>({ status: 'idle' })
   const [localState, setLocalState] = useState<'saving' | 'saved' | 'failed'>(initialDraft.restored ? 'saved' : 'saving')
@@ -86,6 +87,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
   const [saveError, setSaveError] = useState<string | null>(null)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const submittedRef = useRef(false)
   const [pointSheetHeight, setPointSheetHeight] = useState(0)
   const coordinateFingerprint = draft.points.map((point) => `${point.latitude}:${point.longitude}`).join('|')
   const selectedPoint = draft.points.find((point) => point.clientId === draft.selectedPointId) ?? null
@@ -107,7 +109,7 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
   useEffect(() => {
     setLocalState('saving')
     const timer = window.setTimeout(() => {
-      setLocalState(saveRaidTemplateDraft(draft) ? 'saved' : 'failed')
+      if (!submittedRef.current) setLocalState(saveRaidTemplateDraft(draft) ? 'saved' : 'failed')
     }, 250)
     return () => window.clearTimeout(timer)
   }, [draft])
@@ -129,6 +131,18 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
     // Only coordinate/order changes make the current route estimate stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coordinateFingerprint])
+
+  useEffect(() => {
+    // Flush the latest edit if the tab closes before the debounced save runs.
+    const flush = () => { if (!submittedRef.current) saveRaidTemplateDraft(draftRef.current) }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   const requestGeocode = useCallback(async (point: Pick<DraftRaidTemplatePoint, 'clientId' | 'latitude' | 'longitude'>) => {
     const requestId = randomId()
@@ -216,14 +230,25 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
     dispatch({ type: 'delete-point', pointId })
   }
 
+  const revealSaveFeedback = () => {
+    window.requestAnimationFrame(() => {
+      saveFeedbackRef.current?.scrollIntoView({ block: 'center' })
+      saveFeedbackRef.current?.focus({ preventScroll: true })
+    })
+  }
+
   const save = async () => {
     setSubmitAttempted(true)
     setSaveError(null)
     const current = draftRef.current
     const errors = raidTemplateDraftErrors(current)
-    if (errors.length > 0) return
+    if (errors.length > 0) {
+      revealSaveFeedback()
+      return
+    }
     if (!navigator.onLine) {
       setSaveError('Для сохранения маршрута в Кабанде нужно подключение к интернету. Локальный черновик не пропадёт.')
+      revealSaveFeedback()
       return
     }
     setSaveState('saving')
@@ -241,11 +266,13 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
           longitude,
         })),
       }, current.idempotencyKey)
+      submittedRef.current = true
       clearRaidTemplateDraft(identityId, kabanda.id)
       window.location.assign(`${appPath('app')}?kabanda=${encodeURIComponent(kabanda.id)}&tab=raids`)
     } catch (error) {
       setSaveState('error')
       setSaveError(error instanceof ApiError ? error.message : 'Маршрут не сохранился. Повтор использует тот же ключ и не создаст дубль.')
+      revealSaveFeedback()
     }
   }
 
@@ -255,43 +282,50 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         <p>{kabanda.name}</p>
         <h1>Новый маршрут</h1>
       </div>
-      <span className={`rt-editor__local-state rt-editor__local-state--${localState}`} role="status">
-        {localState === 'saving' ? 'Сохраняем черновик…' : localState === 'saved' ? 'Черновик на устройстве' : 'Черновик только в памяти'}
-      </span>
     </header>
+    <div className="rt-editor__hero">
+      <img src={appPath('brand/kabanda-route-raid-v1.jpg')} alt="" />
+      <p>Ваши места.<br /><strong>Общий маршрут.</strong></p>
+    </div>
+    <div className={`rt-editor__local-state rt-editor__local-state--${localState}`} role="status">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d={localState === 'failed' ? 'M12 8v5m0 4h.01M12 3 2 21h20L12 3Z' : 'm5 12 4 4L19 6'} /></svg>
+      <span>{localState === 'saving' ? 'Сохраняем черновик…' : localState === 'saved' ? 'Черновик сохранён на устройстве' : 'Не удалось сохранить черновик на устройстве'}</span>
+    </div>
 
     <section className="rt-editor__basics" aria-labelledby="rt-basics-heading">
       <div className="rt-editor__section-head">
-        <span>1</span><div><h2 id="rt-basics-heading">Название и обложка</h2><p>Их увидят участники в каталоге маршрутов.</p></div>
+        <span aria-hidden="true">1</span><div><h2 id="rt-basics-heading">О маршруте</h2></div>
       </div>
-      <label htmlFor="rt-template-title">Название маршрута</label>
-      <input
-        autoCapitalize="sentences"
-        id="rt-template-title"
-        maxLength={120}
-        onChange={(event) => dispatch({ type: 'set-title', title: event.target.value })}
-        placeholder="Например, Набережная и центр"
-        required
-        value={draft.title}
-      />
-      <label htmlFor="rt-template-description">О маршруте <span>· необязательно</span></label>
-      <textarea id="rt-template-description" rows={4} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути, почему стоит проехать этот маршрут и что взять с собой" />
-      <label className={`rt-cover${draft.coverImage ? ' rt-cover--ready' : ''}`}>
-        <input accept="image/jpeg,image/png,image/webp" aria-label={draft.coverImage ? 'Заменить обложку маршрута' : 'Добавить обложку маршрута'} disabled={coverState === 'processing'} onChange={(event) => void prepareCover(event)} type="file" />
-        {draft.coverImage ? <img alt="Предпросмотр обложки маршрута" src={draft.coverImage} /> : <span aria-hidden="true" className="rt-cover__icon">＋</span>}
-        <span className="rt-cover__copy"><strong>{coverState === 'processing' ? 'Готовим изображение…' : draft.coverImage ? 'Заменить обложку' : 'Добавить обложку'}</strong><small>JPEG, PNG или WebP · до 12 МБ</small></span>
-      </label>
-      {coverError && <p className="rt-editor__error" role="alert">{coverError}</p>}
-      <RaidTemplateScopeControl
-        kabandaName={kabanda.name}
-        onChange={(scope) => dispatch({ type: 'set-scope', scope })}
-        scope={draft.scope}
-      />
+      <div className="rt-editor-field">
+        <label htmlFor="rt-template-title">Название маршрута</label>
+        <input
+          autoCapitalize="sentences"
+          id="rt-template-title"
+          maxLength={120}
+          onChange={(event) => dispatch({ type: 'set-title', title: event.target.value })}
+          placeholder="Например, Набережная и центр"
+          required
+          value={draft.title}
+        />
+      </div>
+      <div className="rt-editor-field">
+        <label htmlFor="rt-template-description">Описание <span>Необязательно</span></label>
+        <textarea id="rt-template-description" rows={2} maxLength={3000} value={draft.description ?? ''} onChange={event => dispatch({ type: 'set-description', description: event.target.value })} placeholder="Что увидим по пути" />
+      </div>
+      <div className="rt-editor-field">
+        <span className="rt-editor-field__label">Обложка маршрута</span>
+        <label className={`rt-cover${draft.coverImage ? ' rt-cover--ready' : ''}`}>
+          <input accept="image/jpeg,image/png,image/webp" aria-label={draft.coverImage ? 'Заменить обложку маршрута' : 'Добавить обложку маршрута'} disabled={coverState === 'processing'} onChange={(event) => void prepareCover(event)} type="file" />
+          {draft.coverImage ? <img alt="Предпросмотр обложки маршрута" src={draft.coverImage} /> : <span aria-hidden="true" className="rt-cover__icon"><svg viewBox="0 0 24 24"><path d="M8 5 9.5 3h5L16 5h3a2 2 0 0 1 2 2v12H3V7a2 2 0 0 1 2-2h3Z" /><circle cx="12" cy="12" r="4" /></svg></span>}
+          <span className="rt-cover__copy"><strong>{coverState === 'processing' ? 'Готовим изображение…' : draft.coverImage ? 'Заменить обложку' : 'Добавить обложку'}</strong><small>JPEG, PNG или WebP · до 12 МБ</small></span>
+        </label>
+        {coverError && <p className="rt-editor__error" role="alert">{coverError}</p>}
+      </div>
     </section>
 
     <section className="rt-editor__route" aria-labelledby="rt-route-heading">
       <div className="rt-editor__section-head">
-        <span>2</span><div><h2 id="rt-route-heading">Точки маршрута</h2><p>Добавьте от 2 до 10 мест в нужном порядке.</p></div>
+        <span aria-hidden="true">2</span><div><h2 id="rt-route-heading">Точки маршрута</h2><p>От 2 до 10 мест — от старта до финиша.</p></div>
       </div>
       <RaidTemplateEditorMap
         canAddPoint={draft.points.length < RAID_TEMPLATE_MAX_POINTS}
@@ -306,8 +340,8 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         <span><strong>{draft.points.length}</strong><small>{pointCountLabel(draft.points.length)}</small></span>
         <span><strong>{summary.distance}</strong><small>{summary.label}</small></span>
       </div>
+      {draft.points.length > 1 && <p className="rt-editor__order-hint">Потяните за шесть точек справа, чтобы изменить порядок.</p>}
       <RaidTemplatePointList
-        onDelete={deletePoint}
         onMove={(pointId, direction) => dispatch({ type: 'move-point', pointId, direction })}
         onReorder={(activeId, overId) => dispatch({ type: 'reorder-point', activeId, overId })}
         onSelect={(pointId) => dispatch({ type: 'select-point', pointId })}
@@ -316,15 +350,28 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
       />
     </section>
 
-    {submitAttempted && validationErrors.length > 0 && <div className="rt-editor__validation" role="alert">
-      <strong>Маршрут пока не готов</strong>
-      <ul>{validationErrors.map((error) => <li key={error}>{error}</li>)}</ul>
-    </div>}
+    <section className="rt-editor__sharing" aria-labelledby="rt-sharing-heading">
+      <div className="rt-editor__section-head">
+        <span aria-hidden="true">3</span><div><h2 id="rt-sharing-heading">С кем поделимся?</h2><p>Выберите, кому будет доступен маршрут.</p></div>
+      </div>
+      <RaidTemplateScopeControl kabandaName={kabanda.name}
+        onChange={(scope) => dispatch({ type: 'set-scope', scope })} scope={draft.scope} />
+    </section>
+
     {!online && <p className="rt-editor__offline" role="status">Нет сети. Можно продолжать редактирование — черновик останется на устройстве.</p>}
-    {saveError && <p className="rt-editor__error rt-editor__save-error" role="alert">{saveError}</p>}
-    <button className="rt-editor__save" disabled={saveState === 'saving' || coverState === 'processing'} onClick={() => void save()} type="button">
-      {saveState === 'saving' ? 'Сохраняем маршрут…' : 'Сохранить маршрут'}
-    </button>
+    {((submitAttempted && validationErrors.length > 0) || saveError) && <div className="rt-editor__feedback" ref={saveFeedbackRef} tabIndex={-1}>
+      {submitAttempted && validationErrors.length > 0 && <div className="rt-editor__validation" role="alert">
+        <strong>Маршрут пока не готов</strong>
+        <ul>{validationErrors.map((error) => <li key={error}>{error}</li>)}</ul>
+      </div>}
+      {saveError && <p className="rt-editor__error rt-editor__save-error" role="alert">{saveError}</p>}
+    </div>}
+    <div className="rt-editor__action" hidden={selectedPoint !== null}>
+      <button className="rt-editor__save" disabled={saveState === 'saving' || coverState === 'processing'} onClick={() => void save()} type="button">
+        {saveState === 'saving' ? 'Сохраняем маршрут…' : 'Сохранить маршрут'}
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+      </button>
+    </div>
 
     {selectedPoint && <RaidTemplatePointSheet
       onClose={() => dispatch({ type: 'select-point', pointId: null })}
@@ -333,7 +380,6 @@ function RaidTemplateEditor({ identityId, kabanda }: { identityId: string; kaban
         dispatch({ type: 'select-point', pointId: null })
       }}
       onDelete={() => deletePoint(selectedPoint.clientId)}
-      onRetryGeocode={() => void requestGeocode(selectedPoint)}
       onHeightChange={setPointSheetHeight}
       onUpdate={(patch) => dispatch({ type: 'update-point', pointId: selectedPoint.clientId, patch })}
       point={selectedPoint}
@@ -382,10 +428,10 @@ export function RaidTemplateScopeControl({
 function EditorShell({ kabandaId, children }: { kabandaId: string; children: ReactNode }) {
   return <main className="rt-editor-shell">
     <nav className="rt-editor-nav" aria-label="Навигация конструктора">
-      <a href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`} aria-label="Вернуться к рейдам">← <span>Рейды</span></a>
+      <a className="rt-editor-nav__back" href={`${appPath('app')}?kabanda=${encodeURIComponent(kabandaId)}&tab=raids`} aria-label="Вернуться к рейдам"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6" /></svg></a>
       <a className="rt-editor-nav__brand" href={appPath('app')} aria-label="КАБАНДА — на главную"><img alt="" src={appPath('brand/kabanda-logo-reference.png')} /><img className="kb-brand__wordmark" src={appPath('brand/kabanda-wordmark-ui.png')} alt="КАБАНДА" /></a>
     </nav>
-    {children}
+    <div className="rt-editor-content">{children}</div>
   </main>
 }
 

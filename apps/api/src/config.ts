@@ -23,7 +23,7 @@ const environmentSchema = z.object({
   RELAY_SESSION_SECRET: z.string().min(32).optional(),
   RELAY_BLOB_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional(),
   RELAY_S3_CREDENTIALS_FILE: z.string().min(1).optional(),
-  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0020_field_sync.sql'),
+  EXPECTED_MIGRATION: z.string().regex(/^\d{4}_[a-z0-9_]+\.sql$/).default('0021_optional_route_point_address.sql'),
   DATABASE_URL: z.string().min(1).default('postgresql://kabanda:kabanda@127.0.0.1:54329/kabanda'),
   SMTP_HOST: z.string().default('127.0.0.1'),
   SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(1025),

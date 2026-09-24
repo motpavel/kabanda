@@ -6,7 +6,8 @@ import { installYandexMapsMock } from './support.js'
 // the synthetic user to the real API (401). Keep this UI fixture deterministic;
 // real SW/auth/offline recovery remains covered by its separate existing suites.
 test.use({ serviceWorkers: 'block' })
-async function prepare(page: Page, navigatorView = false, includeViewer = true) {
+async function prepare(page: Page, navigatorView = false, includeViewer = true, distantPoint = false) {
+ let historyRequests = 0;
  let attempt: string | null = null; let visitedAt: string | null = null;
  const context = page.context();
  await installYandexMapsMock(context);
@@ -26,14 +27,15 @@ async function prepare(page: Page, navigatorView = false, includeViewer = true) 
  const raid={id:raidId,kabandaId:teamId,title:'Лесной маршрут',state:'active',version:3,scheduledAt:null,description:null,organizerUserId:ids[0],navigatorUserId:ids[0],navigatorReady:true,navigatorBlockers:[],navigatorWarnings:[],navigatorLease:null,finalization:null,participants:members,allowedActions:[],routeStatus:{status:'awaiting_lease',acceptedSampleCount:0,missingSequenceCount:0,lastSampleAt:null,lastReceivedAt:null}};
  await page.route('**/api/**',async route=>{
  const path=route.request().url().replace(/^https?:\/\/[^/]+/, '').split('?')[0],now=new Date().toISOString();
+ if(path.endsWith('/history')) historyRequests++;
  if(path.includes('/route/lease/'))return route.fulfill({status:409,json:{error:{code:'NAVIGATOR_LEASE_HELD',message:'Synthetic device'}}});
- const point={id:pointId,sourcePointId:pointId,name:'Лесное озеро',latitude:56.86012,longitude:53.21,position:0,visitedByMe:Boolean(attempt)&&includeViewer,visitedByTeam:Boolean(attempt),lastAttemptId:attempt,myLastVisitAttemptId:includeViewer?attempt:null,lastVisitedAt:visitedAt,repeatAvailableAt:visitedAt ? new Date(Date.parse(visitedAt)+300000).toISOString():null,lastVisitParticipantIds:attempt?ids.slice(0,3).filter(id=>includeViewer||id!==viewerId):[]};
+ const point={id:pointId,sourcePointId:pointId,name:'Лесное озеро',latitude:distantPoint?56.89:56.86012,longitude:53.21,position:0,visitedByMe:Boolean(attempt)&&includeViewer,visitedByTeam:Boolean(attempt),lastAttemptId:attempt,myLastVisitAttemptId:includeViewer?attempt:null,lastVisitedAt:visitedAt,repeatAvailableAt:visitedAt ? new Date(Date.parse(visitedAt)+300000).toISOString():null,lastVisitParticipantIds:attempt?ids.slice(0,3).filter(id=>includeViewer||id!==viewerId):[]};
  const body=path==='/api/me'?{user:{id:viewerId,displayName:navigatorView?'Павел':'Илья',username:'pavel',email:'pavel@example.test',identityKind:'verified',avatarUrl:null}}
  :path==='/api/kabandas'?{kabandas:[{id:teamId,name:'Кабанда',role:'member',avatar:'🐗',coverImage:null,memberCount:4,pointsCollectionId:null}]}
  :path.endsWith('/live')?{raid,serverAt:now,teamVisits:true,positions:ids.slice(0,3).map(userId=>({userId,latitude:56.86,longitude:53.21,accuracyMeters:8,capturedAt:now})),points:[point],claims:[],fallbacks:[],track:{segments:[],pointCount:0,truncated:false,updatedAt:null,serverAt:now}}
  :path.endsWith('/history')?{personalCount:includeViewer?2:0,visitors:[{userId:ids[0],displayName:'Павел',count:3},{userId:ids[1],displayName:'Илья',count:2}],entries:[],nextOffset:null}
  :path.endsWith('/materials')?{materials:[],nextCursor:null,canWrite:Boolean(attempt)&&includeViewer}
- :path.endsWith('/check-ins/nearby')?{policy:{version:'v1',radiusMeters:50,maxAgeSeconds:60,maxAccuracyMeters:50},points:[{...point,pointSnapshotId:pointId,distanceMeters:13,creditedByMe:false,creditedByTeam:false}]}
+ :path.endsWith('/check-ins/nearby')?{policy:{version:'v1',radiusMeters:50,maxAgeSeconds:60,maxAccuracyMeters:50},points:distantPoint?[]:[{...point,pointSnapshotId:pointId,distanceMeters:13,creditedByMe:false,creditedByTeam:false}]}
  :path.endsWith('/presence/me')?{radiusMeters:50,maxAgeSeconds:30,allReady:false,participants:[],serverAt:now}
  :path.endsWith('/media')?{media:[],nextCursor:null}
  :path.endsWith('/raids')?{raids:[raid]}
@@ -45,7 +47,7 @@ async function prepare(page: Page, navigatorView = false, includeViewer = true) 
  await page.goto(`/app?raid=${raidId}`);
  await expect(page.locator('.raid-active-map')).toBeVisible();
  await page.waitForResponse(response => response.url().includes('/live'));
- return { raidId, pointId, viewerId, mark: (id: string) => { attempt=id; visitedAt=new Date().toISOString() } };
+ return { raidId, pointId, viewerId, historyRequests: () => historyRequests, mark: (id: string) => { attempt=id; visitedAt=new Date().toISOString() } };
 }
 
 test('participant notification opens read-only attendance and comment without losing sheet chrome', async ({page}) => {
@@ -67,12 +69,14 @@ test('participant notification opens read-only attendance and comment without lo
  await expect(sheet.locator('.raid-arrival-sheet__collapse')).toBeInViewport();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.screenshot({animations:'disabled',path:'output/playwright/participant-comment-320.png'});
- await sheet.getByRole('button',{name:'Добавить комментарий',exact:true}).scrollIntoViewIfNeeded();
- await expect(sheet.getByRole('button',{name:'Добавить комментарий',exact:true})).toBeInViewport();
+ await expect(sheet.getByRole('button',{name:'Добавить комментарий',exact:true})).toHaveCount(0);
+ await expect(sheet.locator('.raid-arrival-sheet__footer').getByRole('button',{name:'Сохранить',exact:true})).toBeVisible();
+ await expect(sheet.getByRole('button',{name:'Сохранить',exact:true})).toBeInViewport();
  await expect(sheet.locator('.raid-arrival-sheet__collapse')).toBeInViewport();
- await sheet.getByRole('button',{name:'Комментарий',exact:true}).click();
- await sheet.getByText('История посещений',{exact:true}).click();
- await expect(sheet.getByText('2 раза',{exact:true})).toBeVisible();
+ await sheet.getByRole('textbox',{name:'Комментарий',exact:true}).blur();
+ await expect(sheet.getByText('2 раза',{exact:true}).first()).toBeVisible();
+ await sheet.locator('.point-visit-history__person').first().click();
+ await expect(sheet.locator('.point-visit-history__person').first()).toHaveAttribute('aria-expanded','true');
  await page.setViewportSize({width:390,height:844});
  await page.screenshot({animations:'disabled',path:'output/playwright/participant-history.png'});
  await sheet.getByRole('button',{name:'Свернуть точку'}).click();
@@ -178,7 +182,7 @@ test('comment text appears immediately without disclosure or saved notice and su
     const sheet = page.locator('.point-info-sheet')
     await sheet.getByRole('button', { name: 'Комментарий', exact: true }).click()
     await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).fill(body)
-    await sheet.getByRole('button', { name: 'Добавить комментарий', exact: true }).click()
+    await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click()
     await expect.poll(() => started).toBe(true)
     const comments = sheet.getByRole('region', { name: 'Комментарии точки', exact: true })
     await expect(comments).toBeVisible()
@@ -215,13 +219,14 @@ test('team-only visit does not expose photo or comment actions, even though hist
   await expect(page.getByRole('button', { name: /^Лесное озеро\./ })).toHaveClass(/raid-live-point--visited/)
   await page.getByRole('button', { name: /^Лесное озеро\./ }).click()
   const sheet = page.locator('.point-info-sheet')
-  await expect(sheet.getByText('Фото и комментарии можно добавить после вашей подтверждённой отметки на этой точке в рейде.')).toBeVisible()
+  await expect(sheet.getByText('Вас нет в последней отметке', { exact: false })).toBeVisible()
   await expect(sheet.getByRole('button', { name: 'Комментарий', exact: true })).toHaveCount(0)
   await expect(sheet.locator('input[type=file]')).toHaveCount(0)
   await expect(sheet.getByRole('button', { name: /Пометить/ })).toHaveCount(0)
   await expect(page.locator('.visit-toast')).toHaveCount(0)
-  await sheet.getByText('История посещений', { exact: true }).click()
-  await expect(sheet.getByText('3 раза', { exact: true })).toBeVisible()
+  await expect(sheet.locator('.point-visit-history__person')).toHaveCount(1)
+  await sheet.locator('.point-visit-history__person').first().click()
+  await expect(sheet.locator('.point-visit-history__person').first()).toHaveAttribute('aria-expanded','true')
   await page.screenshot({ path: info.outputPath('unvisited-read-only.png'), animations: 'disabled' })
 })
 
@@ -241,7 +246,7 @@ test('a refused queued comment keeps its actual text without a false success mes
   const sheet = page.locator('.point-info-sheet')
   await sheet.getByRole('button', { name: 'Комментарий', exact: true }).click()
   await sheet.getByRole('textbox', { name: 'Комментарий', exact: true }).fill('Мой текст не должен исчезнуть')
-  await sheet.getByRole('button', { name: 'Добавить комментарий', exact: true }).click()
+  await sheet.getByRole('button', { name: 'Сохранить', exact: true }).click()
   const row = sheet.locator('.point-materials__item')
   await expect(row).toHaveAttribute('data-comment-state', 'rejected')
   await expect(row.locator('p')).toHaveText('Комментарий: Мой текст не должен исчезнуть')
@@ -253,3 +258,18 @@ test('a refused queued comment keeps its actual text without a false success mes
   await expect(page.locator('.point-materials__item p')).toHaveText('Комментарий: Мой текст не должен исчезнуть')
   expect(posts).toBe(1)
 })
+
+
+test('raid visit counts appear directly without a second history disclosure', async ({page}) => {
+ await page.emulateMedia({ reducedMotion: 'reduce' });
+ const controls = await prepare(page, true, true, true);
+ await page.getByRole('button', {name: /^Лесное озеро\./}).click();
+ const sheet = page.locator('.point-info-sheet');
+ await expect(sheet.getByText('Загружаем материалы…', {exact:true})).toHaveCount(0);
+ await expect(sheet.locator('details.point-visit-history__all-raids')).toHaveCount(0);
+ await expect(sheet.locator('.point-visit-history__person')).toHaveCount(2);
+ await expect(sheet.getByText('В этом рейде кабанда здесь ещё не была.', {exact:true})).toHaveCount(0);
+ expect(controls.historyRequests()).toBeGreaterThanOrEqual(1);
+ await sheet.locator('.point-visit-history__person').first().click();
+ await expect(sheet.locator('.point-visit-history__person').first()).toHaveAttribute('aria-expanded','true');
+});

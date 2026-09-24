@@ -37,6 +37,21 @@ function service(fetchImplementation: FetchLike, options: {
 }
 
 describe('Nominatim reverse geocoder', () => {
+  it('returns only street and house, excluding districts, postcode and country', async () => {
+    const geocoding = service(async () => new Response(JSON.stringify({
+      name: 'Дом', display_name: '10, Пушкинская улица, Октябрьский район, Ижевск, 426000, Россия',
+      address: { road: 'Пушкинская улица', house_number: '10А/2', city: 'Ижевск', suburb: 'Октябрьский район', postcode: '426000', country: 'Россия' },
+    })))
+    expect(await geocoding.reverse(56.85, 53.2)).toEqual({ name: 'Дом', address: 'Пушкинская улица, 10А/2', source: 'openstreetmap' })
+  })
+
+  it('keeps a named forest place without inventing a street address', async () => {
+    const geocoding = service(async () => new Response(JSON.stringify({
+      name: 'Лесная поляна', display_name: 'Лесная поляна, Ижевск, Россия', address: { city: 'Ижевск', country: 'Россия' },
+    })))
+    expect(await geocoding.reverse(56.85, 53.2)).toMatchObject({ name: 'Лесная поляна', address: '' })
+  })
+
   it('identifies the app, rounds coordinates, caches them and exposes only bounded labels', async () => {
     const fetchImplementation = vi.fn(async (_input: string | URL, _init?: RequestInit) => providerResponse(
       `  ${'Очень длинное имя '.repeat(20)}  `,

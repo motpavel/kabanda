@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { routeTrackView, userMarkerCoordinate } from './RaidRouteMap'
+import { initialRaidMapView, routeTrackView, userMarkerCoordinate } from './RaidRouteMap'
 
 describe('live raid route map', () => {
+  const location = { latitude: 56.85, longitude: 53.2, accuracyMeters: 8, capturedAt: '2026-08-28T12:00:00.000Z' }
+  it('starts directly at an already known viewer instead of loading the city first', () => {
+    expect(initialRaidMapView([{ latitude: 56.9, longitude: 53.3 }], location, false))
+      .toEqual({ center: [56.85, 53.2], zoom: 15, source: 'location' })
+  })
+  it('opens a completed ride at its overview even when viewer location is known', () => {
+    const points = [{ latitude: 56.82, longitude: 53.16 }, { latitude: 56.88, longitude: 53.23 }]
+    expect(initialRaidMapView(points, location, true, { width: 390, height: 400 }))
+      .toEqual({ ...routeTrackView(points, { width: 390, height: 400 }), source: 'overview' })
+    expect(initialRaidMapView([], null, false).source).toBe('default')
+  })
   it('centres a short track tightly around the traveled points', () => {
     const view = routeTrackView([
       { latitude: 56.85, longitude: 53.2, capturedAt: '2026-08-28T12:00:00.000Z' },

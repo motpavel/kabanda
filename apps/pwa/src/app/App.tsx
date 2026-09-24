@@ -12,6 +12,7 @@ import { InstallProvider } from '../features/install/InstallGuidance'
 import { PortraitMode } from './PortraitMode'
 import { RetainedScreen } from './RetainedScreen'
 import { appPath } from '../lib/paths'
+import { removeAbandonedCityMapCache } from '../lib/remove-abandoned-city-map-cache'
 import { isInternalAppLink, navigateApp } from './transitions'
 import { readAppSearch, subscribeAppLocation } from './navigation-history'
 import './smooth-ui.css'
@@ -23,6 +24,7 @@ const RaidsDesignPrototype = lazy(() => import('../features/raids-design/RaidsDe
 const RouteTrackingPrototype = lazy(() => import('../features/route-tracking-prototype/RouteTrackingPrototype').then(module => ({ default: module.RouteTrackingPrototype })))
 
 export function App() {
+  useEffect(() => { removeAbandonedCityMapCache() }, [])
   if (window.location.pathname.endsWith('/auth/verify')) return <VerifyMagicLinkPage />
   if (window.location.pathname.endsWith('/prototype/raids')) return <OptionalScreen><RaidsDesignPrototype /></OptionalScreen>
   if (window.location.pathname.endsWith('/prototype/route-tracking')) return <OptionalScreen><RouteTrackingPrototype /></OptionalScreen>

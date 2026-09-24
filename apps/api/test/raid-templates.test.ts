@@ -44,3 +44,14 @@ describe('raid template access contract', () => {
     expect(() => createRaidTemplateSchema.parse({ ...legacyRequest, scope: 'anonymous' })).toThrow()
   })
 })
+
+
+describe('route points without postal addresses', () => {
+  it('accepts empty and omitted addresses while requiring a name and valid coordinates', () => {
+    const point = { name: 'Лесная поляна', latitude: 56.8, longitude: 53.2 }
+    const base = { title: 'Лесной круг', coverImage: 'data:image/jpeg;base64,YQ==', points: [point, { ...point, address: '' }] }
+    expect(createRaidTemplateSchema.parse(base).points.map(p => p.address)).toEqual(['', ''])
+    expect(createRaidTemplateSchema.safeParse({ ...base, points: [{ ...point, latitude: 91 }, point] }).success).toBe(false)
+    expect(createRaidTemplateSchema.safeParse({ ...base, points: [{ ...point, name: '' }, point] }).success).toBe(false)
+  })
+})

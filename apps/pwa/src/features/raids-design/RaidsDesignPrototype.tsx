@@ -1,3 +1,4 @@
+import { useSheetViewport } from '../../components/sheets/useSheetViewport'
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import '../../app/fonts.css'
 import { appPath } from '../../lib/paths'
@@ -434,6 +435,7 @@ function ScheduledSuccess({ onBack, origin, route }: { onBack: () => void; origi
 
 function NewRaidSheet({ onClose, onQuick, onSchedule }: { onClose: () => void; onQuick: () => void; onSchedule: () => void }) {
   const dialogRef = useRef<HTMLElement>(null)
+  useSheetViewport(dialogRef)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { onClose(); return }

@@ -208,8 +208,9 @@ export class NominatimReverseGeocoder implements GeocodingService {
       && !Array.isArray(response.address)
       ? response.address as Record<string, unknown>
       : {}
-    const address = boundedText(response.display_name, 300)
-    if (!address) throw providerUnavailable()
+    const street = firstBoundedValue(addressParts, ['road', 'pedestrian', 'residential', 'footway', 'path', 'cycleway'], 240)
+    const house = boundedText(addressParts.house_number, 40)
+    const address = street ? [street, house].filter(Boolean).join(', ') : ''
     const name = boundedText(response.name, 160) || firstBoundedValue(addressParts, [
       'amenity',
       'shop',
@@ -221,6 +222,7 @@ export class NominatimReverseGeocoder implements GeocodingService {
       'neighbourhood',
       'suburb',
     ], 160)
+    if (!name && !address) throw providerUnavailable()
     return { name, address, source: 'openstreetmap' }
   }
 
