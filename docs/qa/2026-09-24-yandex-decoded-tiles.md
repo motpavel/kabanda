@@ -11,3 +11,5 @@ Validation:
 - These are not physical iPhone timing measurements. The sampling harness waits 300 ms before checking tile readiness, so reported render durations must not be interpreted as sub-frame latency improvements. Safari remains free to discard native decoded buffers under memory pressure.
 
 The provider remains Yandex. This reserves a small recent neighborhood, not an offscreen rendering of the entire city.
+
+Published release: `558276199231b13092daf04417c3cd6a1942c1d2`. All 73 public objects matched the build. First-launch live production checks in mobile Chromium and WebKit still returned a decoded 512 px miss followed by a hit. Rollback snapshot: `/var/backups/kabanda/kabanda-decoded-5582761/static/kabanda-static-b87ozbf0.json`.
