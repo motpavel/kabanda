@@ -63,31 +63,41 @@
   async function cached(key) {
     const db = await openDatabase();
     if (!db) return null;
+    return new Promise(resolve => {
+      try {
+        // Cache hits must not wait for rewriting an entire PNG just to touch
+        // the eviction timestamp. Read-only transactions can run together.
+        const tx = db.transaction('tiles', 'readonly');
+        const read = tx.objectStore('tiles').get(key);
+        read.onsuccess = () => {
+          const value = read.result;
+          resolve(value && value.created > Date.now() - TTL && value.created <= Date.now() ? value : null);
+        };
+        tx.onabort = tx.onerror = () => resolve(null);
+      } catch { resolve(null); }
+    });
+  }
+
+  async function maintain(hit) {
+    const db = await openDatabase();
+    if (!db) return;
     if (Date.now() - lastCleanup > 86400000) {
       lastCleanup = Date.now();
       await purgeExpired(db);
     }
-    return new Promise(resolve => {
-      let result = null;
+    // Coarse LRU avoids persistent writes during rapid back-and-forth panning.
+    if (!hit || Date.now() - hit.used < 60_000) return;
+    await new Promise(resolve => {
       try {
-        const tx = db.transaction(['tiles', 'meta'], 'readwrite');
-        const tiles = tx.objectStore('tiles'), meta = tx.objectStore('meta');
-        const read = tiles.get(key);
-        read.onsuccess = () => {
-          const value = read.result;
-          if (!value) return;
-          if (value.created <= Date.now() - TTL || value.created > Date.now()) {
-            tiles.delete(key);
-            const size = meta.get('bytes');
-            size.onsuccess = () => meta.put(Math.max(0, (size.result || 0) - value.bytes), 'bytes');
-          } else {
-            result = value;
-            tiles.put({ ...value, used: Date.now() });
-          }
+        const tx = db.transaction('tiles', 'readwrite'), tiles = tx.objectStore('tiles');
+        const request = tiles.get(hit.key);
+        request.onsuccess = () => {
+          const current = request.result;
+          // Never resurrect a concurrently evicted/expired/replaced fragment.
+          if (current && current.created === hit.created && current.created > Date.now() - TTL && Date.now() - current.used >= 60_000) tiles.put({ ...current, used: Date.now() });
         };
-        tx.oncomplete = () => resolve(result);
-        tx.onabort = tx.onerror = () => resolve(null);
-      } catch { resolve(null); }
+        tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+      } catch { resolve(); }
     });
   }
 
@@ -213,6 +223,7 @@
       })).catch(() => {}));
     };
     const hit = await cached(tile.key);
+    event.waitUntil(maintain(hit));
     if (hit) report('hit');
     if (hit) return new Response(hit.body, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'X-Kabanda-Tile': 'hit', 'X-Kabanda-Tile-Expires': String(hit.created + TTL) } });
     try {

@@ -21,7 +21,7 @@ function worker(fetcher = vi.fn(async (_url: unknown, _options?: unknown) => ima
   runInNewContext(source, { self: scope, indexedDB: idb, IDBKeyRange, fetch: fetcher, URL, Response, Blob, Uint8Array, AbortController, setTimeout, clearTimeout, Date, Promise, performance })
   const get = (path = tile, method = 'GET') => {
     let response: Promise<Response> | undefined
-    listeners.get('fetch')?.({ request: new Request(new URL(path, origin), { method }), clientId: 'client', respondWith: (value: Promise<Response>) => { response = value } })
+    listeners.get('fetch')?.({ request: new Request(new URL(path, origin), { method }), clientId: 'client', waitUntil: (promise: Promise<unknown>) => { void promise.catch(() => {}) }, respondWith: (value: Promise<Response>) => { response = value } })
     return response
   }
   return { get, fetcher, messages, idb }
@@ -54,6 +54,20 @@ describe('official Yandex tile worker', () => {
     expect(url.searchParams.get('projection')).toBe('wgs84_mercator')
     expect(url.searchParams.get('scale')).toBe('2')
     expect(url.searchParams.has('map')).toBe(false)
+  })
+
+  it('serves a recent hit without rewriting the cached PNG', async () => {
+    const w = worker()
+    await w.get()
+    const before = await inspect(w.idb)
+    const used = before.rows[0].used
+    before.db.close()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect((await w.get()!).headers.get('X-Kabanda-Tile')).toBe('hit')
+    const after = await inspect(w.idb)
+    expect(after.rows[0].used).toBe(used)
+    expect(w.fetcher).toHaveBeenCalledTimes(1)
+    after.db.close()
   })
 
   it('coalesces simultaneous foreground and speculative requests', async () => {

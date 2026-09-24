@@ -55,12 +55,12 @@ export function attachYandexTileCache(map: YandexMap, runtime: YandexMapsRuntime
         // Prepare recently displayed fragments first, then the small edge
         // reserve. The current SDK frame is never invalidated or repainted.
         const paths = [...requested].slice(-16)
-        requested.clear()
         paths.push(...tiles.slice(0, 4).map(tile => tilePath(tile, scale, mapId, base)))
         for (const path of new Set(paths)) {
           if (controller.signal.aborted || !visible()) return
           try {
             await decoded.prepare(path, controller.signal)
+            if (!controller.signal.aborted) requested.delete(path)
           } catch { return }
         }
       })()

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { YandexMap, YandexMapsRuntime } from '../yandex-maps'
+import { DecodedTiles } from './decoded-tiles'
 import { attachYandexTileCache } from './yandex-tile-cache'
 
 function fixture() {
@@ -21,7 +22,7 @@ function fixture() {
   const container = { getBoundingClientRect: () => ({ width: 390, height: 844 }) } as HTMLElement
   return { sw, fetcher, map, runtime, container, setType, handlers }
 }
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('cached Yandex layer activation', () => {
   it('switches only after a successful worker probe, preserves the map, and falls back on tile failure', async () => {
@@ -70,4 +71,25 @@ describe('cached Yandex layer activation', () => {
     expect(f.fetcher).not.toHaveBeenCalled()
     expect(f.handlers.size).toBe(0)
   })
+})
+
+it('resumes preparation of fragments interrupted by the next map movement', async () => {
+  const f = fixture()
+  Object.assign((navigator as Navigator & { connection: { saveData: boolean } }).connection, { saveData: false })
+  let interrupted = false
+  const prepare = vi.spyOn(DecodedTiles.prototype, 'prepare').mockImplementation(async (path, signal) => {
+    if (!interrupted && path.includes('/10614/')) {
+      await new Promise<void>(resolve => signal.addEventListener('abort', () => { interrupted = true; resolve() }, { once: true }))
+    }
+  })
+  const stop = attachYandexTileCache(f.map, f.runtime, f.container)
+  try {
+    await vi.waitFor(() => expect(f.setType).toHaveBeenCalledTimes(1))
+    const type = f.setType.mock.calls[0]![0] as { layers: (() => { url: (xy: [number, number], z: number) => string })[] }
+    type.layers[0]!().url([10613, 5046], 14)
+    const pending = type.layers[0]!().url([10614, 5046], 14)
+    await vi.waitFor(() => expect(prepare.mock.calls.some(([path]) => path === pending)).toBe(true), { timeout: 2000 })
+    f.handlers.get('boundschange')?.()
+    await vi.waitFor(() => expect(prepare.mock.calls.filter(([path]) => path === pending).length).toBe(2), { timeout: 2000 })
+  } finally { stop() }
 })
